@@ -298,13 +298,17 @@ class _AppSplashState extends State<AppSplash>
         widget.welcomeName ?? account.value?.displayName ?? account.playerName;
     if (!signedIn) return strings.welcome(name, widget.appName);
     return strings.welcomeBack(name, widget.appName);
-  }  /// The Continue button's caption: the host's override wins; otherwise
+  }
+
+  /// The Continue button's caption: the host's override wins; otherwise
   /// the localized CONTINUE, or the NO SAVED GAMES caption while the
   /// button is disabled.
   String get _continueCaption {
     if (widget.continueLabel != null) return widget.continueLabel!;
     final strings = appLocale.strings;
-    return widget.continueEnabled ? strings.continueDefault : strings.noSavedGames;
+    return widget.continueEnabled
+        ? strings.continueDefault
+        : strings.noSavedGames;
   }
 
   /// The PLAY button's caption (direct-entry variants): the host's
@@ -375,6 +379,9 @@ class _AppSplashState extends State<AppSplash>
                               child: FadeTransition(
                                 opacity: _titleFade,
                                 child: Column(children: [
+                                  // Title/welcome ride the theme's on-surface
+                                  // color (the backdrop art is theme-adaptive,
+                                  // so fixed white washed out in light mode).
                                   Text(widget.appName.toUpperCase(),
                                       style: Theme.of(context)
                                           .textTheme
@@ -382,14 +389,20 @@ class _AppSplashState extends State<AppSplash>
                                           ?.copyWith(
                                               fontWeight: FontWeight.bold,
                                               letterSpacing: 3,
-                                              color: Colors.white)),
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface)),
                                   const SizedBox(height: 8),
                                   Text(_welcome,
                                       key: const ValueKey('welcome-message'),
                                       style: Theme.of(context)
                                           .textTheme
                                           .titleMedium
-                                          ?.copyWith(color: Colors.white70),
+                                          ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: .7)),
                                       textAlign: TextAlign.center),
                                   const SizedBox(height: 6),
                                   _Entrance(
@@ -404,7 +417,11 @@ class _AppSplashState extends State<AppSplash>
                                           key: ValueKey(
                                               'splash-scene-$_sceneIndex'),
                                           style: TextStyle(
-                                              color: Colors.amber.shade200,
+                                              color: Theme.of(context)
+                                                          .brightness ==
+                                                      Brightness.dark
+                                                  ? Colors.amber.shade200
+                                                  : Colors.amber.shade800,
                                               fontStyle: FontStyle.italic),
                                           textAlign: TextAlign.center),
                                     ),
@@ -482,7 +499,10 @@ class _AppSplashState extends State<AppSplash>
                             ]),
                             const Spacer(),
                             Text(widget.description,
-                                style: TextStyle(color: Colors.grey.shade400),
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant),
                                 textAlign: TextAlign.center),
                           ]),
                     ),
