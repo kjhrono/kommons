@@ -10,8 +10,9 @@ schema it sits beside is each game repo's `server/schema.sql`.
 ## The flow, as the server sees it
 
 ```
-app ──▶ GET <server>/.netlify/identity/gt/{google|github}/authorize
-            ?redirectTo=<app origin on the web, or the app's redirect URI on mobile>
+app ──▶ GET <server>/auth/v1/authorize
+            ?provider={google|github}
+            &redirect_to=<app origin on the web, or the app's redirect URI on mobile>
                          │
                          ▼
               GoTrue hands the player to the provider's consent screen
@@ -27,11 +28,15 @@ app ──▶ GET <server>/.netlify/identity/gt/{google|github}/authorize
    and fetches /auth/v1/user to fill the email
 ```
 
-The app itself talks to GoTrue's REST surface (`/auth/v1/token`,
-`/auth/v1/signup`, `/auth/v1/user`) for everything else; OAuth is the only
-piece that routes through the hosted `/gt/{provider}/authorize` pages, so
-those must be reachable on the same origin the app stores as its game
-server URL.
+That is GoTrue's own route, and the stack's gateway (Kong) already publishes
+it — as an *open* route, so the browser redirect needs no apikey. There is
+nothing to add on the server for the request itself to work; the only server
+work is registering the provider credentials and allow-listing the redirect
+targets below.
+
+The app talks to the rest of GoTrue's REST surface (`/auth/v1/token`,
+`/auth/v1/signup`, `/auth/v1/user`) on that same origin, so all of it must be
+reachable at the URL the app stores as its game server.
 
 ## One-time: enable the providers in the GoTrue/Supabase dashboard
 
@@ -41,14 +46,15 @@ For each game server (per game repo — the servers are independent):
    - In the provider's own console (Google Cloud Console → Credentials),
      create an OAuth 2.0 *Web application* client. Its **Authorized
      redirect URI** is the GoTrue callback:
-     `<server>/.netlify/identity/gt/google/callback` — for Supabase
-     projects this is `https://<project-ref>.supabase.co/auth/v1/callback`.
+     `<server>/auth/v1/callback` (on Supabase's own hosting that is
+     `https://<project-ref>.supabase.co/auth/v1/callback`; on a self-hosted
+     stack it is `https://<your-domain>/auth/v1/callback`).
    - In the GoTrue/Supabase dashboard (Authentication → Providers →
      Google): enable it, paste the client ID and secret.
 2. **GitHub**
    - Create an OAuth App (GitHub → Settings → Developer settings). The
-     **Authorization callback URL** is the same GoTrue callback shape:
-     `<server>/.netlify/identity/gt/github/callback` (Supabase:
+     **Authorization callback URL** is the same GoTrue callback:
+     `<server>/auth/v1/callback` (on Supabase's own hosting,
      `https://<project-ref>.supabase.co/auth/v1/callback`).
    - Enable the GitHub provider in the dashboard with its client ID and
      secret.

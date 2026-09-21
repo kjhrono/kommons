@@ -20,16 +20,24 @@ void main() {
   });
 
   group('AuthService.authorizeUrl', () {
-    test('strips /auth/v1 and targets the hosted authorize route', () {
+    // The regression this pins: the URL used to be Netlify Identity's shape
+    // (`/.netlify/identity/gt/{provider}/authorize?redirectTo=…`), which a
+    // self-hosted Supabase stack does not serve at all — the request fell
+    // through to the SPA and sign-in silently never started, so every host had
+    // to add a redirect of its own in nginx. GoTrue's own route needs none.
+    test('targets GoTrue\'s authorize route, with GoTrue\'s parameter names',
+        () {
       final service = AuthService(serverUrl: 'https://shell.test', apiKey: 'k');
       final url = service.authorizeUrl(
         provider: 'google',
         redirectTo: Uri.parse('https://shell.test'),
       );
-      expect(
-          url.toString(),
-          'https://shell.test/.netlify/identity/gt/google/authorize'
-          '?redirectTo=https%3A%2F%2Fshell.test');
+      expect(url.toString(),
+          'https://shell.test/auth/v1/authorize?provider=google'
+          '&redirect_to=https%3A%2F%2Fshell.test');
+      expect(url.path, '/auth/v1/authorize');
+      // Nothing about this URL may depend on a server-side rewrite.
+      expect(url.toString(), isNot(contains('netlify')));
     });
 
     test('keeps a base path and supports other providers', () {
@@ -39,8 +47,19 @@ void main() {
         provider: 'github',
         redirectTo: Uri.parse('https://shell.test/sub/'),
       );
-      expect(url.path, '/sub/.netlify/identity/gt/github/authorize');
-      expect(url.queryParameters['redirectTo'], 'https://shell.test/sub/');
+      expect(url.path, '/sub/auth/v1/authorize');
+      expect(url.queryParameters['provider'], 'github');
+      expect(url.queryParameters['redirect_to'], 'https://shell.test/sub/');
+    });
+
+    test('a mobile deep link rides along as the redirect target', () {
+      final service = AuthService(serverUrl: 'https://kalcio.test');
+      final url = service.authorizeUrl(
+        provider: 'google',
+        redirectTo: Uri.parse('kalcio://auth'),
+      );
+      expect(url.path, '/auth/v1/authorize');
+      expect(url.queryParameters['redirect_to'], 'kalcio://auth');
     });
   });
 
@@ -108,9 +127,9 @@ void main() {
       await givenServer();
       await account.signInWithProvider('google');
 
-      expect(capturedAuthorize!.path,
-          '/.netlify/identity/gt/google/authorize');
-      expect(capturedAuthorize!.queryParameters['redirectTo'], isNotNull);
+      expect(capturedAuthorize!.path, '/auth/v1/authorize');
+      expect(capturedAuthorize!.queryParameters['provider'], 'google');
+      expect(capturedAuthorize!.queryParameters['redirect_to'], isNotNull);
       expect(account.isCloudSignedIn, isTrue);
       expect(account.value!.provider, 'google');
       expect(account.value!.email, 'g@gmail.com');
@@ -211,7 +230,8 @@ void main() {
       // The button reached the game server's hosted authorize page — a
       // cancelled popup then leaves the screen quiet (no error snackbar).
       expect(captured, isNotNull);
-      expect(captured!.path, '/.netlify/identity/gt/google/authorize');
+      expect(captured!.path, '/auth/v1/authorize');
+      expect(captured!.queryParameters['provider'], 'google');
       expect(find.byType(SnackBar), findsNothing);
     });
   });

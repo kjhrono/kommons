@@ -88,9 +88,11 @@ its localized default.
 **OAuth (Google / GitHub)** — the reference flow is the game server's
 hosted GoTrue authorize page: the server holds the provider secrets (its
 Supabase/GoTrue dashboard — no client secrets in app code), the app opens
-`<server>/.netlify/identity/gt/{provider}/authorize`, and the redirect back
-carries an implicit fragment that decodes into a real session
-(`AccountController.signInWithProvider`). The delivery follows the platform:
+`<server>/auth/v1/authorize?provider={provider}&redirect_to={target}` (GoTrue's
+own route, already published by the stack's gateway as an open route — nothing
+to add server-side), and the redirect back carries an implicit fragment that
+decodes into a real session (`AccountController.signInWithProvider`). The
+delivery follows the platform:
 
 * **Web** — a popup back onto the app's origin; nothing to configure.
 * **Android / iOS** — the system browser (external session — Google blocks

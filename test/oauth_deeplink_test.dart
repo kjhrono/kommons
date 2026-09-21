@@ -39,7 +39,7 @@ void main() {
       launcher.launchSucceeds = false;
       await expectLater(
         collectOAuthFragmentDeepLink(
-          'https://game.example/.netlify/identity/gt/google/authorize',
+          'https://game.example/auth/v1/authorize?provider=google',
           callbacks: warm,
           onLaunchFailed: () => launchFailed = true,
         ),
@@ -102,10 +102,10 @@ void main() {
   group('the native collector over the real interfaces', () {
     test('opens the browser and completes on the link', () async {
       final flow = collectOAuthFragmentNative(
-          'https://game.example/.netlify/identity/gt/github/authorize');
+          'https://game.example/auth/v1/authorize?provider=github');
       await Future<void>.delayed(Duration.zero);
       expect(launcher.launchedUrls.single,
-          'https://game.example/.netlify/identity/gt/github/authorize');
+          'https://game.example/auth/v1/authorize?provider=github');
       links.controller
           .add(Uri.parse('mygame://auth#access_token=gh&refresh_token=x'));
       expect(await flow, '#access_token=gh&refresh_token=x');
@@ -192,8 +192,12 @@ class _FakeAuthService extends AuthService {
 
   @override
   Uri authorizeUrl({required String provider, required Uri redirectTo}) {
+    // Built on the redirect target so the launch asserts the deep-link scheme
+    // (what this test is about), carrying the real path shape so the fixture
+    // stays recognisable as production traffic.
     final call = redirectTo.replace(
-        path: '/.netlify/identity/gt/$provider/authorize');
+        path: '/auth/v1/authorize',
+        queryParameters: {'provider': provider, 'redirect_to': redirectTo.toString()});
     authorizeCalls.add(call);
     return call;
   }

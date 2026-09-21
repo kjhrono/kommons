@@ -73,11 +73,17 @@ class AuthException implements Exception {
 ///   POST `<server>/auth/v1/logout`
 ///
 /// OAuth providers (Google, GitHub, …) run as GoTrue's hosted web flow:
-/// the app opens `<server>/.netlify/identity/gt/{provider}/authorize`
-/// (GoTrue's canonical route, kept as `/auth/v1/authorize?provider=…`
-/// fallback), the server holds the provider secrets, and the popup returns
-/// an implicit fragment that [sessionFromImplicitFragment] decodes — the
-/// app never sees a client secret.
+/// the app opens `<server>/auth/v1/authorize?provider={provider}`, the server
+/// holds the provider secrets, and the redirect comes back as an implicit
+/// fragment that [sessionFromImplicitFragment] decodes — the app never sees a
+/// client secret.
+///
+/// That is GoTrue's own route, and Kong serves it as an OPEN route (no apikey,
+/// no key-auth plugin), which is exactly what makes a plain browser redirect
+/// work. Every self-hosted Supabase stack answers it out of the box, so no
+/// per-site rewrite is needed — and the redirect target must be listed in the
+/// stack's `GOTRUE_URI_ALLOW_LIST`, or GoTrue refuses it with
+/// "redirect URI not allowed" instead of redirecting.
 ///
 /// The server-side counterpart lives in the Supabase stack's env: with no
 /// real SMTP configured, `GOTRUE_MAILER_AUTOCONFIRM=true` is what makes
@@ -95,8 +101,7 @@ class AuthService {
   final http.Client _client;
   late final Uri _base;
 
-  /// The game server root: the configured URL without the `/auth/v1`
-  /// suffix — the base the hosted authorize pages live under.
+  /// The server root: the configured URL without the `/auth/v1` suffix.
   Uri get serverRoot {
     var path = _base.path;
     if (path.endsWith('/auth/v1')) {
@@ -130,14 +135,25 @@ class AuthService {
   }
 
   /// The hosted authorize page for [provider] ('google', 'github'), the URL
-  /// the popup collector opens. `redirectTo` must be this app's origin (the
-  /// server allow-lists it) so the fragment lands back same-origin.
+  /// the popup collector opens.
+  ///
+  /// GoTrue's own route — `<server>/auth/v1/authorize?provider=…&redirect_to=…`
+  /// — which the stack's gateway already serves, so this works against any
+  /// self-hosted Supabase without a server-side rewrite. [redirectTo] is where
+  /// the provider sends the player back: the app's own origin on the web, its
+  /// deep-link scheme on mobile. GoTrue only honours targets listed in its
+  /// `GOTRUE_URI_ALLOW_LIST`.
+  ///
+  /// (The parameter is `redirect_to`, not Netlify Identity's `redirectTo`:
+  /// this is GoTrue's API shape, and a wrong name is silently ignored — the
+  /// provider then bounces the player to the server's default site URL.)
   Uri authorizeUrl({required String provider, required Uri redirectTo}) {
-    final root = serverRoot;
-    final basePath = root.path.endsWith('/') ? root.path : '${root.path}/';
-    return root.replace(
-      path: '$basePath.netlify/identity/gt/$provider/authorize',
-      queryParameters: {'redirectTo': redirectTo.toString()},
+    return _base.replace(
+      path: '${_base.path}/authorize',
+      queryParameters: {
+        'provider': provider,
+        'redirect_to': redirectTo.toString(),
+      },
     );
   }
 
