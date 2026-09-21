@@ -36,22 +36,22 @@ class SplashScene {
 /// [AppSplash.scenes].
 const List<SplashScene> kDefaultSplashScenes = [
   SplashScene(
-    line: 'A realm that moves while you plan. Your legend starts here.',
+    line: 'Your table is waiting — the story starts the moment you sit down.',
     vignette: null,
-    story: 'The realm from above — the capital waiting on its road',
+    story: 'The world from above, resting before the first move',
   ),
   SplashScene(
-    line: 'Trade with rival banners — or ambush them where the road bends.',
+    line: 'Every traveler on the road carries a tale worth trading.',
     vignette: 'packages/kommons/assets/splash_caravan.svg',
     story: 'A caravan on the trade road, oxen hauling and spears up',
   ),
   SplashScene(
-    line: 'Dive the dungeons, clear the floors, loot what the darkness hoards.',
+    line: 'Some doors only open for those who bring their own light.',
     vignette: 'packages/kommons/assets/splash_dungeon.svg',
-    story: 'A torch-lit dungeon gate with a chest half in the light',
+    story: 'A torch-lit gate over steps the daylight never reaches',
   ),
   SplashScene(
-    line: 'Tame the wild, study the towers, and win the race of challenges.',
+    line: 'The wild keeps its own counsel — win it with patience, not noise.',
     vignette: 'packages/kommons/assets/splash_tame.svg',
     story: "A griffin kneeling to a trainer's open hand",
   ),
