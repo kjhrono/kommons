@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 110" width="240" height="110">
+  <!-- Splash vignette: caravan. Two oxen pulling a canvas-covered wagon on
+       the trade road, lantern swinging from the wagon's side, a pair of
+       guards flanking. The road's warm dust tone ties it to the backdrop's
+       winding road. -->
+  <defs>
+    <radialGradient id="carLantern" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd54f" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#ffd54f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="120" cy="99" rx="104" ry="6" fill="#000000" opacity="0.35"/>
+
+  <!-- lantern glow -->
+  <circle cx="158" cy="52" r="20" fill="url(#carLantern)"/>
+
+  <!-- ox 1 (rear) -->
+  <g fill="#4a3a28">
+    <ellipse cx="44" cy="72" rx="16" ry="10"/>
+    <rect x="28" y="76" width="4" height="18"/>
+    <rect x="40" y="78" width="4" height="16"/>
+    <rect x="48" y="78" width="4" height="16"/>
+    <rect x="56" y="76" width="4" height="18"/>
+    <path d="M30 64 Q24 54 30 50 Q34 56 36 62 Z"/>
+    <ellipse cx="30" cy="64" rx="7" ry="5.5"/>
+    <path d="M25 60 q-4 -6 -1 -9" fill="none" stroke="#4a3a28" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <!-- yoke -->
+  <path d="M38 60 L64 52" stroke="#5b4a33" stroke-width="3.4" stroke-linecap="round"/>
+
+  <!-- ox 2 (lead) -->
+  <g fill="#553f2c">
+    <ellipse cx="84" cy="74" rx="16" ry="10"/>
+    <rect x="68" y="78" width="4" height="18"/>
+    <rect x="80" y="80" width="4" height="16"/>
+    <rect x="88" y="80" width="4" height="16"/>
+    <rect x="96" y="78" width="4" height="18"/>
+    <path d="M70 66 Q64 56 70 52 Q74 58 76 64 Z"/>
+    <ellipse cx="70" cy="66" rx="7" ry="5.5"/>
+    <path d="M65 62 q-4 -6 -1 -9" fill="none" stroke="#553f2c" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <!-- lead rope to the driver's hand -->
+  <path d="M64 54 L78 50 L100 44" fill="none" stroke="#c9b98a" stroke-width="1.6" opacity="0.8"/>
+
+  <!-- wagon -->
+  <g>
+    <!-- bed -->
+    <path d="M96 56 L172 56 L166 72 L100 72 Z" fill="#6b4a2c"/>
+    <!-- canvas cover -->
+    <path d="M100 56 Q116 36 134 38 Q154 40 168 56 Z" fill="#d9cfb4"/>
+    <path d="M100 56 Q134 46 168 56" fill="none" stroke="#b8ad8e" stroke-width="2"/>
+    <!-- wheels -->
+    <circle cx="108" cy="82" r="10" fill="none" stroke="#4a3a28" stroke-width="3.4"/>
+    <circle cx="108" cy="82" r="2.2" fill="#4a3a28"/>
+    <circle cx="156" cy="82" r="10" fill="none" stroke="#4a3a28" stroke-width="3.4"/>
+    <circle cx="156" cy="82" r="2.2" fill="#4a3a28"/>
+    <path d="M100 72 L108 82 M156 82 L164 72" stroke="#4a3a28" stroke-width="3"/>
+    <!-- lantern post -->
+    <rect x="156" y="46" width="2" height="10" fill="#5b4a33"/>
+    <rect x="154" y="56" width="6" height="7" rx="1.4" fill="#ffd54f"/>
+  </g>
+
+  <!-- driver -->
+  <g fill="#2f3a4c">
+    <circle cx="188" cy="44" r="5"/>
+    <path d="M184 50 Q188 48 192 50 L194 66 L182 66 Z"/>
+    <rect x="184" y="66" width="3" height="12"/>
+    <rect x="189" y="66" width="3" height="12"/>
+  </g>
+  <path d="M186 56 L176 52" stroke="#2f3a4c" stroke-width="2.6" stroke-linecap="round"/>
+
+  <!-- guards: spears up -->
+  <g fill="#33415c">
+    <circle cx="212" cy="52" r="4.6"/>
+    <path d="M208 58 Q212 56 216 58 L217 74 L207 74 Z"/>
+    <rect x="211" y="74" width="3" height="14"/>
+  </g>
+  <rect x="211.4" y="22" width="1.8" height="30" fill="#5b4a33"/>
+  <path d="M212.3 16 L216.3 24 L208.3 24 Z" fill="#8f9bb3"/>
+  <g fill="#3d4d6b">
+    <circle cx="228" cy="54" r="4.6"/>
+    <path d="M224 60 Q228 58 232 60 L233 76 L223 76 Z"/>
+    <rect x="227" y="76" width="3" height="12"/>
+  </g>
+  <rect x="227.4" y="24" width="1.8" height="30" fill="#5b4a33"/>
+  <path d="M228.3 18 L232.3 26 L224.3 26 Z" fill="#8f9bb3"/>
+</svg>

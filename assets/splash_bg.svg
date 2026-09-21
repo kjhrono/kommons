@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500" preserveAspectRatio="xMidYMid slice">
+  <!-- Kapax Infiniti splash backdrop: a fantasy realm seen from above a valley —
+       layered mountains, a walled capital, fields, a winding road, and moons. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1026"/>
+      <stop offset="0.55" stop-color="#1b2447"/>
+      <stop offset="1" stop-color="#3b2f57"/>
+    </linearGradient>
+    <linearGradient id="ridgeA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3560"/>
+      <stop offset="1" stop-color="#1d2747"/>
+    </linearGradient>
+    <linearGradient id="ridgeB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2340"/>
+      <stop offset="1" stop-color="#131a30"/>
+    </linearGradient>
+    <linearGradient id="valley" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16281f"/>
+      <stop offset="1" stop-color="#0c1813"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="900" height="500" fill="url(#sky)"/>
+
+  <!-- Stars -->
+  <g fill="#cdd6f4">
+    <circle cx="70" cy="60" r="1.6" opacity="0.9"/>
+    <circle cx="150" cy="30" r="1.2" opacity="0.7"/>
+    <circle cx="230" cy="80" r="1.4" opacity="0.8"/>
+    <circle cx="330" cy="45" r="1.1" opacity="0.6"/>
+    <circle cx="420" cy="70" r="1.5" opacity="0.8"/>
+    <circle cx="520" cy="25" r="1.2" opacity="0.7"/>
+    <circle cx="610" cy="60" r="1.4" opacity="0.85"/>
+    <circle cx="700" cy="35" r="1.1" opacity="0.6"/>
+    <circle cx="790" cy="65" r="1.5" opacity="0.8"/>
+    <circle cx="850" cy="25" r="1.2" opacity="0.6"/>
+    <circle cx="880" cy="95" r="1.3" opacity="0.7"/>
+    <circle cx="40" cy="140" r="1.1" opacity="0.5"/>
+    <circle cx="120" cy="170" r="1.3" opacity="0.6"/>
+    <circle cx="860" cy="150" r="1.2" opacity="0.55"/>
+  </g>
+
+  <!-- Twin moons -->
+  <circle cx="700" cy="90" r="34" fill="#e8ecff" opacity="0.95"/>
+  <circle cx="689" cy="82" r="7" fill="#c3cbe8" opacity="0.7"/>
+  <circle cx="712" cy="100" r="5" fill="#c3cbe8" opacity="0.6"/>
+  <circle cx="760" cy="52" r="11" fill="#aab4dd" opacity="0.85"/>
+
+  <!-- Far mountain range -->
+  <path d="M0 210 L120 140 L210 200 L330 120 L430 195 L540 135 L660 200 L780 150 L900 205 L900 500 L0 500 Z" fill="url(#ridgeA)" opacity="0.95"/>
+  <!-- Near ridge, darker -->
+  <path d="M0 260 L100 200 L200 255 L320 185 L450 260 L560 205 L690 262 L810 215 L900 255 L900 500 L0 500 Z" fill="url(#ridgeB)"/>
+
+  <!-- Valley floor with fields -->
+  <path d="M0 320 L140 300 L320 315 L520 300 L720 318 L900 302 L900 500 L0 500 Z" fill="url(#valley)"/>
+
+  <!-- Field strips (subtle) -->
+  <g opacity="0.5">
+    <path d="M120 340 L260 332 L300 352 L160 360 Z" fill="#1c3226"/>
+    <path d="M420 350 L580 342 L620 366 L450 374 Z" fill="#183024"/>
+    <path d="M660 335 L800 330 L830 350 L700 356 Z" fill="#1b2e22"/>
+  </g>
+
+  <!-- Winding road to the capital -->
+  <path d="M60 500 C 180 440, 300 430, 380 400 C 440 377, 470 360, 500 352" fill="none" stroke="#c9b98a" stroke-width="7" opacity="0.5" stroke-linecap="round"/>
+  <path d="M60 500 C 180 440, 300 430, 380 400 C 440 377, 470 360, 500 352" fill="none" stroke="#e6d9ae" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- The walled capital -->
+  <g>
+    <!-- citadel -->
+    <rect x="482" y="316" width="36" height="30" fill="#2c2620"/>
+    <polygon points="482,316 500,296 518,316" fill="#3a3128"/>
+    <rect x="498" y="300" width="4" height="10" fill="#2c2620"/>
+    <!-- walls -->
+    <rect x="440" y="332" width="120" height="18" fill="#332c24"/>
+    <rect x="436" y="328" width="10" height="24" fill="#3a3128"/>
+    <rect x="466" y="326" width="10" height="26" fill="#3a3128"/>
+    <rect x="496" y="326" width="10" height="28" fill="#3a3128"/>
+    <rect x="526" y="326" width="10" height="26" fill="#3a3128"/>
+    <rect x="552" y="328" width="10" height="24" fill="#3a2f26"/>
+    <!-- gate -->
+    <path d="M492 350 h16 v-12 a8 8 0 0 0 -16 0 Z" fill="#191410"/>
+    <!-- banner -->
+    <rect x="500" y="296" width="1.6" height="10" fill="#191410"/>
+    <path d="M501.6 296 l10 2.5 -10 2.5 Z" fill="#c0392b"/>
+    <!-- warm windows -->
+    <g fill="#ffd54f" opacity="0.85">
+      <rect x="489" y="324" width="3" height="4"/>
+      <rect x="497" y="330" width="3" height="4"/>
+      <rect x="505" y="324" width="3" height="4"/>
+      <rect x="452" y="338" width="3" height="4"/>
+      <rect x="540" y="338" width="3" height="4"/>
+    </g>
+  </g>
+
+  <!-- Foreground pines, two shades -->
+  <g fill="#0a1410">
+    <polygon points="30,500 55,432 80,500"/>
+    <polygon points="90,500 120,420 150,500"/>
+    <polygon points="760,500 785,436 810,500"/>
+    <polygon points="820,500 845,418 870,500"/>
+  </g>
+  <g fill="#0f1d16">
+    <polygon points="0,500 20,452 40,500"/>
+    <polygon points="855,500 878,458 900,500"/>
+  </g>
+
+  <!-- Vignette: darkens edges so overlay text stays readable -->
+  <rect width="900" height="500" fill="url(#vig)"/>
+  <defs>
+    <radialGradient id="vig" cx="0.5" cy="0.42" r="0.85">
+      <stop offset="0.45" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
+  </defs>
+</svg>

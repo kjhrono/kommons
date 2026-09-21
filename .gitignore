@@ -1,0 +1,15 @@
+# Flutter/Dart build artifacts
+build/
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store

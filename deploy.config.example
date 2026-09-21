@@ -1,0 +1,32 @@
+# deploy.config — per-user (per-machine) deploy settings for this game.
+#
+# Copy to deploy.config, fill in YOUR VM, and `bash scripts/deploy.sh` does
+# the rest: commit, push to GitHub, sync server files, migrate the database
+# when the schema changed, rebuild the web app and publish it online.
+#
+# This file is per-user: deploy.config is git-ignored so every distributor
+# of the app keeps their own machine settings. deploy.config.example is the
+# committed template.
+
+# Where the app lives online (required for anything beyond commit+push).
+host=kapaxinfiniti.kjhrono.duckdns.org
+
+# SSH access to that VM.
+ssh_user=ubuntu
+# ssh_key=/absolute/path/to/your/private/key
+# (when unset, <repo>/ssh-private-key.key is used if present, else the agent)
+
+# Remote layout.
+target_dir=kapax
+web_root=/var/www/kapaxinfiniti
+db_container=kapaxinfiniti-db-1
+
+# Git.
+git_remote=origin
+git_paths="lib test server scripts pubspec.yaml pubspec.lock"
+
+# Publish the web build after syncing (set false for server-only deploys).
+web_publish=true
+
+# Display name for logs and defaults (defaults to the repo folder name).
+app_name=kapax

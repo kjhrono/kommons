@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 110" width="240" height="110">
+  <!-- Splash vignette: tame. A great griffin kneels — wings folded, head
+       bowed — while a trainer offers an open palm; a bait pouch and a
+       coil of rope sit at their feet. The moment of the bond, not the
+       struggle. -->
+  <defs>
+    <radialGradient id="tameHalo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd54f" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffd54f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- quiet golden halo behind the pair -->
+  <ellipse cx="108" cy="58" rx="92" ry="46" fill="url(#tameHalo)"/>
+
+  <!-- ground shadow -->
+  <ellipse cx="112" cy="99" rx="92" ry="6" fill="#000000" opacity="0.35"/>
+
+  <!-- the griffin, kneeling -->
+  <g>
+    <!-- folded wing -->
+    <path d="M64 76 Q86 52 118 58 Q112 76 96 84 Q78 88 64 76 Z" fill="#b8923f"/>
+    <path d="M70 74 Q88 58 114 60" fill="none" stroke="#8a6a2a" stroke-width="2" opacity="0.7"/>
+    <!-- haunch -->
+    <ellipse cx="92" cy="80" rx="26" ry="14" fill="#a8843a"/>
+    <!-- chest and neck, bowed -->
+    <path d="M116 84 Q136 80 146 62 Q150 52 146 46 L156 54 Q160 66 150 78 Q138 90 118 90 Z" fill="#c49a44"/>
+    <!-- head, lowered toward the trainer -->
+    <circle cx="150" cy="44" r="9" fill="#c49a44"/>
+    <path d="M158 42 L172 46 L158 50 Z" fill="#e8d28a"/>
+    <circle cx="152" cy="41" r="1.6" fill="#2a2013"/>
+    <!-- ear tufts -->
+    <path d="M144 36 L140 28 L148 33 Z" fill="#a8843a"/>
+    <path d="M152 35 L152 26 L158 33 Z" fill="#a8843a"/>
+    <!-- foreleg offered forward -->
+    <path d="M124 88 Q132 94 142 92" fill="none" stroke="#c49a44" stroke-width="5" stroke-linecap="round"/>
+    <!-- tail -->
+    <path d="M66 80 Q52 84 44 78" fill="none" stroke="#b8923f" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- the trainer -->
+  <g fill="#2f3a4c">
+    <circle cx="186" cy="50" r="5"/>
+    <path d="M182 56 Q186 54 190 56 L192 74 L180 74 Z"/>
+    <rect x="182" y="74" width="3" height="14"/>
+    <rect x="187" y="74" width="3" height="14"/>
+  </g>
+  <!-- arm raised, palm open toward the bowed head -->
+  <path d="M188 60 L176 50 L170 46" fill="none" stroke="#2f3a4c" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="169" cy="45" r="2.6" fill="#e8d5b5"/>
+
+  <!-- bait pouch and rope coil -->
+  <g>
+    <path d="M196 84 L206 84 L204 94 L198 94 Z" fill="#7d5834"/>
+    <path d="M198 84 Q201 78 204 84" fill="none" stroke="#5b4a33" stroke-width="1.8"/>
+    <ellipse cx="214" cy="92" rx="9" ry="4.4" fill="none" stroke="#8a6a2a" stroke-width="2.2"/>
+    <ellipse cx="214" cy="92" rx="4.5" ry="2" fill="none" stroke="#8a6a2a" stroke-width="1.6"/>
+  </g>
+</svg>

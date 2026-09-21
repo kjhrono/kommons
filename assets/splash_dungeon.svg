@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 110" width="240" height="110">
+  <!-- Splash vignette: dungeon. A dark arched cave mouth cut into a rock
+       face, iron-barred gate, two warm torches, and a treasure chest half
+       in the light. Drawn to sit on the valley floor of the shared splash
+       backdrop without occluding it. -->
+  <defs>
+    <linearGradient id="dunRock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3648"/>
+      <stop offset="1" stop-color="#232030"/>
+    </linearGradient>
+    <radialGradient id="dunGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffb74d" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffb74d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- glow puddles from the torches -->
+  <ellipse cx="70" cy="88" rx="34" ry="12" fill="url(#dunGlow)"/>
+  <ellipse cx="170" cy="88" rx="34" ry="12" fill="url(#dunGlow)"/>
+
+  <!-- rock face -->
+  <path d="M28 96 L36 58 Q42 34 70 28 L170 28 Q198 34 204 58 L212 96 Z" fill="url(#dunRock)"/>
+  <!-- cracks -->
+  <path d="M56 40 L62 52 L56 62" fill="none" stroke="#16141f" stroke-width="2" opacity="0.6" stroke-linecap="round"/>
+  <path d="M182 44 L176 56 L184 66" fill="none" stroke="#16141f" stroke-width="2" opacity="0.6" stroke-linecap="round"/>
+
+  <!-- arched cave mouth -->
+  <path d="M88 96 L88 62 Q120 40 152 62 L152 96 Z" fill="#0c0a14"/>
+
+  <!-- iron gate -->
+  <g stroke="#6e6a78" stroke-width="2.4" stroke-linecap="round">
+    <line x1="98" y1="96" x2="98" y2="66"/>
+    <line x1="110" y1="96" x2="110" y2="56"/>
+    <line x1="130" y1="96" x2="130" y2="56"/>
+    <line x1="142" y1="96" x2="142" y2="66"/>
+    <line x1="94" y1="70" x2="146" y2="70"/>
+    <line x1="94" y1="84" x2="146" y2="84"/>
+  </g>
+
+  <!-- torch sconces -->
+  <g>
+    <rect x="68" y="64" width="3" height="12" fill="#5b4a33"/>
+    <path d="M69.5 58 Q75 63 69.5 68 Q64 63 69.5 58 Z" fill="#ffb74d"/>
+    <rect x="169" y="64" width="3" height="12" fill="#5b4a33"/>
+    <path d="M170.5 58 Q176 63 170.5 68 Q165 63 170.5 58 Z" fill="#ffb74d"/>
+  </g>
+
+  <!-- the hoarded chest -->
+  <g>
+    <rect x="176" y="82" width="22" height="13" rx="2" fill="#6b4a2c"/>
+    <path d="M176 86 Q187 80 198 86 L198 82 Q187 76 176 82 Z" fill="#7d5834"/>
+    <rect x="185" y="84" width="4" height="7" fill="#d4af37"/>
+    <circle cx="187" cy="88" r="1.4" fill="#3a2c14"/>
+  </g>
+
+  <!-- ground shadow -->
+  <ellipse cx="120" cy="98" rx="96" ry="6" fill="#000000" opacity="0.35"/>
+</svg>
