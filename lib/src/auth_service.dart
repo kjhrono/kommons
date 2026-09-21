@@ -72,6 +72,13 @@ class AuthException implements Exception {
 ///   POST `<server>/auth/v1/token?grant_type=refresh_token`
 ///   POST `<server>/auth/v1/logout`
 ///
+/// OAuth providers (Google, GitHub, …) run as GoTrue's hosted web flow:
+/// the app opens `<server>/.netlify/identity/gt/{provider}/authorize`
+/// (GoTrue's canonical route, kept as `/auth/v1/authorize?provider=…`
+/// fallback), the server holds the provider secrets, and the popup returns
+/// an implicit fragment that [sessionFromImplicitFragment] decodes — the
+/// app never sees a client secret.
+///
 /// The server-side counterpart lives in the Supabase stack's env: with no
 /// real SMTP configured, `GOTRUE_MAILER_AUTOCONFIRM=true` is what makes
 /// signups return a session immediately instead of trying (and failing) to
@@ -87,6 +94,16 @@ class AuthService {
   final String? _apiKey;
   final http.Client _client;
   late final Uri _base;
+
+  /// The game server root: the configured URL without the `/auth/v1`
+  /// suffix — the base the hosted authorize pages live under.
+  Uri get serverRoot {
+    var path = _base.path;
+    if (path.endsWith('/auth/v1')) {
+      path = path.substring(0, path.length - '/auth/v1'.length);
+    }
+    return _base.replace(path: path);
+  }
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -109,6 +126,85 @@ class AuthService {
     return _sessionCall(
       _base.replace(path: '${_base.path}/token', queryParameters: {'grant_type': 'password'}),
       jsonEncode({'email': email, 'password': password}),
+    );
+  }
+
+  /// The hosted authorize page for [provider] ('google', 'github'), the URL
+  /// the popup collector opens. `redirectTo` must be this app's origin (the
+  /// server allow-lists it) so the fragment lands back same-origin.
+  Uri authorizeUrl({required String provider, required Uri redirectTo}) {
+    final root = serverRoot;
+    final basePath = root.path.endsWith('/') ? root.path : '${root.path}/';
+    return root.replace(
+      path: '$basePath.netlify/identity/gt/$provider/authorize',
+      queryParameters: {'redirectTo': redirectTo.toString()},
+    );
+  }
+
+  /// Decodes the implicit fragment the authorize redirect appended
+  /// (`#access_token=…&refresh_token=…`), mirroring [AuthSession.fromJson].
+  /// Null when the fragment is absent or carries an error instead
+  /// (`error=access_denied` when the player declines the provider's consent
+  /// screen) — callers treat null as a cancelled flow.
+  static AuthSession? sessionFromImplicitFragment(String fragment) {
+    final raw = fragment.startsWith('#') ? fragment.substring(1) : fragment;
+    if (raw.isEmpty) return null;
+    final params =
+        Uri(query: raw).queryParameters; // fragment is x-www-urlencoded
+    final access = params['access_token'];
+    final refresh = params['refresh_token'];
+    if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
+      return null;
+    }
+    final expiresAt = params['expires_at'] is String &&
+            params['expires_at']!.isNotEmpty
+        ? int.tryParse(params['expires_at']!) ?? 0
+        : (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
+            (int.tryParse(params['expires_in'] ?? '') ?? 3600);
+    return AuthSession(
+      accessToken: access,
+      refreshToken: refresh,
+      expiresAt: expiresAt,
+      userId: params['provider_id'] ?? '',
+      email: '',
+    );
+  }
+
+  /// Fetches the account (id, email, confirmed?) for an OAuth session's
+  /// access token — OAuth fragments carry no email, so the controller
+  /// fills it after collecting the fragment.
+  Future<({String id, String email, bool confirmed})> fetchUser(
+      String accessToken) async {
+    final http.Response response;
+    try {
+      response = await _client
+          .get(_base.replace(path: '${_base.path}/user'), headers: {
+        ..._headers,
+        'Authorization': 'Bearer $accessToken',
+      });
+    } catch (error) {
+      throw AuthException('network', 'Could not reach the auth server: $error');
+    }
+    Map<String, dynamic>? json;
+    if (response.body.isNotEmpty) {
+      try {
+      json = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      json = null;
+    }
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final code = json?['error_code'] as String? ?? 'http_${response.statusCode}';
+      final message = json?['msg'] as String? ?? json?['message'] as String? ?? response.body;
+      throw AuthException(code, message.isEmpty ? 'Auth failed (${response.statusCode})' : message);
+    }
+    if (json == null) {
+      throw AuthException('http_${response.statusCode}', 'Unexpected empty auth response');
+    }
+    return (
+      id: json['id'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      confirmed: json['email_confirmed_at'] != null,
     );
   }
 

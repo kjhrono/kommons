@@ -7,15 +7,22 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'app_settings.dart';
 import 'app_top_bar.dart';
 
-/// What the splash offers below the flavor text. Apps usually want both
-/// buttons; a server-only companion app could ship [start] alone.
-enum SplashActions { both, startOnly }
+/// What the splash offers below the flavor text.
+///
+///  * [both] — NEW GAME (leads) and CONTINUE, the classic game shape.
+///  * [startOnly] — NEW GAME alone (a server-only companion app).
+///  * [direct] — PLAY alone: enter the app directly, no lobby (single-player
+///    games, personal apps).
+///  * [directAndNewGame] — PLAY (leads) then NEW GAME: single-player is the
+///    front door, the shared lobby sits one tap behind for multiplayer.
+enum SplashActions { both, startOnly, direct, directAndNewGame }
 
 /// One splash scene: the greeting line and the foreground art that acts it
 /// out. A null vignette keeps the bare backdrop (the founding scene lives in
 /// the backdrop itself).
 class SplashScene {
-  const SplashScene({required this.line, required this.vignette, required this.story});
+  const SplashScene(
+      {required this.line, required this.vignette, required this.story});
 
   final String line;
   final String? vignette;
@@ -54,6 +61,10 @@ const List<SplashScene> kDefaultSplashScenes = [
 /// a welcome for the (anonymous or signed-in) player, a rolled flavor
 /// scene, and the New Game / Continue buttons under the top bar.
 ///
+/// The shell's own strings follow [appLocale]; the host-supplied ones
+/// (this config) are the host's to localize — pass [continueLabel] when
+/// the CONTINUE caption must match your game's language.
+///
 /// Everything app-specific arrives through the config:
 ///  * [appName] / [description] — the big title and the footer line
 ///  * [welcomeName] — "Welcome, X" (null collapses to the anonymous form)
@@ -73,8 +84,11 @@ class AppSplash extends StatefulWidget {
     this.onNewGame,
     this.onContinue,
     this.continueEnabled = false,
-    this.continueLabel = 'CONTINUE',
+    this.continueLabel,
     this.actions = SplashActions.both,
+    this.directLabel,
+    this.onDirect,
+    this.startLabel,
     this.settingsBuilder,
     this.debugSceneIndex,
     this.animateEntrance = true,
@@ -82,6 +96,7 @@ class AppSplash extends StatefulWidget {
 
   final String appName;
   final String description;
+
   /// Overrides the display name in the welcome line (anonymous or
   /// signed-in). Null reads the shared account's player name.
   final String? welcomeName;
@@ -90,11 +105,30 @@ class AppSplash extends StatefulWidget {
   final VoidCallback? onNewGame;
   final VoidCallback? onContinue;
 
+  /// The direct-entry PLAY button's callback — fired by the
+  /// [SplashActions.direct] and [directAndNewGame] variants.
+  final VoidCallback? onDirect;
+
   /// Real enabled state of the Continue button (has local or cloud games?).
   final bool continueEnabled;
-  final String continueLabel;
+
+  /// The Continue button's caption. Null (the default) localizes it from
+  /// the persisted [appLocale]; a host's own string wins over both.
+  final String? continueLabel;
+
+  /// The PLAY (direct-entry) button's caption. Null (the default)
+  /// localizes it from the persisted [appLocale]; a host's own string wins.
+  final String? directLabel;
+
+  /// Host override for the primary button's caption (defaults to the
+  /// localized NEW GAME). Non-game shells relabel it — e.g. "OPEN
+  /// CATALOGUE" — without touching the shell's strings.
+  final String? startLabel;
   final SplashActions actions;
   final Widget Function()? settingsBuilder;
+
+  /// The PLAY button's caption override (the [SplashActions.direct] and
+  /// [directAndNewGame] variants). Null localizes it from [appLocale].
 
   /// Test seam pinning the scene roll to an index (null in production).
   final int? debugSceneIndex;
@@ -133,55 +167,68 @@ class _AppSplashState extends State<AppSplash>
     duration: const Duration(milliseconds: _runMs),
     value: widget.animateEntrance ? 0 : 1,
   );
-  late final Animation<double> _titleFade = Tween(begin: 0.0, end: 1.0)
-      .animate(CurvedAnimation(parent: _entrance,
+  late final Animation<double> _titleFade = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+          parent: _entrance,
           curve: Interval(0.0, _at(455), curve: Curves.easeOut)));
-  late final Animation<Offset> _titleRise = Tween(
-          begin: const Offset(0, 0.12), end: Offset.zero)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(0.0, _at(455), curve: Curves.easeOut)));
+  late final Animation<Offset> _titleRise =
+      Tween(begin: const Offset(0, 0.12), end: Offset.zero).animate(
+          CurvedAnimation(
+              parent: _entrance,
+              curve: Interval(0.0, _at(455), curve: Curves.easeOut)));
   // New Game's arrival: fade paired with a small rise, like the title.
   late final Animation<double> _newGameFade = Tween(begin: 0.0, end: 1.0)
-      .animate(CurvedAnimation(parent: _entrance,
+      .animate(CurvedAnimation(
+          parent: _entrance,
           curve: Interval(_at(_btnStartMs), _at(_btnStartMs + _btnFadeMs),
               curve: Curves.easeOut)));
-  late final Animation<Offset> _newGameRise = Tween(
-          begin: const Offset(0, 0.08), end: Offset.zero)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(_at(_btnStartMs), _at(_btnStartMs + _btnFadeMs),
-              curve: Curves.easeOut)));
+  late final Animation<Offset> _newGameRise =
+      Tween(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+          CurvedAnimation(
+              parent: _entrance,
+              curve: Interval(_at(_btnStartMs), _at(_btnStartMs + _btnFadeMs),
+                  curve: Curves.easeOut)));
   // Continue's arrival: the same window shifted [_staggerMs] later.
   late final Animation<double> _continueFade = Tween(begin: 0.0, end: 1.0)
-      .animate(CurvedAnimation(parent: _entrance,
+      .animate(CurvedAnimation(
+          parent: _entrance,
           curve: Interval(_at(_btnStartMs + _staggerMs),
               _at(_btnStartMs + _staggerMs + _btnFadeMs),
               curve: Curves.easeOut)));
-  late final Animation<Offset> _continueRise = Tween(
-          begin: const Offset(0, 0.08), end: Offset.zero)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(_at(_btnStartMs + _staggerMs),
-              _at(_btnStartMs + _staggerMs + _btnFadeMs),
-              curve: Curves.easeOut)));
+  late final Animation<Offset> _continueRise =
+      Tween(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+          CurvedAnimation(
+              parent: _entrance,
+              curve: Interval(_at(_btnStartMs + _staggerMs),
+                  _at(_btnStartMs + _staggerMs + _btnFadeMs),
+                  curve: Curves.easeOut)));
   // The flavor line follows the buttons with a whisper of motion; the
   // vignette arrives last, rising the way the scene "lands".
   late final Animation<double> _flavorFade = Tween(begin: 0.0, end: 1.0)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(_at(_flavorStartMs),
-              _at(_flavorStartMs + _flavorMs), curve: Curves.easeOut)));
-  late final Animation<Offset> _flavorRise = Tween(
-          begin: const Offset(0, 0.03), end: Offset.zero)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(_at(_flavorStartMs),
-              _at(_flavorStartMs + _flavorMs), curve: Curves.easeOut)));
+      .animate(CurvedAnimation(
+          parent: _entrance,
+          curve: Interval(_at(_flavorStartMs), _at(_flavorStartMs + _flavorMs),
+              curve: Curves.easeOut)));
+  late final Animation<Offset> _flavorRise =
+      Tween(begin: const Offset(0, 0.03), end: Offset.zero).animate(
+          CurvedAnimation(
+              parent: _entrance,
+              curve: Interval(
+                  _at(_flavorStartMs), _at(_flavorStartMs + _flavorMs),
+                  curve: Curves.easeOut)));
   late final Animation<double> _vignetteFade = Tween(begin: 0.0, end: 1.0)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(_at(_vignetteStartMs),
-              _at(_vignetteStartMs + _vignetteMs), curve: Curves.easeOut)));
-  late final Animation<Offset> _vignetteRise = Tween(
-          begin: const Offset(0, 0.15), end: Offset.zero)
-      .animate(CurvedAnimation(parent: _entrance,
-          curve: Interval(_at(_vignetteStartMs),
-              _at(_vignetteStartMs + _vignetteMs), curve: Curves.easeOut)));
+      .animate(CurvedAnimation(
+          parent: _entrance,
+          curve: Interval(
+              _at(_vignetteStartMs), _at(_vignetteStartMs + _vignetteMs),
+              curve: Curves.easeOut)));
+  late final Animation<Offset> _vignetteRise =
+      Tween(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+          CurvedAnimation(
+              parent: _entrance,
+              curve: Interval(
+                  _at(_vignetteStartMs), _at(_vignetteStartMs + _vignetteMs),
+                  curve: Curves.easeOut)));
 
   bool _entranceStarted = false;
 
@@ -245,164 +292,206 @@ class _AppSplashState extends State<AppSplash>
     // The greeting reads the shared account state: signed-in players get
     // the welcome-back form, anonymous ones the introduction. An explicit
     // [AppSplash.welcomeName] overrides the display name only.
+    final strings = appLocale.strings;
     final signedIn = account.isCloudSignedIn || account.value != null;
-    final name = widget.welcomeName ??
-        account.value?.displayName ??
-        account.playerName;
-    if (!signedIn) return 'Welcome, $name, to ${widget.appName}';
-    return 'Welcome back, $name — ${widget.appName} awaits';
+    final name =
+        widget.welcomeName ?? account.value?.displayName ?? account.playerName;
+    if (!signedIn) return strings.welcome(name, widget.appName);
+    return strings.welcomeBack(name, widget.appName);
+  }  /// The Continue button's caption: the host's override wins; otherwise
+  /// the localized CONTINUE, or the NO SAVED GAMES caption while the
+  /// button is disabled.
+  String get _continueCaption {
+    if (widget.continueLabel != null) return widget.continueLabel!;
+    final strings = appLocale.strings;
+    return widget.continueEnabled ? strings.continueDefault : strings.noSavedGames;
   }
+
+  /// The PLAY button's caption (direct-entry variants): the host's
+  /// override wins, otherwise the localized default.
+  String get _directCaption =>
+      widget.directLabel ?? appLocale.strings.directEntry;
 
   @override
   Widget build(BuildContext context) {
     return _RevisitDetector(
       onReturn: _onRevisit,
       child: Scaffold(
-      body: Stack(fit: StackFit.expand, children: [
-        if (widget.background != null)
-          SvgPicture.asset(
-            widget.background!,
-            fit: BoxFit.cover,
-            key: const ValueKey('splash-bg'),
-          ),
-        // This visit's foreground vignette, pinned to the valley floor —
-        // the flavor line's scene acted out over the shared backdrop. It
-        // is the entrance's last arrival, rising into place — and on a
-        // revisit it cross-fades to the newly rolled scene.
-        if (_scene.vignette != null)
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: _Entrance(
-              fade: _vignetteFade,
-              rise: _vignetteRise,
-              fadeKey: const ValueKey('entrance-vignette-fade'),
-              child: AnimatedSwitcher(
-                duration: _swapDuration,
-                key: const ValueKey('splash-vignette-swap'),
-                child: Semantics(
-                  key: ValueKey('splash-scene-$_sceneIndex'),
-                  label: _scene.story,
-                  child: SizedBox(
-                    height: 150,
-                    width: double.infinity,
-                    child: SvgPicture.asset(
-                      _scene.vignette!,
-                      fit: BoxFit.contain,
-                      key: const ValueKey('splash-vignette'),
+        body: Stack(fit: StackFit.expand, children: [
+          if (widget.background != null)
+            SvgPicture.asset(
+              widget.background!,
+              fit: BoxFit.cover,
+              key: const ValueKey('splash-bg'),
+            ),
+          // This visit's foreground vignette, pinned to the valley floor —
+          // the flavor line's scene acted out over the shared backdrop. It
+          // is the entrance's last arrival, rising into place — and on a
+          // revisit it cross-fades to the newly rolled scene.
+          if (_scene.vignette != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: _Entrance(
+                fade: _vignetteFade,
+                rise: _vignetteRise,
+                fadeKey: const ValueKey('entrance-vignette-fade'),
+                child: AnimatedSwitcher(
+                  duration: _swapDuration,
+                  key: const ValueKey('splash-vignette-swap'),
+                  child: Semantics(
+                    key: ValueKey('splash-scene-$_sceneIndex'),
+                    label: _scene.story,
+                    child: SizedBox(
+                      height: 150,
+                      width: double.infinity,
+                      child: SvgPicture.asset(
+                        _scene.vignette!,
+                        fit: BoxFit.contain,
+                        key: const ValueKey('splash-vignette'),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        SafeArea(
-          child: Column(children: [
-            AppTopBar(settingsBuilder: widget.settingsBuilder),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      const Spacer(),
-                      // The entrance: title + welcome fade and rise as one
-                      // block; the buttons stagger in below; the flavor
-                      // line follows the buttons on its own late beat.
-                      SlideTransition(
-                        position: _titleRise,
-                        child: FadeTransition(
-                          opacity: _titleFade,
-                          child: Column(children: [
-                            Text(widget.appName.toUpperCase(),
-                                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 3,
-                                    color: Colors.white)),
-                            const SizedBox(height: 8),
-                            Text(_welcome,
-                                key: const ValueKey('welcome-message'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(color: Colors.white70),
-                                textAlign: TextAlign.center),
-                            const SizedBox(height: 6),
-                            _Entrance(
-                              fade: _flavorFade,
-                              rise: _flavorRise,
-                              fadeKey: const ValueKey('entrance-flavor-fade'),
-                              child: AnimatedSwitcher(
-                                duration: _swapDuration,
-                                key: const ValueKey('splash-flavor'),
-                                child: Text(_scene.line,
-                                    key: ValueKey(
-                                        'splash-scene-$_sceneIndex'),
-                                    style: TextStyle(
-                                        color: Colors.amber.shade200,
-                                        fontStyle: FontStyle.italic),
-                                    textAlign: TextAlign.center),
+          SafeArea(
+            child: Column(children: [
+              AppTopBar(settingsBuilder: widget.settingsBuilder),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Spacer(),
+                            // The entrance: title + welcome fade and rise as one
+                            // block; the buttons stagger in below; the flavor
+                            // line follows the buttons on its own late beat.
+                            SlideTransition(
+                              position: _titleRise,
+                              child: FadeTransition(
+                                opacity: _titleFade,
+                                child: Column(children: [
+                                  Text(widget.appName.toUpperCase(),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineMedium
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 3,
+                                              color: Colors.white)),
+                                  const SizedBox(height: 8),
+                                  Text(_welcome,
+                                      key: const ValueKey('welcome-message'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(color: Colors.white70),
+                                      textAlign: TextAlign.center),
+                                  const SizedBox(height: 6),
+                                  _Entrance(
+                                    fade: _flavorFade,
+                                    rise: _flavorRise,
+                                    fadeKey:
+                                        const ValueKey('entrance-flavor-fade'),
+                                    child: AnimatedSwitcher(
+                                      duration: _swapDuration,
+                                      key: const ValueKey('splash-flavor'),
+                                      child: Text(_scene.line,
+                                          key: ValueKey(
+                                              'splash-scene-$_sceneIndex'),
+                                          style: TextStyle(
+                                              color: Colors.amber.shade200,
+                                              fontStyle: FontStyle.italic),
+                                          textAlign: TextAlign.center),
+                                    ),
+                                  ),
+                                ]),
                               ),
                             ),
-                          ]),
-                        ),
-                      ),
-                      const SizedBox(height: 40),
-                      // The buttons stagger in after the title: New Game
-                      // leads, Continue follows _staggerMs later.
-                      Column(children: [
-                        if (widget.onNewGame != null) ...[
-                          _Entrance(
-                            fade: _newGameFade,
-                            rise: _newGameRise,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                key: const ValueKey('splash-new-game'),
-                                onPressed: widget.onNewGame,
-                                icon: const Icon(Icons.add_circle_outline),
-                                label: const Padding(
-                                    padding: EdgeInsets.all(14),
-                                    child: Text('NEW GAME')),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        if (widget.actions == SplashActions.both)
-                          _Entrance(
-                            fade: _continueFade,
-                            rise: _continueRise,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                key: const ValueKey('splash-continue'),
-                                onPressed: widget.continueEnabled
-                                    ? widget.onContinue
-                                    : null,
-                                icon: const Icon(Icons.play_arrow),
-                                label: Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: Text(widget.continueEnabled
-                                      ? widget.continueLabel
-                                      : 'NO SAVED GAMES'),
+                            const SizedBox(height: 40),
+                            // The buttons stagger in after the title: the
+                            // first one leads, the rest follow _staggerMs
+                            // apart. The direct variants put PLAY in front
+                            // (entering the app is the everyday path); the
+                            // classic variants lead with NEW GAME.
+                            Column(children: [
+                              if (widget.actions == SplashActions.direct ||
+                                  widget.actions ==
+                                      SplashActions.directAndNewGame) ...[
+                                _Entrance(
+                                  fade: _newGameFade,
+                                  rise: _newGameRise,
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      key: const ValueKey('splash-direct'),
+                                      onPressed: widget.onDirect,
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: Padding(
+                                          padding: const EdgeInsets.all(14),
+                                          child: Text(_directCaption)),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          ),
-                      ]),
-                      const Spacer(),
-                      Text(widget.description,
-                          style: TextStyle(color: Colors.grey.shade400),
-                          textAlign: TextAlign.center),
-                    ]),
+                                const SizedBox(height: 12),
+                              ],
+                              if (widget.onNewGame != null &&
+                                  widget.actions != SplashActions.direct) ...[
+                                _Entrance(
+                                  fade: _newGameFade,
+                                  rise: _newGameRise,
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      key: const ValueKey('splash-new-game'),
+                                      onPressed: widget.onNewGame,
+                                      icon:
+                                          const Icon(Icons.add_circle_outline),
+                                      label: Padding(
+                                          padding: const EdgeInsets.all(14),
+                                          child: Text(widget.startLabel ??
+                                              appLocale.strings.newGame)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              if (widget.actions == SplashActions.both)
+                                _Entrance(
+                                  fade: _continueFade,
+                                  rise: _continueRise,
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      key: const ValueKey('splash-continue'),
+                                      onPressed: widget.continueEnabled
+                                          ? widget.onContinue
+                                          : null,
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: Padding(
+                                        padding: const EdgeInsets.all(14),
+                                        child: Text(_continueCaption),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ]),
+                            const Spacer(),
+                            Text(widget.description,
+                                style: TextStyle(color: Colors.grey.shade400),
+                                textAlign: TextAlign.center),
+                          ]),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ]),
-        ),
-      ]),
+            ]),
+          ),
+        ]),
       ),
     );
   }

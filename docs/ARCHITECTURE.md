@@ -78,6 +78,7 @@ between them. There is no authoritative server-side game state.
 | `LobbySeat` | The wire format for a seat: name, `colorHex`, pacing, ready, AI flag. JSON roundtrip with defaults so old saves load. |
 | `SyncEvent` | Poll result item — `SyncEventType { sessionUpdate, playerJoined, playerReady }` plus `playerName` and a payload map. |
 | `GameServerConnection` + dialog | The stored game-server URL/key everything above needs; `CloudRoomService.fromStoredConnection()` reads it. |
+| Server-side auth & OAuth | The game server's GoTrue/Supabase auth service: email + provider sign-in ride the same `/auth/v1/*` surface the client stores as its server URL. Provider enabling and redirect allow-listing are the operator's checklist in [OAUTH_SERVER_SETUP.md](OAUTH_SERVER_SETUP.md); the multiplayer schema in each game's `server/schema.sql` is untouched by sign-in. |
 | `bannerColor` codecs | The single hex↔Color path for every banner tint. |
 
 ## Invariants worth preserving

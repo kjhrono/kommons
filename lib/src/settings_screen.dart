@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app_settings.dart';
 import 'auth_service.dart';
+import 'shell_strings.dart';
 
 /// A handler an app registers for an OAuth provider button ('google',
 /// 'github', …). The shell renders the button and calls this on tap; the
@@ -9,13 +12,35 @@ import 'auth_service.dart';
 /// the hosting app.
 typedef OAuthProviderHandler = Future<void> Function();
 
+/// The reference OAuth wiring for hosts using the shared web flow: maps
+/// each provider id ('google', 'github' — anything the game server has
+/// configured in its GoTrue/Supabase dashboard) to the account controller's
+/// [AccountController.signInWithProvider]. Pass it straight in:
+///
+/// ```dart
+/// SettingsScreen(oauthProviders: oauthPopupHandlers())
+/// ```
+///
+/// Errors surface through the settings screen's snackbar; a dismissed
+/// consent screen is a quiet no-op. Hosts running a custom flow (dedicated
+/// callback page, a fully hand-rolled deep-link delivery) keep hand-rolling
+/// their handlers map instead.
+Map<String, OAuthProviderHandler> oauthPopupHandlers({
+  List<String> providers = const ['google', 'github'],
+}) =>
+    {
+      for (final provider in providers)
+        provider: () => account.signInWithProvider(provider),
+    };
+
 /// Lets a hosting app wire the "connect your server" affordance inside the
 /// account card: the shell asks [isConfigured] once on mount and shows the
 /// hint + connect button until it answers true; [showConnectionDialog]
 /// opens the app's own connection UI and reports whether a server ended up
 /// configured (false/null = cancelled).
 class ServerConnectionSetup {
-  const ServerConnectionSetup({required this.isConfigured, required this.showConnectionDialog});
+  const ServerConnectionSetup(
+      {required this.isConfigured, required this.showConnectionDialog});
 
   final Future<bool> Function() isConfigured;
   final Future<bool> Function(BuildContext context) showConnectionDialog;
@@ -29,7 +54,8 @@ class ServerConnectionSetup {
 ///    is what a cloud save service will key shared games by.
 ///  * Player name — how the realm addresses you while anonymous (and the
 ///    display name of an email account).
-///  * Language — a placeholder with the picker ready for translations.
+///  * Language — the persisted app-wide language ([appLocale]); hosts put it
+///    on `MaterialApp.locale` so the shell re-renders in that language.
 ///
 /// Games append their own cards below these through [SettingsScreen.extraSections]
 /// and wire server onboarding through [SettingsScreen.serverSetup] — the
@@ -41,6 +67,7 @@ class SettingsScreen extends StatefulWidget {
     this.extraSections = const <Widget>[],
     this.oauthProviders = const <String, OAuthProviderHandler>{},
     this.serverSetup,
+    this.showAccountCard = true,
   });
 
   /// Which game is hosting the screen. Tags the route so games can share
@@ -59,6 +86,11 @@ class SettingsScreen extends StatefulWidget {
   /// while no game server is configured. Omitted on hosts that onboard
   /// elsewhere (cloud sign-in then explains itself through its error).
   final ServerConnectionSetup? serverSetup;
+
+  /// Hosts that handle identity elsewhere (their own auth stack or screen)
+  /// hide the shared email/sign-up card entirely; name and language cards
+  /// still render, and the host appends its own sections below them.
+  final bool showAccountCard;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -90,9 +122,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.serverSetup?.isConfigured().then((configured) {
       if (mounted) setState(() => _serverConfigured = configured);
     });
+    // The splash and the top bar preload the locale; this covers settings
+    // as the first screen (deep links, tests). No-op when already loaded.
+    unawaited(appLocale.load());
     if (account.isLoaded) {
       _pendingSignupEmail = account.pendingSignupEmail;
-      if (_pendingSignupEmail != null) _emailController.text = _pendingSignupEmail!;
+      if (_pendingSignupEmail != null) {
+        _emailController.text = _pendingSignupEmail!;
+      }
     } else {
       account.load().then((_) {
         if (!mounted) return;
@@ -129,249 +166,334 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = appLocale.strings;
     final account_ = account.value;
     return Scaffold(
-      appBar: AppBar(title: const Text('SETTINGS')),
+      appBar: AppBar(title: Text(strings.settingsTitle)),
       body: ListView(
           key: const ValueKey('settings-list'),
           padding: const EdgeInsets.all(16),
           children: [
-        // -- Account -------------------------------------------------------
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                const Icon(Icons.person_outline),
-                const SizedBox(width: 8),
-                const Text('ACCOUNT', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                const Spacer(),
-                Text(
-                  account_ == null ? 'Guest' : account_.provider,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            // -- Account (host may hide it and own identity elsewhere) ----------
+            if (widget.showAccountCard) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          const Icon(Icons.person_outline),
+                          const SizedBox(width: 8),
+                          Text(strings.accountHeader,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2)),
+                          const Spacer(),
+                          Text(
+                            account_ == null
+                                ? strings.guest
+                                : account_.provider,
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 12),
+                          ),
+                        ]),
+                        const SizedBox(height: 12),
+                        if (_pendingSignupEmail != null) ...[
+                          // -- Awaiting email confirmation ---------------------------------
+                          Row(children: [
+                            const Icon(Icons.mark_email_unread_outlined,
+                                color: Colors.amber),
+                            const SizedBox(width: 8),
+                            Text(strings.checkYourInbox,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.2)),
+                          ]),
+                          const SizedBox(height: 8),
+                          Text(
+                            strings.confirmationSent(_pendingSignupEmail!),
+                            style: TextStyle(color: Colors.grey.shade400),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            key: const ValueKey('verification-code-field'),
+                            controller: _codeController,
+                            decoration: InputDecoration(
+                              labelText: strings.verificationCodeLabel,
+                              hintText: strings.verificationCodeHint,
+                              border: const OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.number,
+                            onSubmitted: (_) => _verifyCode(),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            FilledButton.icon(
+                              key: const ValueKey('verify-code'),
+                              onPressed: _cloudBusy ? null : _verifyCode,
+                              icon: _cloudBusy
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.verified_outlined),
+                              label: Text(strings.confirm),
+                            ),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              key: const ValueKey('resend-confirmation'),
+                              onPressed:
+                                  _cloudBusy ? null : _resendConfirmation,
+                              child: Text(strings.resendEmail),
+                            ),
+                          ]),
+                          TextButton(
+                            key: const ValueKey('cancel-pending'),
+                            onPressed: _cancelPendingSignup,
+                            child: Text(strings.useDifferentAddress),
+                          ),
+                        ] else if (account_ == null) ...[
+                          Text(strings.signInPitch,
+                              style: TextStyle(color: Colors.grey.shade400)),
+                          const SizedBox(height: 12),
+                          TextField(
+                            key: const ValueKey('email-field'),
+                            controller: _emailController,
+                            decoration: InputDecoration(
+                              labelText: strings.emailLabel,
+                              hintText: strings.emailHint,
+                              errorText: _emailError,
+                              border: const OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            key: const ValueKey('password-field'),
+                            controller: _passwordController,
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              labelText: strings.passwordLabel,
+                              hintText: strings.passwordHint,
+                              border: const OutlineInputBorder(),
+                            ),
+                            autofillHints: const [AutofillHints.password],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            FilledButton.icon(
+                              key: const ValueKey('email-signin'),
+                              onPressed: _signIn,
+                              icon: const Icon(Icons.mail_outline),
+                              label: Text(strings.signInWithEmail),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              key: const ValueKey('oauth-google'),
+                              onPressed: _providerEnabled('google')
+                                  ? () => _runProvider('google')
+                                  : null,
+                              child: const Text('Google'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              key: const ValueKey('oauth-github'),
+                              onPressed: _providerEnabled('github')
+                                  ? () => _runProvider('github')
+                                  : null,
+                              child: const Text('GitHub'),
+                            ),
+                          ]),
+                          if (!_serverConfigured &&
+                              widget.serverSetup != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.dns_outlined,
+                                      size: 16, color: Colors.amber.shade300),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      strings.serverOnboardingHint,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ]),
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              key: const ValueKey('connect-server'),
+                              onPressed: () async {
+                                final configured = await widget.serverSetup!
+                                    .showConnectionDialog(context);
+                                if (configured && mounted) {
+                                  setState(() => _serverConfigured = true);
+                                }
+                              },
+                              icon: const Icon(Icons.lan_outlined),
+                              label: Text(strings.connectGameServer),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              key: const ValueKey('cloud-signin'),
+                              onPressed: _cloudBusy ? null : _cloudSignIn,
+                              icon: _cloudBusy
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.cloud_outlined),
+                              label: Text(strings.createOrSignInCloud),
+                            ),
+                          ),
+                        ] else ...[
+                          Text(strings.signedInAs(account_.email),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(
+                            account.isCloudSignedIn
+                                ? strings.cloudAccountReady
+                                : strings.deviceLocalAccount,
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 12),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            key: const ValueKey('signout'),
+                            // signOut is async (prefs write + best-effort server call)
+                            // but its notifier update is synchronous — call it outside
+                            // setState; wrapping it inside would return a Future from
+                            // the callback and throw.
+                            onPressed: () {
+                              account.signOut();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.logout),
+                            label: Text(strings.signOut),
+                          ),
+                        ],
+                      ]),
                 ),
-              ]),
-              const SizedBox(height: 12),
-              if (_pendingSignupEmail != null) ...[
-                // -- Awaiting email confirmation ---------------------------------
-                Row(children: [
-                  const Icon(Icons.mark_email_unread_outlined, color: Colors.amber),
-                  const SizedBox(width: 8),
-                  const Text('CHECK YOUR INBOX', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                ]),
-                const SizedBox(height: 8),
-                Text(
-                  'We sent a confirmation to $_pendingSignupEmail. Enter the code from the email — or open its link — to finish registering.',
-                  style: TextStyle(color: Colors.grey.shade400),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const ValueKey('verification-code-field'),
-                  controller: _codeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Verification code',
-                    hintText: 'the 6 digits from the email',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                  onSubmitted: (_) => _verifyCode(),
-                ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  FilledButton.icon(
-                    key: const ValueKey('verify-code'),
-                    onPressed: _cloudBusy ? null : _verifyCode,
-                    icon: _cloudBusy
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.verified_outlined),
-                    label: const Text('Confirm'),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    key: const ValueKey('resend-confirmation'),
-                    onPressed: _cloudBusy ? null : _resendConfirmation,
-                    child: const Text('Resend email'),
-                  ),
-                ]),
-                TextButton(
-                  key: const ValueKey('cancel-pending'),
-                  onPressed: _cancelPendingSignup,
-                  child: const Text('Use a different address'),
-                ),
-              ] else if (account_ == null) ...[
-                Text('Sign in to keep your name, saves and shared games on the cloud. Email comes first; other providers can join later.',
-                    style: TextStyle(color: Colors.grey.shade400)),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const ValueKey('email-field'),
-                  controller: _emailController,
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'you@example.com',
-                    errorText: _emailError,
-                    border: const OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  key: const ValueKey('password-field'),
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Password (cloud account)',
-                    hintText: '6+ characters — registers on first use',
-                    border: OutlineInputBorder(),
-                  ),
-                  autofillHints: const [AutofillHints.password],
-                ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  FilledButton.icon(
-                    key: const ValueKey('email-signin'),
-                    onPressed: _signIn,
-                    icon: const Icon(Icons.mail_outline),
-                    label: const Text('Sign in with email'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    key: const ValueKey('oauth-google'),
-                    onPressed: _providerEnabled('google') ? () => _runProvider('google') : null,
-                    child: const Text('Google'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    key: const ValueKey('oauth-github'),
-                    onPressed: _providerEnabled('github') ? () => _runProvider('github') : null,
-                    child: const Text('GitHub'),
-                  ),
-                ]),
-                if (!_serverConfigured && widget.serverSetup != null) ...[
-                  const SizedBox(height: 8),
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Icon(Icons.dns_outlined, size: 16, color: Colors.amber.shade300),
-                    const SizedBox(width: 6),
-                    const Expanded(
-                      child: Text(
-                        'Cloud accounts register on your game server — connect once below (the same connection online multiplayer uses).',
-                        style: TextStyle(fontSize: 12),
+              ),
+            ],
+            // -- Player name ---------------------------------------------------
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.badge_outlined),
+                        const SizedBox(width: 8),
+                        Text(strings.playerNameHeader,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2)),
+                      ]),
+                      const SizedBox(height: 12),
+                      TextField(
+                        key: const ValueKey('player-name-field'),
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: strings.playerNameLabel,
+                          border: const OutlineInputBorder(),
+                        ),
+                        onSubmitted: _saveName,
                       ),
-                    ),
-                  ]),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    key: const ValueKey('connect-server'),
-                    onPressed: () async {
-                      final configured = await widget.serverSetup!.showConnectionDialog(context);
-                      if (configured && mounted) setState(() => _serverConfigured = true);
-                    },
-                    icon: const Icon(Icons.lan_outlined),
-                    label: const Text('Connect game server'),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    key: const ValueKey('cloud-signin'),
-                    onPressed: _cloudBusy ? null : _cloudSignIn,
-                    icon: _cloudBusy
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.cloud_outlined),
-                    label: const Text('Create / sign in to cloud account'),
-                  ),
-                ),
-              ] else ...[
-                Text('Signed in as ${account_.email}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(
-                  account.isCloudSignedIn
-                      ? 'Cloud account — verified by your game server, ready for cloud saves.'
-                      : 'Remembered on this device only. Add a password above for a cloud account.',
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  key: const ValueKey('signout'),
-                  // signOut is async (prefs write + best-effort server call)
-                  // but its notifier update is synchronous — call it outside
-                  // setState; wrapping it inside would return a Future from
-                  // the callback and throw.
-                  onPressed: () {
-                    account.signOut();
-                    setState(() {});
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Sign out'),
-                ),
-              ],
-            ]),
-          ),
-        ),
-        // -- Player name ---------------------------------------------------
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                const Icon(Icons.badge_outlined),
-                const SizedBox(width: 8),
-                const Text('PLAYER NAME', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-              ]),
-              const SizedBox(height: 12),
-              TextField(
-                key: const ValueKey('player-name-field'),
-                controller: _nameController,
-                decoration: InputDecoration(
-                  labelText: 'How the realm addresses you',
-                  border: const OutlineInputBorder(),
-                ),
-                onSubmitted: _saveName,
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        key: const ValueKey('save-name'),
+                        onPressed: () => _saveName(_nameController.text),
+                        icon: const Icon(Icons.check),
+                        label: Text(strings.saveName),
+                      ),
+                    ]),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                key: const ValueKey('save-name'),
-                onPressed: () => _saveName(_nameController.text),
-                icon: const Icon(Icons.check),
-                label: const Text('Save name'),
+            ),
+            // -- Language -------------------------------------------------------
+            Card(
+              key: const ValueKey('language-tile'),
+              child: ListTile(
+                leading: const Icon(Icons.translate),
+                title: Text(strings.language),
+                subtitle: Text(appLocale.isSet
+                    ? appLocale.value!.nativeName
+                    : 'English — ${strings.moreLanguagesComing}'),
+                trailing: const Icon(Icons.expand_more),
+                onTap: _pickLanguage,
               ),
-            ]),
-          ),
-        ),
-        // -- Language ------------------------------------------------------
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.translate),
-            title: const Text('Language'),
-            subtitle: const Text('English — more languages coming'),
-            key: const ValueKey('language-tile'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {}, // translations land here
-          ),
-        ),
-        // -- Game sections ---------------------------------------------------
-        ...widget.extraSections,
-        Text(
-          'Settings are stored on this device. Signing in prepares them for cloud sync.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
-        ),
-      ]),
+            ),
+            // -- Game sections ---------------------------------------------------
+            ...widget.extraSections,
+            Text(
+              strings.settingsFooter,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+            ),
+          ]),
     );
+  }
+
+  /// The language dialog: one entry per supported language, checked where
+  /// the persisted notifier stands. Picking pops and persists; cancelling
+  /// keeps everything as it was.
+  Future<void> _pickLanguage() async {
+    final chosen = await showDialog<ShellLanguage>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(appLocale.strings.language),
+        content: SingleChildScrollView(
+          child: RadioGroup<ShellLanguage>(
+            groupValue: appLocale.value,
+            onChanged: (value) => Navigator.pop(dialogContext, value),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final language in ShellLanguage.values)
+                  RadioListTile<ShellLanguage>(
+                    key: ValueKey('language-${language.code}'),
+                    value: language,
+                    title: Text(language.nativeName),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('cancel-language'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(appLocale.strings.cancel),
+          ),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+    await appLocale.setLanguage(chosen);
+    if (mounted) setState(() {});
   }
 
   Future<void> _signIn() async {
     final email = _emailController.text.trim();
     final valid = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
     if (!valid) {
-      setState(() => _emailError = 'Enter a valid email address');
+      setState(() => _emailError = appLocale.strings.invalidEmail);
       return;
     }
     setState(() {
@@ -391,17 +513,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      setState(() => _emailError = 'Enter a valid email address');
+      setState(() => _emailError = appLocale.strings.invalidEmail);
       return;
     }
     if (password.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choose a password of at least 6 characters.')),
+        SnackBar(content: Text(appLocale.strings.shortPassword)),
       );
       return;
     }
     if (!_serverConfigured && widget.serverSetup != null) {
-      final configured = await widget.serverSetup!.showConnectionDialog(context);
+      final configured =
+          await widget.serverSetup!.showConnectionDialog(context);
       if (!mounted) return;
       if (!configured) return; // player cancelled
       setState(() => _serverConfigured = true);
@@ -422,7 +545,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _pendingSignupEmail = email);
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _cloudBusy = false);
     }
@@ -432,7 +556,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _verifyCode() async {
     final code = _codeController.text.trim();
     if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter the code from the email.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(appLocale.strings.enterCode)));
       return;
     }
     setState(() => _cloudBusy = true);
@@ -446,7 +571,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } on AuthException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
       }
     } finally {
       if (mounted) setState(() => _cloudBusy = false);
@@ -458,11 +584,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await account.resendSignupConfirmation();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Confirmation email sent again.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.confirmationResent)));
       }
     } on AuthException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
       }
     }
   }

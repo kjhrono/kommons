@@ -1,4 +1,4 @@
-name: kj_probe
+name: probe
 description: >- 
   A minimal second kjhrono game. Exists to prove the kommons shell
   (splash, settings, lobby wizard, multiplayer core) reuses cleanly from a

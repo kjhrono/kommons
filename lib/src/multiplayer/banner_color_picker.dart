@@ -33,6 +33,17 @@ Color bannerColor(String hex) {
   return Color(int.tryParse(padded, radix: 16) ?? 0xFF9C27FF);
 }
 
+/// The first palette color no seat has taken, cycling from the start when a
+/// table outgrows the palette. Complements [bannerColorHex] (arbitrary color
+/// → hex) for the common "give the new seat a free banner" case.
+String nextFreeBannerColorHex({Set<String> taken = const {}}) {
+  final upper = taken.map((h) => h.toUpperCase()).toSet();
+  for (final hex in bannerPalette) {
+    if (!upper.contains(hex.toUpperCase())) return hex;
+  }
+  return bannerPalette.first;
+}
+
 /// Shows the banner color picker for [slot]. Returns the chosen ARGB hex
 /// string, or null when the dialog was dismissed. [takenColors] lists the
 /// colorHex values other seats already use; those swatches get a marker and

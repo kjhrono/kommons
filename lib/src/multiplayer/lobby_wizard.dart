@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../app_settings.dart';
+
 /// One node of the lobby wizard's progress rail.
 class LobbyStepDescriptor {
   const LobbyStepDescriptor({required this.title, required this.icon, this.subtitle});
@@ -77,7 +79,8 @@ class LobbyWizard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Step ${current + 1} of ${steps.length} — ${steps[current].title}',
+                    Text(appLocale.strings
+                        .stepHeader(current + 1, steps.length, steps[current].title),
                         style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
                     if (steps[current].subtitle != null) ...[
                       const SizedBox(height: 4),
@@ -134,14 +137,14 @@ class LobbyWizard extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: () => onGoto(current - 1),
           icon: const Icon(Icons.chevron_left),
-          label: const Text('Back'),
+          label: Text(appLocale.strings.back),
         ),
       const Spacer(),
       if (current < steps.length - 1)
         FilledButton.icon(
           onPressed: mayContinue ? () => onGoto(current + 1) : null,
           icon: const Icon(Icons.chevron_right),
-          label: const Text('Continue'),
+          label: Text(appLocale.strings.continueLabel),
         ),
     ]);
   }

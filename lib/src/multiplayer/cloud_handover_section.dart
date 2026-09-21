@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_settings.dart';
 import 'cloud_room_card.dart';
 import 'cloud_room_service.dart';
 
@@ -43,7 +44,7 @@ class CloudHandoverSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
-        Text('PENDING HOST HANDOVERS',
+        Text(appLocale.strings.pendingHandovers,
             style: TextStyle(
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,

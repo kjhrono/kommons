@@ -12,23 +12,35 @@ new-game adoption recipe.
 | Game | Notes |
 | --- | --- |
 | [kapaxinfiniti](https://github.com/kjhrono/kapaxinfiniti) | The flagship — settlement building, taming, spell cards, challenges. |
-| [`examples/kj_probe`](examples/kj_probe) | The reuse probe, shipped with the package: a complete minimal game on the shared shell (~200 lines) — the starting template for a new game and a canary consumer in CI. |
+| [`examples/probe`](examples/probe) | **HERALD** — the reuse probe, shipped with the package: a complete minimal game on the shared shell (~200 lines), with the herald who walks the road ahead of the banners as its face and `probe` as its package name. The starting template for a new game and a canary consumer in CI. |
 
 ## What's inside
 
-- **Shell** — `AppSplash` (art + entrance cascade), `AppTopBar`, the
-  shared `SettingsScreen` with email + OAuth-seam sign-in, persisted
-  day/night theme (`appTheme`), account state (`account`).
+- **Shell** — `ShellApp` (the root: MaterialApp wired with the persisted
+  theme + locale and the shell preloads), `AppSplash` (art + entrance
+  cascade; `SplashActions.direct*` for apps that enter without a lobby),
+  `AppTopBar`, the shared `SettingsScreen` with email +
+  reference OAuth sign-in (Google, GitHub — the game server's hosted
+  authorize flow: popups on the web, deep links through the system browser
+  on Android/iOS), persisted day/night theme (`appTheme`),
+  persisted language (`appLocale`, strings in `ShellStrings`), account
+  state (`account`).
 - **Multiplayer core** — `LobbySeat`, the `GameSyncService` transport
   (in-memory and PostgREST implementations), `CloudRoomService` +
   `CloudRoomCard` + `CloudHandoverSection` (saved-games listing, host
-  handover, crown claim), `LobbyWizard`, banner colors, the game-server
+  handover, crown claim), `LobbyWizard` (multi-step) and `SharedLobbyStep`
+  (one screen: seats by game number or solo, one handoff callback), banner
+  colors, the game-server
   connection dialog. How the services relate to a game's session:
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Tooling** — `tool/deploy.sh` (config-driven commit → push → sync →
   migrate → build → publish, per-user via a git-ignored `deploy.config`,
   template in `deploy.config.example`) and `tool/verify_consumers.sh`
   (the one-command gate over package + probe + kapax, also the CI step).
+
+Server operators: enabling Google/GitHub and allow-listing redirect
+origins on the game server is documented in
+[docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md).
 
 ## Development
 

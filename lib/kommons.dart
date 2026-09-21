@@ -14,7 +14,10 @@ export 'src/app_settings.dart';
 export 'src/app_top_bar.dart';
 export 'src/auth_service.dart';
 export 'src/settings_screen.dart';
+export 'src/shell_strings.dart';
 export 'src/app_splash.dart';
+export 'src/oauth_popup_launcher.dart';
+export 'src/shell_app.dart';
 
 // Multiplayer core: seat model, sync transport contracts and implementations,
 // room registry, server connection dialog, banner color picker.
@@ -25,5 +28,6 @@ export 'src/multiplayer/cloud_room_service.dart';
 export 'src/multiplayer/game_server_dialog.dart';
 export 'src/multiplayer/banner_color_picker.dart';
 export 'src/multiplayer/lobby_wizard.dart';
+export 'src/multiplayer/lobby_step.dart';
 export 'src/multiplayer/cloud_room_card.dart';
 export 'src/multiplayer/cloud_handover_section.dart';

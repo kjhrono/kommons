@@ -11,7 +11,7 @@
 #
 # Consumers (edit CONSUMERS below as games join):
 #   - the package itself (analyze + test)
-#   - examples/kj_probe  (analyze + test, path dep on ../..)
+#   - examples/probe    (analyze + test, path dep on ../..)
 #   - ../kapaxinfiniti   (analyze + test, path dep on ../kommons)
 #
 # Every project runs even if an earlier one fails; the summary at the end
@@ -42,7 +42,7 @@ fi
 # name | directory | gates: a=analyze, t=test
 CONSUMERS=(
   "commons|${COMMONS_DIR}|at"
-  "kj_probe|${COMMONS_DIR}/examples/kj_probe|at"
+  "probe|${COMMONS_DIR}/examples/probe|at"
   "kapax|${COMMONS_DIR}/../kapaxinfiniti|at"
 )
 

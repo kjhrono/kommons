@@ -84,7 +84,7 @@ class _AppTopBarState extends State<AppTopBar> {
         // Right: theme toggle and settings — identical on every host screen.
         IconButton(
           key: const ValueKey('theme-toggle'),
-          tooltip: 'Switch day/night theme',
+          tooltip: appLocale.strings.switchThemeTooltip,
           icon: Icon(
             appTheme.mode == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
             size: 20,
@@ -93,7 +93,7 @@ class _AppTopBarState extends State<AppTopBar> {
         ),
         IconButton(
           key: const ValueKey('settings-button'),
-          tooltip: 'Settings',
+          tooltip: appLocale.strings.settingsTooltip,
           icon: const Icon(Icons.settings_outlined, size: 20),
           onPressed: _openSettings,
         ),
@@ -106,7 +106,7 @@ class _AppTopBarState extends State<AppTopBar> {
 /// shell is a Scaffold with its own AppBar (the lobby wizard). Same controls
 /// and settings routing as [AppTopBar] — one vocabulary everywhere.
 class AppTopBarActions extends StatefulWidget {
-  const AppTopBarActions({super.key, this.gameId = 'kapax'});
+  const AppTopBarActions({super.key, this.gameId = 'app'});
 
   final String gameId;
 
@@ -133,7 +133,7 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
       ),
       IconButton(
-        tooltip: 'Switch day/night theme',
+        tooltip: appLocale.strings.switchThemeTooltip,
         icon: Icon(
           appTheme.mode == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
           size: 20,
@@ -141,7 +141,7 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
         onPressed: () => setState(() => appTheme.mode = appTheme.mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light),
       ),
       IconButton(
-        tooltip: 'Settings',
+        tooltip: appLocale.strings.settingsTooltip,
         icon: const Icon(Icons.settings_outlined, size: 20),
         onPressed: () => Navigator.push(
           context,

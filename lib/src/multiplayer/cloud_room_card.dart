@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_settings.dart';
 import 'banner_color_picker.dart';
 import 'cloud_room_service.dart';
 import 'game_sync.dart';
@@ -75,6 +76,7 @@ class CloudRoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = appLocale.strings;
     final flashing = flash;
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(
@@ -89,7 +91,8 @@ class CloudRoomCard extends StatelessWidget {
       ),
       child: ListTile(
         leading: Icon(room.isLocalHost ? Icons.dns_outlined : Icons.groups_outlined),
-        title: Text('World ${room.code}${room.isLocalHost ? ' — hosted here' : ''}',
+        title: Text(
+            '${strings.worldTitle(room.code)}${room.isLocalHost ? strings.hostedHere : ''}',
             style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 4),
@@ -111,10 +114,11 @@ class CloudRoomCard extends StatelessWidget {
             ),
           const SizedBox(height: 4),
           Text([
-            'clock ${room.clock}',
-            if (room.hasPassword) 'password-protected',
-            if (room.designatedHost.isNotEmpty) 'host handover to ${room.designatedHost} pending',
-            if (!room.hasSnapshot) 'not started yet',
+            strings.clockStatus(room.clock),
+            if (room.hasPassword) strings.passwordProtected,
+            if (room.designatedHost.isNotEmpty)
+              strings.hostHandoverPending(room.designatedHost),
+            if (!room.hasSnapshot) strings.notStartedYet,
           ].join(' · ')),
         ]),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -124,7 +128,7 @@ class CloudRoomCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 4),
               child: Tooltip(
-                message: 'Accept the promotion of ${room.designatedHost} on this device',
+                message: strings.acceptPromotion(room.designatedHost),
                 child: claimBusy
                     ? const SizedBox(
                         width: 18,
@@ -133,14 +137,14 @@ class CloudRoomCard extends StatelessWidget {
                     : FilledButton.tonal(
                         key: ValueKey('cloud-claim-${room.code}'),
                         onPressed: () => onClaim!(room),
-                        child: const Text('Claim host'),
+                        child: Text(strings.claimHost),
                       ),
               ),
             ),
           if (hasMenu)
             PopupMenuButton<String>(
             key: ValueKey('cloud-menu-${room.code}'),
-            tooltip: 'Room options',
+            tooltip: strings.roomOptions,
             onSelected: (choice) {
               if (choice == 'delete') {
                 onDelete?.call(room);
@@ -160,8 +164,8 @@ class CloudRoomCard extends StatelessWidget {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.undo),
-                  title: const Text('Cancel handover'),
-                  subtitle: Text('Withdraw the pending promotion of ${room.designatedHost}',
+                  title: Text(strings.cancelHandover),
+                  subtitle: Text(strings.withdrawPromotion(room.designatedHost),
                       style: const TextStyle(fontSize: 11)),
                 ),
               ),
@@ -172,9 +176,9 @@ class CloudRoomCard extends StatelessWidget {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.how_to_reg_outlined),
-                  title: const Text('Hand over host'),
-                  subtitle: const Text('Promote a seat; the world continues',
-                      style: TextStyle(fontSize: 11)),
+                  title: Text(strings.handOverHost),
+                  subtitle: Text(strings.promoteSeatHint,
+                      style: const TextStyle(fontSize: 11)),
                 ),
               ),
             if (room.isLocalHost && onDelete != null)
@@ -184,9 +188,9 @@ class CloudRoomCard extends StatelessWidget {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.delete_forever),
-                  title: const Text('Delete room'),
-                  subtitle: const Text('Ends the world for every seat',
-                      style: TextStyle(fontSize: 11)),
+                  title: Text(strings.deleteRoom),
+                  subtitle: Text(strings.endsWorldHint,
+                      style: const TextStyle(fontSize: 11)),
                 ),
               ),
             if (!room.isLocalHost && onLeave != null)
@@ -196,9 +200,9 @@ class CloudRoomCard extends StatelessWidget {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.exit_to_app),
-                  title: const Text('Leave room'),
-                  subtitle: const Text('Your seat leaves; the world continues',
-                      style: TextStyle(fontSize: 11)),
+                  title: Text(strings.leaveRoom),
+                  subtitle: Text(strings.seatLeavesHint,
+                      style: const TextStyle(fontSize: 11)),
                 ),
               ),
             ],
@@ -230,7 +234,7 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
     ),
     const SizedBox(width: 4),
     Text(
-      isLocal ? '${seat.name} (you)' : seat.name,
+      isLocal ? appLocale.strings.youName(seat.name) : seat.name,
       style: TextStyle(
         fontSize: 12.5,
         fontWeight: isLocal ? FontWeight.w700 : FontWeight.w400,
@@ -239,15 +243,15 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
     ),
     if (room != null && seat.name == room.hostName) ...[
       const SizedBox(width: 3),
-      const Tooltip(
-        message: 'Host of this room',
-        child: Icon(Icons.workspace_premium, size: 13, color: Colors.amber),
+      Tooltip(
+        message: appLocale.strings.hostOfThisRoom,
+        child: const Icon(Icons.workspace_premium, size: 13, color: Colors.amber),
       ),
     ],
     const SizedBox(width: 2),
     Tooltip(
       message:
-          '${seat.name}${isLocal ? ' (you)' : ''} ${seat.ready ? 'is ready' : 'has not readied up yet'}',
+          '${seat.name}${isLocal ? ' ${appLocale.strings.youSuffix}' : ''} ${seat.ready ? appLocale.strings.readyLabel : appLocale.strings.notReadyLabel}',
       child: Icon(
         seat.ready ? Icons.check_circle : Icons.hourglass_empty,
         size: 13,
@@ -277,12 +281,11 @@ Future<String?> showHandoverSeatPicker(BuildContext context, CloudRoom room,
   return showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('Hand over world ${room.code}'),
+      title: Text(appLocale.strings.handoverPickerTitle(room.code)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-              'Choose the seat that becomes the host. The world keeps running; they claim host powers from their device.'),
+          Text(appLocale.strings.chooseHostBody),
           const SizedBox(height: 8),
           for (final seat in candidates)
             ListTile(
@@ -301,7 +304,8 @@ Future<String?> showHandoverSeatPicker(BuildContext context, CloudRoom room,
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: Text(appLocale.strings.cancel)),
       ],
     ),
   );
@@ -313,20 +317,20 @@ Future<bool> confirmDeleteRoomDialog(BuildContext context, CloudRoom room) async
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('Delete world ${room.code}?'),
+      title: Text(appLocale.strings.deleteRoomTitle(room.code)),
       content: Text(
-        'The room is removed for every seat — ${room.seats.map((s) => s.name).join(', ')}. '
-        'Their devices keep nothing but their local saves. This cannot be undone.',
+        appLocale.strings
+            .deleteRoomBody(room.seats.map((s) => s.name).join(', ')),
       ),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep it')),
+            child: Text(appLocale.strings.keepIt)),
         FilledButton.icon(
           key: const ValueKey('confirm-delete-room'),
           onPressed: () => Navigator.pop(context, true),
           icon: const Icon(Icons.delete_forever),
-          label: const Text('Delete for everyone'),
+          label: Text(appLocale.strings.deleteForEveryone),
         ),
       ],
     ),
@@ -341,23 +345,25 @@ Future<bool> confirmLeaveRoomDialog(BuildContext context, CloudRoom room,
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('Leave world ${room.code}?'),
+      title: Text(appLocale.strings.leaveRoomTitle(room.code)),
       content: Text(
         seatName == null
-            ? 'Your seat departs and the world keeps running for '
-                '${room.seats.map((s) => s.name).join(', ')} — your local save stays on this device.'
-            : 'Your seat ($seatName) is removed from the roster. The world keeps running for '
-                '${room.seats.map((s) => s.name).where((n) => n != seatName).join(', ')}.',
+            ? appLocale.strings
+                .leaveRoomBodyAll(room.seats.map((s) => s.name).join(', '))
+            : appLocale.strings.leaveRoomBodySeat(
+                seatName,
+                room.seats.map((s) => s.name).where((n) => n != seatName).join(', '),
+              ),
       ),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay')),
+            child: Text(appLocale.strings.stay)),
         FilledButton.icon(
           key: const ValueKey('confirm-leave-room'),
           onPressed: () => Navigator.pop(context, true),
           icon: const Icon(Icons.exit_to_app),
-          label: const Text('Leave'),
+          label: Text(appLocale.strings.leave),
         ),
       ],
     ),

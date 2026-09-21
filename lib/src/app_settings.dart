@@ -3,7 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'auth_service.dart';
+import 'oauth_popup_launcher.dart' as oauth_launcher;
+import 'shell_strings.dart';
 
 /// A game-server (auth-backend) connection an app hands to the account
 /// controller: where the GoTrue-compatible auth service lives and which
@@ -70,6 +74,70 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
   static const _prefKey = 'prefs.app.themeMode';
 }
 
+/// The app's language, persisted and read by the root widget to build the
+/// MaterialApp's `locale`. Same shape as [AppThemeNotifier]: a global
+/// [ValueNotifier] so the picker in settings repaints the whole app, and a
+/// [load] that restores the remembered choice at startup — run it next to
+/// `appTheme.load()` before the first frame.
+///
+/// Unset stays null: hosts leave `supportedLocales`/`localizationsDelegates`
+/// to their own defaults and the app runs in English. The value only becomes
+/// non-null when the player (or the host) picks a language.
+class AppLocaleNotifier extends ValueNotifier<ShellLanguage?> {
+  AppLocaleNotifier() : super(null);
+
+  /// Whether a language was picked (or restored) this session.
+  bool get isSet => value != null;
+
+  /// The strings for the current language — English until a choice exists.
+  ShellStrings get strings => ShellStrings.forLanguage(value ?? ShellLanguage.english);
+
+  /// The language as a MaterialApp locale (null = no choice made yet).
+  Locale? get locale => value?.locale;
+
+  /// Restores the remembered choice at startup (before the first frame
+  /// reads the language). An unknown persisted code (a renamed enum, a
+  /// downgrade) falls back to unset — English, never a crash.
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final code = prefs.getString(_prefKey);
+    value = code == null ? null : _fromCode(code);
+  }
+
+  /// Picks a language and persists it.
+  Future<void> setLanguage(ShellLanguage language) async {
+    value = language;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefKey, language.code);
+  }
+
+  /// Back to the unset state (English). Clears the persisted choice.
+  Future<void> clear() async {
+    value = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefKey);
+  }
+
+  ShellLanguage? _fromCode(String code) {
+    for (final language in ShellLanguage.values) {
+      if (language.code == code) return language;
+    }
+    return null;
+  }
+
+  /// Clears in-memory state for tests (see [AccountController.resetForTest]).
+  @visibleForTesting
+  void resetForTest() {
+    value = null;
+  }
+
+  static const _prefKey = 'prefs.app.language';
+}
+
+/// The app-wide locale notifier. The root MaterialApp listens to it (along
+/// [appTheme]) so a settings pick repaints the shell in the new language.
+final appLocale = AppLocaleNotifier();
+
 /// The app-wide theme notifier. The root MaterialApp listens to it.
 final appTheme = AppThemeNotifier();
 
@@ -112,6 +180,22 @@ class AccountController extends ValueNotifier<Account?> {
   /// code leaves this null and the controller builds one from the
   /// [serverConnection] resolver (the same URL/key the lobby uses).
   AuthService? authService;
+
+  /// The collector behind [signInWithProvider]: the shared popup flow on
+  /// the web, the deep-link flow (system browser out, app-link redirect
+  /// back) on Android and iOS. Injectable for tests and for hosts with a
+  /// custom delivery (a dedicated callback page, a replayed redirect).
+  Future<String?> Function(String authorizeUrl)? collectOAuthFragment;
+
+  /// Where the game server's authorize redirect should land on the mobile
+  /// builds — the app's custom scheme or universal-link origin, e.g.
+  /// `Uri.parse('mygame://auth')`. The server must allow-list it next to
+  /// the web origin, and the app must be able to receive it (Android App
+  /// Links / iOS Universal Links, or a custom scheme). The default
+  /// collector leaves the redirect to the server's own configuration until
+  /// the host sets this; on the web it stays null and [Uri.base.origin]
+  /// is used.
+  Uri? oauthRedirectUri;
 
   /// Where the auth service lives. Defaults to the standard prefs keys;
   /// apps with a different configuration source set this after
@@ -306,6 +390,83 @@ class AccountController extends ValueNotifier<Account?> {
     notifyListeners();
   }
 
+  /// The reference OAuth sign-in: opens the game server's hosted authorize
+  /// page for [provider] ('google', 'github') — a popup back onto the app's
+  /// origin on the web, the system browser with an app-link redirect on
+  /// Android and iOS — and decodes the implicit fragment the redirect
+  /// carries into a real session. The server holds the provider secrets.
+  ///
+  /// Requires a configured game server (the same one cloud sign-in uses).
+  /// The redirect target: [redirectTo] if passed, else
+  /// [oauthRedirectUri] (hosts set it per app for the mobile builds), else
+  /// the web origin. Hosts embedding the shell elsewhere swap the
+  /// [collectOAuthFragment] collector to match their delivery.
+  ///
+  /// Throws [AuthException] with a user-presentable message on failure;
+  /// the player dismissing the provider's consent screen returns quietly
+  /// (a cancelled flow, not an error).
+  Future<void> signInWithProvider(String provider, {Uri? redirectTo}) async {
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    final collector = collectOAuthFragment ?? oauth_launcher.collectOAuthFragment;
+
+    // The default web collector pops a window back onto this app's origin
+    // (null off the web); custom collectors — tests, callback pages, deep
+    // links — pick their own target and may ignore the redirect entirely.
+    final target = redirectTo ?? oauthRedirectUri ?? _webOrigin() ?? Uri();
+    final authorize = service.authorizeUrl(provider: provider, redirectTo: target);
+
+    // A parked email signup would be overwritten by the provider session —
+    // mirror the cancel path: the player chose a different route in.
+    await cancelPendingSignup();
+
+    String? fragment;
+    try {
+      fragment = await collector(authorize.toString());
+    } on UnsupportedError catch (error) {
+      // A host's custom collector may declare the platform unsupported —
+      // surface it as the flow's own typed failure.
+      throw AuthException('oauth_unsupported', '$error');
+    }
+    if (fragment == null) return; // popup closed: cancelled, not an error
+    final session = AuthService.sessionFromImplicitFragment(fragment);
+    if (session == null) {
+      throw const AuthException(
+          'oauth_cancelled', 'Provider sign-in was cancelled.');
+    }
+
+    // The fragment carries no email: fetch the account to fill it (and to
+    // fail loudly if the provider identity was never confirmed server-side).
+    final user = await service.fetchUser(session.accessToken);
+    if (!user.confirmed) {
+      throw const AuthException('email_not_confirmed',
+          'Confirm the email (inbox link) before signing in.');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pendingKey);
+    _session = session;
+    _pendingSignupEmail = null;
+    value = Account(
+      displayName: playerName,
+      email: user.email,
+      provider: provider,
+    );
+    await prefs.setString(_emailKey, user.email);
+    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
+    notifyListeners();
+  }
+
+  /// This app's origin on the web (the authorize redirect's target there),
+  /// or null off the web — the mobile target is [oauthRedirectUri], set by
+  /// the host to its app-link origin or scheme.
+  Uri? _webOrigin() {
+    if (!kIsWeb) return null;
+    return Uri.parse(Uri.base.origin);
+  }
+
   /// Re-sends the confirmation email for the parked registration.
   Future<void> resendSignupConfirmation() async {
     final email = _pendingSignupEmail;
@@ -357,6 +518,8 @@ class AccountController extends ValueNotifier<Account?> {
     _loaded = false;
     playerName = 'Player';
     authService = null; // tests inject their own per case
+    collectOAuthFragment = null;
+    oauthRedirectUri = null;
     serverConnection = readStandardServerConnection;
   }
 }

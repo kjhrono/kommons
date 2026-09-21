@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_settings.dart';
+
 /// Server address + Supabase anon key picked in the connect dialog.
 typedef GameServerConnection = ({String url, String anonKey});
 
@@ -24,10 +26,11 @@ Future<GameServerConnection?> showGameServerConnectionDialog(BuildContext contex
   if (!context.mounted) return null;
   final urlController = TextEditingController(text: prefs.getString(gameServerUrlPrefKey) ?? '');
   final keyController = TextEditingController(text: prefs.getString(gameServerAnonKeyPrefKey) ?? '');
+  final strings = appLocale.strings;
   final connection = await showDialog<GameServerConnection>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Game server'),
+      title: Text(strings.dialogServerTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -35,31 +38,33 @@ Future<GameServerConnection?> showGameServerConnectionDialog(BuildContext contex
             controller: urlController,
             autofocus: true,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'Server URL',
-              hintText: 'https://kapaxinfiniti.kjhrono.duckdns.org',
+            decoration: InputDecoration(
+              labelText: strings.serverUrlLabel,
+              hintText: strings.serverUrlHint,
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: keyController,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Supabase anon key',
-              hintText: 'empty for a bare PostgREST',
-              helperText: 'VM: grep ANON_KEY env · Studio → Settings → API',
+            decoration: InputDecoration(
+              labelText: strings.anonKeyLabel,
+              hintText: strings.anonKeyHint,
+              helperText: strings.anonKeyHelper,
             ),
           ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(strings.cancel)),
         FilledButton(
           onPressed: () => Navigator.pop(
             dialogContext,
             (url: urlController.text.trim(), anonKey: keyController.text.trim()),
           ),
-          child: const Text('Connect'),
+          child: Text(strings.connect),
         ),
       ],
     ),
