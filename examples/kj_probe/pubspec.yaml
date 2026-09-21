@@ -1,0 +1,25 @@
+name: kj_probe
+description: >- 
+  A minimal second kjhrono game. Exists to prove the kommons shell
+  (splash, settings, lobby wizard, multiplayer core) reuses cleanly from a
+  plain consumer with no copied code.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  kommons:
+    path: ../..
+  shared_preferences: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

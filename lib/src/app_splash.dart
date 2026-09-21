@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'app_settings.dart';
@@ -34,17 +35,17 @@ const List<SplashScene> kDefaultSplashScenes = [
   ),
   SplashScene(
     line: 'Trade with rival banners — or ambush them where the road bends.',
-    vignette: 'packages/kjhrono_commons/assets/splash_caravan.svg',
+    vignette: 'packages/kommons/assets/splash_caravan.svg',
     story: 'A caravan on the trade road, oxen hauling and spears up',
   ),
   SplashScene(
     line: 'Dive the dungeons, clear the floors, loot what the darkness hoards.',
-    vignette: 'packages/kjhrono_commons/assets/splash_dungeon.svg',
+    vignette: 'packages/kommons/assets/splash_dungeon.svg',
     story: 'A torch-lit dungeon gate with a chest half in the light',
   ),
   SplashScene(
     line: 'Tame the wild, study the towers, and win the race of challenges.',
-    vignette: 'packages/kjhrono_commons/assets/splash_tame.svg',
+    vignette: 'packages/kommons/assets/splash_tame.svg',
     story: "A griffin kneeling to a trainer's open hand",
   ),
 ];
@@ -205,9 +206,40 @@ class _AppSplashState extends State<AppSplash>
     super.dispose();
   }
 
-  late final SplashScene _scene = widget.scenes[
+  late int _sceneIndex =
       (widget.debugSceneIndex ?? Random().nextInt(widget.scenes.length)) %
-          widget.scenes.length];
+          widget.scenes.length;
+
+  SplashScene get _scene => widget.scenes[_sceneIndex];
+
+  /// The next scene index: pinned by [AppSplash.debugSceneIndex] when set,
+  /// otherwise random but never the scene already showing (with more than
+  /// one scene, a revisit always brings a change).
+  int get _nextSceneIndex {
+    if (widget.debugSceneIndex != null) {
+      return widget.debugSceneIndex! % widget.scenes.length;
+    }
+    var next = Random().nextInt(widget.scenes.length);
+    while (next == _sceneIndex && widget.scenes.length > 1) {
+      next = Random().nextInt(widget.scenes.length);
+    }
+    return next;
+  }
+
+  /// A covered route (a pushed screen) hides this splash by flipping its
+  /// [TickerMode] off; coming back flips it on. [_RevisitDetector] turns
+  /// that flip into this callback: roll a fresh scene — the flavor line and
+  /// foreground vignette cross-fade to it while title and buttons stay
+  /// settled, so a repeat visit reads as a new beat, not a replay.
+  void _onRevisit() {
+    if (widget.scenes.length < 2) return;
+    setState(() => _sceneIndex = _nextSceneIndex);
+  }
+
+  /// Cross-fade span for scene swaps (instant under reduced motion).
+  Duration get _swapDuration => MediaQuery.of(context).disableAnimations
+      ? Duration.zero
+      : const Duration(milliseconds: 450);
 
   String get _welcome {
     // The greeting reads the shared account state: signed-in players get
@@ -223,7 +255,9 @@ class _AppSplashState extends State<AppSplash>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return _RevisitDetector(
+      onReturn: _onRevisit,
+      child: Scaffold(
       body: Stack(fit: StackFit.expand, children: [
         if (widget.background != null)
           SvgPicture.asset(
@@ -233,22 +267,29 @@ class _AppSplashState extends State<AppSplash>
           ),
         // This visit's foreground vignette, pinned to the valley floor —
         // the flavor line's scene acted out over the shared backdrop. It
-        // is the entrance's last arrival, rising into place.
+        // is the entrance's last arrival, rising into place — and on a
+        // revisit it cross-fades to the newly rolled scene.
         if (_scene.vignette != null)
           Align(
             alignment: Alignment.bottomCenter,
             child: _Entrance(
               fade: _vignetteFade,
               rise: _vignetteRise,
-              child: Semantics(
-                label: _scene.story,
-                child: SizedBox(
-                  height: 150,
-                  width: double.infinity,
-                  child: SvgPicture.asset(
-                    _scene.vignette!,
-                    fit: BoxFit.contain,
-                    key: const ValueKey('splash-vignette'),
+              fadeKey: const ValueKey('entrance-vignette-fade'),
+              child: AnimatedSwitcher(
+                duration: _swapDuration,
+                key: const ValueKey('splash-vignette-swap'),
+                child: Semantics(
+                  key: ValueKey('splash-scene-$_sceneIndex'),
+                  label: _scene.story,
+                  child: SizedBox(
+                    height: 150,
+                    width: double.infinity,
+                    child: SvgPicture.asset(
+                      _scene.vignette!,
+                      fit: BoxFit.contain,
+                      key: const ValueKey('splash-vignette'),
+                    ),
                   ),
                 ),
               ),
@@ -290,12 +331,18 @@ class _AppSplashState extends State<AppSplash>
                             _Entrance(
                               fade: _flavorFade,
                               rise: _flavorRise,
-                              child: Text(_scene.line,
-                                  key: const ValueKey('splash-flavor'),
-                                  style: TextStyle(
-                                      color: Colors.amber.shade200,
-                                      fontStyle: FontStyle.italic),
-                                  textAlign: TextAlign.center),
+                              fadeKey: const ValueKey('entrance-flavor-fade'),
+                              child: AnimatedSwitcher(
+                                duration: _swapDuration,
+                                key: const ValueKey('splash-flavor'),
+                                child: Text(_scene.line,
+                                    key: ValueKey(
+                                        'splash-scene-$_sceneIndex'),
+                                    style: TextStyle(
+                                        color: Colors.amber.shade200,
+                                        fontStyle: FontStyle.italic),
+                                    textAlign: TextAlign.center),
+                              ),
                             ),
                           ]),
                         ),
@@ -356,28 +403,72 @@ class _AppSplashState extends State<AppSplash>
           ]),
         ),
       ]),
+      ),
     );
   }
 }
 
 /// One staggered arrival: a fade paired with a small rise, driven by the
-/// splash's shared entrance controller.
+/// splash's shared entrance controller. [fadeKey] names the fade for tests
+/// (keys are API) — it must not collide with content keys.
 class _Entrance extends StatelessWidget {
   const _Entrance({
     required this.fade,
     required this.rise,
     required this.child,
+    this.fadeKey,
   });
 
   final Animation<double> fade;
   final Animation<Offset> rise;
   final Widget child;
+  final Key? fadeKey;
 
   @override
   Widget build(BuildContext context) {
     return SlideTransition(
       position: rise,
-      child: FadeTransition(opacity: fade, child: child),
+      child: FadeTransition(opacity: fade, key: fadeKey, child: child),
     );
   }
+}
+
+/// Fires [onReturn] when the splash comes back from a covered route.
+///
+/// When a screen is pushed over a route, the router flips the covered
+/// route's [TickerMode] off (and back on after pop). Depending on that
+/// inherited flag gives a precise, framework-driven revisit signal: an
+/// off→on transition means "we were hidden and now we are visible again".
+class _RevisitDetector extends StatefulWidget {
+  const _RevisitDetector({required this.onReturn, required this.child});
+
+  final VoidCallback onReturn;
+  final Widget child;
+
+  @override
+  State<_RevisitDetector> createState() => _RevisitDetectorState();
+}
+
+class _RevisitDetectorState extends State<_RevisitDetector> {
+  bool? _wasEnabled;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final enabled = TickerMode.valuesOf(context).enabled;
+    final was = _wasEnabled;
+    _wasEnabled = enabled;
+    // First build only records; a false→true flip is the revisit. The
+    // callback arrives mid-rebuild (the pop that uncovered us IS the
+    // rebuild), so the scene swap is deferred to after the frame —
+    // setState during build would throw.
+    if (was == false && enabled) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onReturn();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

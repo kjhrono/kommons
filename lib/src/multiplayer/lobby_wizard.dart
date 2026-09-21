@@ -26,6 +26,8 @@ class LobbyWizard extends StatelessWidget {
     required this.body,
     this.title = 'NEW GAME',
     this.appBarActions,
+    this.canContinue,
+    this.banner,
   })  : assert(steps.length > 0),
         assert(current >= 0 && current < steps.length);
 
@@ -39,6 +41,19 @@ class LobbyWizard extends StatelessWidget {
   /// the wizard's title.
   final List<Widget>? appBarActions;
 
+  /// Per-step gate on the Continue button: given the current step index,
+  /// return false to disable it (e.g. the avatar needs a name before the
+  /// player may move on). The host owns the message — surface the reason in
+  /// the step body; a disabled button alone says "not yet". The rail stays
+  /// free navigation by design: the gate steers the primary path, it does
+  /// not lock the map. Null keeps every step's Continue enabled.
+  final bool Function(int stepIndex)? canContinue;
+
+  /// A persistent notice rendered above the rail on EVERY step — a pending
+  /// handover, a maintenance note — so the message survives step changes
+  /// while the step bodies come and go. Null renders nothing.
+  final Widget? banner;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,6 +66,7 @@ class LobbyWizard extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
           child: Column(children: [
+            if (banner != null) banner!,
             _rail(context),
             Expanded(
               // SingleChildScrollView (not ListView): every step's controls
@@ -109,19 +125,24 @@ class LobbyWizard extends StatelessWidget {
         ]),
       );
 
-  Widget _nav() => Row(children: [
-        if (current > 0)
-          OutlinedButton.icon(
-            onPressed: () => onGoto(current - 1),
-            icon: const Icon(Icons.chevron_left),
-            label: const Text('Back'),
-          ),
-        const Spacer(),
-        if (current < steps.length - 1)
-          FilledButton.icon(
-            onPressed: () => onGoto(current + 1),
-            icon: const Icon(Icons.chevron_right),
-            label: const Text('Continue'),
-          ),
-      ]);
+  Widget _nav() {
+    // The host's gate decides whether this step is complete; without a
+    // gate every step may continue.
+    final mayContinue = canContinue?.call(current) ?? true;
+    return Row(children: [
+      if (current > 0)
+        OutlinedButton.icon(
+          onPressed: () => onGoto(current - 1),
+          icon: const Icon(Icons.chevron_left),
+          label: const Text('Back'),
+        ),
+      const Spacer(),
+      if (current < steps.length - 1)
+        FilledButton.icon(
+          onPressed: mayContinue ? () => onGoto(current + 1) : null,
+          icon: const Icon(Icons.chevron_right),
+          label: const Text('Continue'),
+        ),
+    ]);
+  }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy.sh — commit, push to GitHub, then ship a kjhrono game to its VM.
 #
-# Lives in kjhrono_commons; every game repo keeps a thin delegating
+# Lives in kommons; every game repo keeps a thin delegating
 # scripts/deploy.sh plus its own deploy.config (see deploy.config.example):
 #
 #   bash scripts/deploy.sh                    # full: commit+push+sync+migrate+build+publish
@@ -55,7 +55,7 @@ root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 CONFIG="${CONFIG:-$root/deploy.config}"
 if [[ ! -f "$CONFIG" ]]; then
   echo "deploy.config not found at $CONFIG" >&2
-  echo "Copy deploy.config.example from kjhrono_commons and fill in your VM." >&2
+  echo "Copy deploy.config.example from kommons and fill in your VM." >&2
   exit 1
 fi
 # shellcheck disable=SC1090

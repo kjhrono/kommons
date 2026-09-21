@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kjhrono_commons/kjhrono_commons.dart';
+import 'package:kommons/kommons.dart';
 
 void main() {
   setUp(() {
@@ -147,31 +147,39 @@ void main() {
     )));
     await tester.pump(); // t0: the late arrivals have not begun
     expect(find.byKey(const ValueKey('splash-vignette')), findsOneWidget);
-    expect(_fadeOf(tester, find.byKey(const ValueKey('splash-vignette')))
-        .opacity.value, lessThan(0.05));
-    expect(_fadeOf(tester, find.byKey(const ValueKey('splash-flavor')))
-        .opacity.value, lessThan(0.05));
+    expect(tester.widget<FadeTransition>(
+            find.byKey(const ValueKey('entrance-vignette-fade'))).opacity.value,
+        lessThan(0.05));
+    expect(tester.widget<FadeTransition>(
+            find.byKey(const ValueKey('entrance-flavor-fade'))).opacity.value,
+        lessThan(0.05));
 
     // 470 ms: buttons still mid-entrance, flavor (660+) and vignette
     // (760+) both still waiting.
     await tester.pump(const Duration(milliseconds: 470));
-    expect(_fadeOf(tester, find.byKey(const ValueKey('splash-flavor')))
-        .opacity.value, lessThan(0.05));
+    expect(tester.widget<FadeTransition>(
+            find.byKey(const ValueKey('entrance-flavor-fade'))).opacity.value,
+        lessThan(0.05));
 
     // 720 ms: the flavor line is mid-fade; the vignette (760+) not yet.
     await tester.pump(const Duration(milliseconds: 250));
-    final flavor = _fadeOf(tester, find.byKey(const ValueKey('splash-flavor')))
-        .opacity.value;
-    expect(flavor, greaterThan(0.2));
-    expect(_fadeOf(tester, find.byKey(const ValueKey('splash-vignette')))
-        .opacity.value, lessThan(0.05));
+    expect(
+        tester.widget<FadeTransition>(
+                find.byKey(const ValueKey('entrance-flavor-fade')))
+            .opacity.value,
+        greaterThan(0.2));
+    expect(tester.widget<FadeTransition>(
+            find.byKey(const ValueKey('entrance-vignette-fade'))).opacity.value,
+        lessThan(0.05));
 
     // Settled: everything visible, vignette at rest (rise finished).
     await tester.pumpAndSettle();
-    expect(_fadeOf(tester, find.byKey(const ValueKey('splash-flavor')))
-        .opacity.value, 1.0);
-    expect(_fadeOf(tester, find.byKey(const ValueKey('splash-vignette')))
-        .opacity.value, 1.0);
+    expect(tester.widget<FadeTransition>(
+            find.byKey(const ValueKey('entrance-flavor-fade'))).opacity.value,
+        1.0);
+    expect(tester.widget<FadeTransition>(
+            find.byKey(const ValueKey('entrance-vignette-fade'))).opacity.value,
+        1.0);
     expect(tester.widget<SlideTransition>(find.ancestor(
       of: find.byKey(const ValueKey('splash-vignette')),
       matching: find.byType(SlideTransition),
@@ -196,6 +204,101 @@ void main() {
     // ...and the buttons rest visible too, no stagger left dangling.
     expect(_buttonFade(tester, 'splash-new-game').opacity.value, 1.0);
   });
+
+  testWidgets('a revisit cross-fades to a different flavor scene',
+      (tester) async {
+    final scenes = List.generate(
+        4,
+        (i) => SplashScene(
+            line: 'scene $i', vignette: null, story: 'story $i'));
+    await tester.pumpWidget(MaterialApp(
+      home: AppSplash(
+        appName: 'Probe Game',
+        description: 'd',
+        scenes: scenes,
+        animateEntrance: false, // focus on the swap, not the entrance
+        onNewGame: () {},
+      ),
+    ));
+    await tester.pump();
+
+    Text first() => tester.widget<Text>(find.textContaining('scene '));
+    final before = first().data!;
+
+    // Leave and come back: push a blank page over the splash, then pop.
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    nav.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('away'))));
+    await tester.pumpAndSettle();
+    expect(find.text('away'), findsOneWidget);
+    nav.pop();
+    await tester.pumpAndSettle();
+
+    // The splash shows a DIFFERENT scene, settled (no replay of the
+    // entrance — the title never vanished).
+    final after = first().data!;
+    expect(after, isNot(before),
+        reason: 'a revisit rolls a fresh flavor line');
+    final title = tester.widget<FadeTransition>(find.ancestor(
+      of: find.text('PROBE GAME'),
+      matching: find.byType(FadeTransition),
+    ).first);
+    expect(title.opacity.value, 1.0,
+        reason: 'the revisit swaps the scene without replaying the entrance');
+  });
+
+  testWidgets('a single-scene splash keeps its line on revisit',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: AppSplash(
+        appName: 'Probe Game',
+        description: 'd',
+        scenes: const [
+          SplashScene(line: 'only scene', vignette: null, story: 'one'),
+        ],
+        animateEntrance: false,
+        onNewGame: () {},
+      ),
+    ));
+    await tester.pump();
+
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    // push() completes only when the pushed route pops — never await it.
+    nav.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('away'))));
+    await tester.pumpAndSettle();
+    nav.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('only scene'), findsOneWidget);
+  });
+
+  testWidgets('debugSceneIndex stays pinned across revisits', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: AppSplash(
+        appName: 'Probe Game',
+        description: 'd',
+        scenes: const [
+          SplashScene(line: 'first', vignette: null, story: 'one'),
+          SplashScene(line: 'second', vignette: null, story: 'two'),
+        ],
+        debugSceneIndex: 1,
+        animateEntrance: false,
+        onNewGame: () {},
+      ),
+    ));
+    await tester.pump();
+
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    nav.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('away'))));
+    await tester.pumpAndSettle();
+    nav.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('second'), findsOneWidget,
+        reason: 'the pinned scene is stable for tests and screenshot rigs');
+  });
 }
 
 FadeTransition _buttonFade(WidgetTester tester, String key) =>
@@ -203,7 +306,3 @@ FadeTransition _buttonFade(WidgetTester tester, String key) =>
       of: find.byKey(ValueKey(key)),
       matching: find.byType(FadeTransition),
     ).first);
-
-FadeTransition _fadeOf(WidgetTester tester, Finder target) =>
-    tester.widget<FadeTransition>(
-        find.ancestor(of: target, matching: find.byType(FadeTransition)).first);

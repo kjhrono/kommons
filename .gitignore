@@ -13,3 +13,8 @@ pubspec.lock
 
 # OS
 .DS_Store
+
+# Example app build artifacts
+examples/**/build/
+examples/**/.dart_tool/
+examples/**/pubspec.lock

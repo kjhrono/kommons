@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kjhrono_commons/kjhrono_commons.dart';
+import 'package:kommons/kommons.dart';
 
 void main() {
   const seats = [
@@ -77,6 +77,78 @@ void main() {
           findsOneWidget);
       expect(find.byKey(const ValueKey('cloud-delete-KZ9Q2')), findsOneWidget);
       expect(find.byKey(const ValueKey('cloud-leave-KZ9Q2')), findsNothing);
+    });
+
+    testWidgets('claim button renders only for the designated local seat and fires',
+        (tester) async {
+      var claimed = 0;
+      final designated = CloudRoomCard(
+        room: room(designatedHost: 'Mara'),
+        localSeatName: 'Mara',
+        onClaim: (_) => claimed++,
+      );
+      await tester.pumpWidget(host(designated));
+      await tester.pump();
+
+      // One tap on the card itself: no menu, no detour.
+      expect(find.byKey(const ValueKey('cloud-claim-KZ9Q2')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('cloud-claim-KZ9Q2')));
+      expect(claimed, 1);
+
+      // Another device's seat sees no button…
+      await tester.pumpWidget(host(CloudRoomCard(
+        room: room(designatedHost: 'Mara'),
+        localSeatName: 'Marcuz',
+        onClaim: (_) => claimed++,
+      )));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('cloud-claim-KZ9Q2')), findsNothing);
+
+      // …no local seat at all means no button…
+      await tester.pumpWidget(host(CloudRoomCard(
+        room: room(designatedHost: 'Mara'),
+        localSeatName: null,
+        onClaim: (_) => claimed++,
+      )));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('cloud-claim-KZ9Q2')), findsNothing);
+
+      // …and without the callback the seam stays closed even for the
+      // designated seat (canClaim is the single gate).
+      await tester.pumpWidget(host(CloudRoomCard(
+        room: room(designatedHost: 'Mara'),
+        localSeatName: 'Mara',
+      )));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('cloud-claim-KZ9Q2')), findsNothing);
+      expect(claimed, 1);
+    });
+
+    testWidgets('claim-only host: busy spinner and no empty menu',
+        (tester) async {
+      // The lobby's configuration: claim wired, no menu callbacks.
+      await tester.pumpWidget(host(CloudRoomCard(
+        room: room(designatedHost: 'Mara'),
+        localSeatName: 'Mara',
+        onClaim: (_) {},
+        claimBusy: true,
+      )));
+      await tester.pump();
+
+      // Busy: spinner replaces the button (no double-tap invitation).
+      expect(find.byKey(const ValueKey('cloud-claim-KZ9Q2')), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      // Claim-only: no room menu at all when nothing is wired.
+      expect(find.byKey(const ValueKey('cloud-menu-KZ9Q2')), findsNothing);
+
+      await tester.pumpWidget(host(CloudRoomCard(
+        room: room(designatedHost: 'Mara'),
+        localSeatName: 'Mara',
+        onClaim: (_) {},
+      )));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('cloud-claim-KZ9Q2')), findsOneWidget);
+      expect(find.byKey(const ValueKey('cloud-menu-KZ9Q2')), findsNothing);
     });
 
     testWidgets('joiner menu offers only leave', (tester) async {

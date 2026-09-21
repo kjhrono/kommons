@@ -1,4 +1,4 @@
-# kjhrono_commons
+# kommons
 
 The shared shell for every kjhrono game: the splash a player sees first, the
 account/auth and settings they configure, the lobby they set up multiplayer
@@ -6,15 +6,18 @@ through, and the multiplayer transport itself. One copy of the code, consumed
 by each game as a dependency — games supply their identity through the seams
 each widget exposes.
 
-**Consumers today:** `kapaxinfiniti` (the flagship) and `kj_probe` (the reuse
-probe). **Status:** this folder is *not yet its own git repo* — consumers use
-`path:` dependencies from this machine. To share it with another device or
-CI, `git init` here and flip consumers' pubspec entries to the git URL.
+**Consumers today:** `kapaxinfiniti` (the flagship) and
+[`examples/kj_probe`](examples/kj_probe) — a complete minimal game on the
+shared shell that ships *with this package* as both the new-game starting
+template and a second consumer its tests exercise on every change.
+**Status:** this folder is its own git repo (first commit in place) with no
+remote yet — kapax uses a `path:` dependency from this machine, and its
+pubspec documents the `git:` flip for when a remote exists.
 
 ```yaml
 dependencies:
-  kjhrono_commons:
-    path: ../kjhrono_commons   # or git:, once published
+  kommons:
+    path: ../kommons   # or git:, once published
 ```
 
 ## Adopting the shell in a new game (~30 lines + your lobby steps)
@@ -58,7 +61,7 @@ dependencies:
 
 **Splash art ships with the package** — `assets/splash_bg.svg` plus three
 vignettes (`splash_caravan`, `splash_dungeon`, `splash_tame`), referenced as
-`packages/kjhrono_commons/assets/...`. A game may pass its own `background`
+`packages/kommons/assets/...`. A game may pass its own `background`
 and `scenes`.
 
 **The entrance cascade** (on unless `animateEntrance: false` or the platform
@@ -76,9 +79,10 @@ flavor line (660–860 ms) → foreground vignette rises into place last
 | `game_sync_service.dart` | The two implementations: `InMemorySyncService` (hot-seat) and `PostgrestSyncService` (online rooms via PostgREST). |
 | `cloud_room_service.dart` | `CloudRoomService` — read model over the server's rooms+roster: `listRooms(playerName)`, `fromStoredConnection()` (reads the saved game-server connection), per-room host secret/seat-name storage, `hostResumeService` (re-mints host rights), the handover API (`designateHost`, `cancelHostDesignation`, `claimHostPromotion`, `forgetHostedRoom`). `CloudRoom`/`CloudSeat` — the listing models. `forTestFactory` for tests. |
 | `cloud_room_card.dart` | The shared saved-games surfaces: `CloudRoomCard` (banner seat chips local-first, host crown, flash wash + change note, room menu — everything behind `onOpen/onDelete/onLeave/onHandover/onCancelHandover` seams), `cloudSeatChip`, `seatsLocalFirst`, `showHandoverSeatPicker`, `confirmDeleteRoomDialog`, `confirmLeaveRoomDialog`, `hostCredentialsRevoked`, and `claimHostPowers` — the crown-claim protocol returning `(status, sync, snapshot)`. |
+| `cloud_handover_section.dart` | `CloudHandoverSection` — the whole pending-host-handover block (header, error line, claim-only cards) from `rooms`/`error`/`onClaim`/`claimBusy`; renders nothing when quiet. |
 | `game_server_dialog.dart` | `showGameServerConnectionDialog` + `saveGameServerConnection`/`storedGameServerUrl` — the shared connect-to-game-server onboarding. |
 | `banner_color_picker.dart` | `bannerPalette`, `showBannerColorPicker`, and the `bannerColor`/`bannerColorHex` codecs every banner tint flows through. |
-| `lobby_wizard.dart` | `LobbyWizard` — the new-game wizard frame: progress rail (tappable nodes, done-checks), "Step X of Y — Title" header, Back/Continue nav (hidden on first/last step). Host supplies `steps: List<LobbyStepDescriptor>` (title, icon, optional `subtitle`), `current`, `onGoto`, `body`, optional `title` and `appBarActions`. |
+| `lobby_wizard.dart` | `LobbyWizard` — the new-game wizard frame: progress rail (tappable nodes, done-checks), "Step X of Y — Title" header, Back/Continue nav (hidden on first/last step). Host supplies `steps: List<LobbyStepDescriptor>` (title, icon, optional `subtitle`), `current`, `onGoto`, `body`, optional `title`, `appBarActions`, and `canContinue(stepIndex)` — the per-step gate that disables Continue until the host says the step is complete (the rail stays free navigation). |
 
 ### Tooling (not a Dart export)
 
@@ -110,8 +114,15 @@ flavor line (660–860 ms) → foreground vignette rises into place last
 ## Development
 
 ```bash
-flutter analyze && flutter test   # 4 suites, 27 tests
+bash tool/verify_consumers.sh   # ONE command: analyze + test for the
+                                # package, examples/kj_probe, and kapax
 ```
 
-When you change the package, re-run the consumers' gates too — kapax
-(777 tests) and kj_probe (3) are the living proof the seams hold.
+`--quick` runs analyze only. The same script is the CI gate
+(`.github/workflows/consumers.yml` calls it on every push/PR), so local and
+remote verification can never drift apart. Consumer failures are collected,
+not short-circuited — one broken game never hides another's result. Add a
+new game by appending a line to `CONSUMERS` in `tool/verify_consumers.sh`.
+
+When you change the package, the consumers' gates are the proof the seams
+hold — kapax alone carries 778 tests against them.

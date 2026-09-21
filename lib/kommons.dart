@@ -1,4 +1,4 @@
-/// The kjhrono commons: everything a kjhrono game hosts before its own
+/// The Kommons: everything a kjhrono game hosts before its own
 /// content starts — the top bar with the release version and theme toggle,
 /// the account/auth flow (email sign-in plus provider seams), the settings
 /// screen those controls open, and the persisted day/night theme.
@@ -26,3 +26,4 @@ export 'src/multiplayer/game_server_dialog.dart';
 export 'src/multiplayer/banner_color_picker.dart';
 export 'src/multiplayer/lobby_wizard.dart';
 export 'src/multiplayer/cloud_room_card.dart';
+export 'src/multiplayer/cloud_handover_section.dart';

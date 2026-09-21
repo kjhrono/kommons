@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:kjhrono_commons/kjhrono_commons.dart';
+import 'package:kommons/kommons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Smoke coverage for the shell package: the settings screen renders its

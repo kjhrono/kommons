@@ -1,0 +1,41 @@
+# Verifies the commons shell and every consumer game on each push/PR.
+# The single source of truth for WHAT to run is the shared script — this
+# workflow just installs Flutter and calls it, exactly like a developer
+# would locally.
+name: consumers
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout commons
+        uses: actions/checkout@v4
+        with:
+          path: kommons
+
+      # The script discovers consumers relative to the commons folder;
+      # sibling games are checked out beside it to match the local layout.
+      - name: Checkout kapaxinfiniti (consumer)
+        uses: actions/checkout@v4
+        with:
+          repository: kjhrono/kapaxinfiniti
+          ref: master
+          path: kapaxinfiniti
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Run all consumer gates
+        run: bash kommons/tool/verify_consumers.sh

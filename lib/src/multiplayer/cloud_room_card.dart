@@ -27,6 +27,8 @@ class CloudRoomCard extends StatelessWidget {
     this.onLeave,
     this.onHandover,
     this.onCancelHandover,
+    this.onClaim,
+    this.claimBusy = false,
   });
 
   final CloudRoom room;
@@ -44,6 +46,32 @@ class CloudRoomCard extends StatelessWidget {
   final void Function(CloudRoom room)? onLeave;
   final void Function(CloudRoom room)? onHandover;
   final void Function(CloudRoom room)? onCancelHandover;
+
+  /// This device's seat holds the pending designation: the card offers the
+  /// claim directly (no tap-to-open detour). Fired with the room; the host
+  /// app runs the shared claim protocol and enters the world.
+  final void Function(CloudRoom room)? onClaim;
+
+  /// The claim protocol is in flight: the button yields to a spinner so a
+  /// slow server cannot invite double taps.
+  final bool claimBusy;
+
+  /// True when THIS device's seat holds the pending designation and the
+  /// [onClaim] seam is wired — the card decides visibility itself from
+  /// [localSeatName] and [CloudRoom.designatedHost], so hosts can pass
+  /// [onClaim] unconditionally.
+  bool get canClaim =>
+      room.designatedHost.isNotEmpty &&
+      onClaim != null &&
+      room.designatedHost == localSeatName;
+
+  /// The room menu renders only when at least one of its actions is wired —
+  /// a claim-only host (the lobby's handover list) shows no empty menu.
+  bool get hasMenu =>
+      onDelete != null ||
+      onLeave != null ||
+      onHandover != null ||
+      onCancelHandover != null;
 
   @override
   Widget build(BuildContext context) {
@@ -89,20 +117,41 @@ class CloudRoomCard extends StatelessWidget {
             if (!room.hasSnapshot) 'not started yet',
           ].join(' · ')),
         ]),
-        trailing: PopupMenuButton<String>(
-          key: ValueKey('cloud-menu-${room.code}'),
-          tooltip: 'Room options',
-          onSelected: (choice) {
-            if (choice == 'delete') {
-              onDelete?.call(room);
-            } else if (choice == 'leave') {
-              onLeave?.call(room);
-            } else if (choice == 'handover') {
-              onHandover?.call(room);
-            } else if (choice == 'cancel-handover') {
-              onCancelHandover?.call(room);
-            }
-          },
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          // The crown claim sits outside the menu: a promoted seat accepts
+          // in one tap, with the designated name on the button itself.
+          if (canClaim)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Tooltip(
+                message: 'Accept the promotion of ${room.designatedHost} on this device',
+                child: claimBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : FilledButton.tonal(
+                        key: ValueKey('cloud-claim-${room.code}'),
+                        onPressed: () => onClaim!(room),
+                        child: const Text('Claim host'),
+                      ),
+              ),
+            ),
+          if (hasMenu)
+            PopupMenuButton<String>(
+            key: ValueKey('cloud-menu-${room.code}'),
+            tooltip: 'Room options',
+            onSelected: (choice) {
+              if (choice == 'delete') {
+                onDelete?.call(room);
+              } else if (choice == 'leave') {
+                onLeave?.call(room);
+              } else if (choice == 'handover') {
+                onHandover?.call(room);
+              } else if (choice == 'cancel-handover') {
+                onCancelHandover?.call(room);
+              }
+            },
           itemBuilder: (context) => [
             if (room.isLocalHost && room.designatedHost.isNotEmpty && onCancelHandover != null)
               PopupMenuItem(
@@ -152,8 +201,9 @@ class CloudRoomCard extends StatelessWidget {
                       style: TextStyle(fontSize: 11)),
                 ),
               ),
-          ],
-        ),
+            ],
+          ),
+        ]),
         onTap: () => onOpen?.call(room),
       ),
     );

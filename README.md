@@ -1,4 +1,4 @@
-# kjhrono_commons
+# kommons
 
 The shared shell for every kjhrono game. One Flutter package holds the
 splash, the account/auth + settings, the new-game lobby wizard, and the
@@ -12,7 +12,7 @@ new-game adoption recipe.
 | Game | Notes |
 | --- | --- |
 | [kapaxinfiniti](https://github.com/kjhrono/kapaxinfiniti) | The flagship — settlement building, taming, spell cards, challenges. |
-| `../kj_probe` | Minimal reuse probe: boots the shared splash/settings/lobby in ~200 lines total. |
+| [`examples/kj_probe`](examples/kj_probe) | The reuse probe, shipped with the package: a complete minimal game on the shared shell (~200 lines) — the starting template for a new game and a canary consumer in CI. |
 
 ## What's inside
 
@@ -21,19 +21,25 @@ new-game adoption recipe.
   day/night theme (`appTheme`), account state (`account`).
 - **Multiplayer core** — `LobbySeat`, the `GameSyncService` transport
   (in-memory and PostgREST implementations), `CloudRoomService` +
-  `CloudRoomCard` (saved-games listing, host handover, crown claim),
-  `LobbyWizard`, banner colors, the game-server connection dialog.
-- **Tooling** — `tool/deploy.sh`: config-driven commit → push → sync →
-  migrate → build → publish, per-user via a git-ignored `deploy.config`
-  (`deploy.config.example` is the template).
+  `CloudRoomCard` + `CloudHandoverSection` (saved-games listing, host
+  handover, crown claim), `LobbyWizard`, banner colors, the game-server
+  connection dialog. How the services relate to a game's session:
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **Tooling** — `tool/deploy.sh` (config-driven commit → push → sync →
+  migrate → build → publish, per-user via a git-ignored `deploy.config`,
+  template in `deploy.config.example`) and `tool/verify_consumers.sh`
+  (the one-command gate over package + probe + kapax, also the CI step).
 
 ## Development
 
 ```bash
-flutter analyze && flutter test   # 4 suites, 27 tests
+bash tool/verify_consumers.sh   # analyze + test: package, probe, kapax
 ```
 
-Changes here must keep the consumers green too — kapax runs 777 tests
-against these seams, kj_probe 3. The package's `COMMONS.md` documents the
+Same script in CI (`.github/workflows/consumers.yml`) — push and local
+verify identically.
+
+Changes here must keep the consumers green too — kapax runs 781 tests
+against these seams, the probe 3. The package's `COMMONS.md` documents the
 convention that widget keys are API: renaming a key in this repo is a
 breaking change for every game.

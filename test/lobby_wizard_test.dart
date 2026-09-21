@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kjhrono_commons/kjhrono_commons.dart';
+import 'package:kommons/kommons.dart';
 
 void main() {
   group('LobbyWizard', () {
@@ -81,6 +81,127 @@ void main() {
       ));
       await tester.pump();
       expect(find.text('Seed, size and events.'), findsNothing);
+    });
+
+    testWidgets('canContinue gates Continue per step and updates on rebuild',
+        (tester) async {
+      Widget gate(bool ok) => MaterialApp(
+            home: LobbyWizard(
+              steps: const [
+                LobbyStepDescriptor(title: 'Name', icon: Icons.person),
+                LobbyStepDescriptor(title: 'Ready?', icon: Icons.rocket_launch),
+              ],
+              current: 0,
+              onGoto: (_) {},
+              body: const [Text('body')],
+              canContinue: (_) => ok,
+            ),
+          );
+
+      // Blocked: the gate says the step is incomplete.
+      await tester.pumpWidget(gate(false));
+      await tester.pump();
+      expect(
+          tester.widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Continue')).onPressed,
+          isNull);
+
+      // The host completes the step: a rebuild re-evaluates the gate.
+      await tester.pumpWidget(gate(true));
+      await tester.pump();
+      expect(
+          tester.widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Continue')).onPressed,
+          isNotNull);
+
+      // The gate is per-step: the last step hides Continue entirely, so the
+      // gate never matters there (hosts put their own START button in body).
+      await tester.pumpWidget(MaterialApp(
+        home: LobbyWizard(
+          steps: const [
+            LobbyStepDescriptor(title: 'Name', icon: Icons.person),
+            LobbyStepDescriptor(title: 'Ready?', icon: Icons.rocket_launch),
+          ],
+          current: 1,
+          onGoto: (_) {},
+          body: const [Text('body')],
+          canContinue: (_) => false,
+        ),
+      ));
+      await tester.pump();
+      expect(find.text('Continue'), findsNothing);
+    });
+
+    testWidgets('rail navigation stays free while the gate holds the primary path',
+        (tester) async {
+      // Even with the gate closed, jumping back to an earlier step via the
+      // rail remains possible — the gate steers Continue, not the map.
+      var wentTo = -1;
+      await tester.pumpWidget(MaterialApp(
+        home: LobbyWizard(
+          steps: const [
+            LobbyStepDescriptor(title: 'A', icon: Icons.looks_one),
+            LobbyStepDescriptor(title: 'B', icon: Icons.looks_two),
+            LobbyStepDescriptor(title: 'C', icon: Icons.looks_3),
+          ],
+          current: 1,
+          onGoto: (i) => wentTo = i,
+          body: const [Text('body')],
+          canContinue: (_) => false,
+        ),
+      ));
+      await tester.pump();
+
+      expect(find.text('Continue'), findsOneWidget);
+      expect(
+          tester.widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Continue')).onPressed,
+          isNull);
+      await tester.tap(find.byTooltip('A'));
+      expect(wentTo, 0);
+    });
+
+    testWidgets('banner seam renders above the rail on every step',
+        (tester) async {
+      Widget withBanner(int current) => MaterialApp(
+            home: LobbyWizard(
+              steps: const [
+                LobbyStepDescriptor(title: 'A', icon: Icons.looks_one),
+                LobbyStepDescriptor(title: 'B', icon: Icons.looks_two),
+              ],
+              current: current,
+              onGoto: (_) {},
+              body: const [Text('body')],
+              banner: const Text('PENDING NOTICE'),
+            ),
+          );
+
+      await tester.pumpWidget(withBanner(0));
+      await tester.pump();
+      expect(find.text('PENDING NOTICE'), findsOneWidget);
+      // Above the rail: the notice precedes the step header in reading order.
+      expect(
+          tester.getTopLeft(find.text('PENDING NOTICE')).dy,
+          lessThan(tester.getTopLeft(find.text('Step 1 of 2 — A')).dy));
+
+      // Still there on another step.
+      await tester.pumpWidget(withBanner(1));
+      await tester.pump();
+      expect(find.text('PENDING NOTICE'), findsOneWidget);
+
+      // Null banner renders nothing.
+      await tester.pumpWidget(MaterialApp(
+        home: LobbyWizard(
+          steps: const [
+            LobbyStepDescriptor(title: 'A', icon: Icons.looks_one),
+          ],
+          current: 0,
+          onGoto: (_) {},
+          body: const [Text('body')],
+        ),
+      ));
+      await tester.pump();
+      expect(find.text('PENDING NOTICE'), findsNothing);
     });
 
     testWidgets("appBarActions seam hosts the app's top-bar controls",
