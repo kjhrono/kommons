@@ -174,6 +174,19 @@ class ShellStrings {
         'Same-device seats — pass the device around between banners.',
     this.removeSeatTooltip = 'Remove this seat',
     this.youMarker = '(you)',
+    this.inviteHeader = 'Invite',
+    this.inviteLinkLabel = 'Invite link',
+    this.inviteLinkHint =
+        'Send it to your players — opening it opens this lobby with the number filled in.',
+    this.inviteCopy = 'Copy link',
+    this.inviteCopied = 'Link copied — send it to your players.',
+    this.inviteSendEmail = 'Send by email',
+    this.inviteShare = 'Share…',
+    this.invitePaste = 'Paste a link you were sent',
+    this.invitePastedJoin = 'Invite found — join as {name}?',
+    this.inviteNothingToPaste =
+        'Nothing to paste — copy an invite link first.',
+    this.inviteJoinedWith = 'Invited as {name} — number locked in.',
   });
 
   /// The Italian catalog. Word order and idiom follow Italian, not the
@@ -315,7 +328,20 @@ class ShellStrings {
         hotSeatNote =
             'Posti sullo stesso dispositivo — passa il device tra i bannieri.',
         removeSeatTooltip = 'Rimuovi questo posto',
-        youMarker = '(tu)',;
+        youMarker = '(tu)',
+        inviteHeader = 'Invita',
+        inviteLinkLabel = 'Link di invito',
+        inviteLinkHint =
+            'Invialo ai tuoi giocatori: aprirlo apre questa lobby con il numero già inserito.',
+        inviteCopy = 'Copia link',
+        inviteCopied = 'Link copiato — invialo ai tuoi giocatori.',
+        inviteSendEmail = 'Invia per email',
+        inviteShare = 'Condividi…',
+        invitePaste = 'Incolla un link che ti è stato inviato',
+        invitePastedJoin = 'Invito trovato — entrare come {name}?',
+        inviteNothingToPaste =
+            'Niente da incollare: copia prima un link di invito.',
+        inviteJoinedWith = 'Invitato come {name} — numero già inserito.';
 
   /// The catalog for [language] (unknown codes fall back to English, the
   /// same rule the persisted-locale loader applies).
@@ -497,6 +523,28 @@ class ShellStrings {
 
   /// The '(you)' marker beside the local player's seat.
   final String youMarker;
+  final String inviteHeader;
+  final String inviteLinkLabel;
+  final String inviteLinkHint;
+  final String inviteCopy;
+  final String inviteCopied;
+  final String inviteSendEmail;
+  final String inviteShare;
+  final String invitePaste;
+  final String invitePastedJoin;
+  final String inviteNothingToPaste;
+  final String inviteJoinedWith;
+
+  /// The confirm dialog asking the pasted/received invite's player to
+  /// take the seat as their persisted persona: 'Invito trovato — entrare
+  /// come {name}?' → the name substituted.
+  String invitePastedJoinAs(String name) =>
+      invitePastedJoin.replaceAll('{name}', name);
+
+  /// The snackbar once a received invite is accepted:
+  /// 'Invitato come {name} — numero già inserito.' → the name substituted.
+  String inviteJoinedAs(String name) =>
+      inviteJoinedWith.replaceAll('{name}', name);
 
   // -- Interpolated phrasing ----------------------------------------------
 

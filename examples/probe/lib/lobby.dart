@@ -8,7 +8,12 @@ import 'game.dart';
 /// game's NEW-GAME section is a single handoff callback away. One screen,
 /// one callback: seats by game number, or solo, and the shell is done.
 class ProbeLobby extends StatefulWidget {
-  const ProbeLobby({super.key});
+  const ProbeLobby({super.key, this.initialCode});
+
+  /// A game number arriving with the navigation — from an invite link the
+  /// player opened ([ShellApp.onJoinInvite]) or a pasted one. Non-null
+  /// commits it before the first frame.
+  final String? initialCode;
 
   @override
   State<ProbeLobby> createState() => _ProbeLobbyState();
@@ -16,7 +21,8 @@ class ProbeLobby extends StatefulWidget {
 
 class _ProbeLobbyState extends State<ProbeLobby> {
   void _handoff(SharedLobbyHandoff handoff) {
-    Navigator.of(context, rootNavigator: true).pushReplacement(MaterialPageRoute(
+    Navigator.of(context, rootNavigator: true)
+        .pushReplacement(MaterialPageRoute(
       builder: (_) => ProbeGameScreen(handoff),
     ));
   }
@@ -34,6 +40,7 @@ class _ProbeLobbyState extends State<ProbeLobby> {
               SharedLobbyStep(
                 key: const ValueKey('probe-lobby-step'),
                 onHandoff: _handoff,
+                initialCode: widget.initialCode,
               ),
             ],
           ),

@@ -30,12 +30,21 @@ class ProbeApp extends StatelessWidget {
       title: 'HERALD',
       seedColor: _seed,
       home: const ProbeHome(),
+      // Invites: a join link (…#join=K7QX2) opened on any platform lands
+      // in the shared lobby with the number already locked in.
+      onJoinInvite: (invite) => Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => ProbeLobby(initialCode: invite.code),
+        ),
+      ),
       // HERALD keeps its amber-brown palettes over the default seeded
       // theme: the builder seam is where a game's custom colors live.
       themeBuilder: (context, brightness) => ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: _seed, brightness: brightness),
-        scaffoldBackgroundColor:
-            brightness == Brightness.dark ? const Color(0xff171310) : const Color(0xfff7f2ea),
+        colorScheme:
+            ColorScheme.fromSeed(seedColor: _seed, brightness: brightness),
+        scaffoldBackgroundColor: brightness == Brightness.dark
+            ? const Color(0xff171310)
+            : const Color(0xfff7f2ea),
         useMaterial3: true,
       ),
     );
@@ -58,7 +67,8 @@ class ProbeHome extends StatelessWidget {
       story: 'A caravan proving the shared road',
     ),
     SplashScene(
-      line: 'Word from the crypts beneath the pass: the dead keep their own clock.',
+      line:
+          'Word from the crypts beneath the pass: the dead keep their own clock.',
       vignette: 'packages/kommons/assets/splash_dungeon.svg',
       story: "A torch-lit gate over a crypt the herald must report on",
     ),
@@ -99,9 +109,9 @@ class ProbeHome extends StatelessWidget {
       // The reference OAuth wiring: the Google/GitHub buttons go live
       // through the game server's hosted web flow.
       settingsBuilder: () => SettingsScreen(
-            gameId: 'probe',
-            oauthProviders: oauthPopupHandlers(),
-          ),
+        gameId: 'probe',
+        oauthProviders: oauthPopupHandlers(),
+      ),
     );
   }
 }

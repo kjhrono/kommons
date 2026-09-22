@@ -67,12 +67,18 @@ void main() {
     // A join by game number adds the seat and locks the field.
     await tester.enterText(
         find.byKey(const ValueKey('shared-lobby-game-number')), '7');
+    await tester.ensureVisible(
+        find.byKey(const ValueKey('shared-lobby-add-seat')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('shared-lobby-seat-Guest 2')),
         findsOneWidget);
 
     // One callback: the shared handoff lands in HERALD's game screen.
+    await tester.ensureVisible(
+        find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('shared-lobby-start-online')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('herald-game-screen')), findsOneWidget);

@@ -60,7 +60,7 @@ dependencies:
 
 | Export | What it gives you |
 | --- | --- |
-| `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. |
+| `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. `onJoinInvite` receives a parsed invite when the app is opened through a join link (see **Invites** below). |
 | `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
 | `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession`, `AuthException`. Per-app configuration: point it at your auth server. |
@@ -116,6 +116,45 @@ dashboard and allow-listing every redirect target — is documented in
 [docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md), alongside the
 schema notes.
 
+**Invites** — a host seats distant friends without dictating a number to
+them. Once a game number is committed (a join, or the host's own table),
+the lobby renders an invite section: the shareable link
+(`https://<page>#join=K7QX2` on web — the page itself, so the copied link
+opens the same app; a portable `#join=…` fragment elsewhere), **Copy
+link**, and **Send by email** (a pre-filled `mailto:` the player
+addresses — the shell sees no contacts; where no mail handler exists the
+link lands on the clipboard instead).
+
+On the other end the link carries the table to the friend:
+
+* **ShellApp.onJoinInvite** — the shell watches for opened links (the
+  browser URL on web; app links on mobile, cold start *and* warm returns,
+  sharing the one `app_links` backend with the OAuth collector) and hands
+  the parsed `JoinInvite` to the host's handler, which navigates to its
+  lobby with `SharedLobbyStep(initialCode: invite.code)`: the number is
+  committed and locked before the first frame, an "Invited as …" snackbar
+  confirms the persona, and ADD SEAT keeps working for adding more
+  friends to the same table.
+* **Paste** — the uncommitted lobby offers *Paste a link you were sent*
+  (a QR code or a link copied from chat/email): after a confirm dialog it
+  commits and locks the number exactly like a typed join.
+
+```dart
+ShellApp(
+  // …
+  onJoinInvite: (invite) => Navigator.push(context, MaterialPageRoute(
+    builder: (_) => MyLobby(initialCode: invite.code),
+  )),
+)
+```
+
+What the shell deliberately does **not** do: validate the number against
+a server (the game's transport owns that at start), persist invites
+across restarts, or send email itself — there is no mail server in the
+package, just the player's own mail client. Mobile hosts should register
+their app-link target the same way as the OAuth redirect (see
+[docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md)).
+
 **Lost & changed passwords** — the account card covers the whole lifecycle
 in-app (email templates stay server-side):
 
@@ -160,7 +199,8 @@ flavor line (660–860 ms) → foreground vignette rises into place last
 | `game_server_dialog.dart` | `showGameServerConnectionDialog` + `saveGameServerConnection`/`storedGameServerUrl` — the shared connect-to-game-server onboarding. |
 | `banner_color_picker.dart` | `bannerPalette`, `showBannerColorPicker`, and the `bannerColor`/`bannerColorHex` codecs every banner tint flows through. |
 | `lobby_wizard.dart` | `LobbyWizard` — the new-game wizard frame: progress rail (tappable nodes, done-checks), "Step X of Y — Title" header, Back/Continue nav (hidden on first/last step). Host supplies `steps: List<LobbyStepDescriptor>` (title, icon, optional `subtitle`), `current`, `onGoto`, `body`, optional `title`, `appBarActions`, and `canContinue(stepIndex)` — the per-step gate that disables Continue until the host says the step is complete (the rail stays free navigation). |
-| `lobby_step.dart` | `SharedLobbyStep` — the shared one-screen lobby for games that don't need a wizard: the local seat (persisted `account` name + next free banner color), extra seats joined by entering the game number (field locks while seats are attached, unlocks when all are removed), and START SOLO. Exactly one callback — `onHandoff(SharedLobbyHandoff)` — carries `self`, the guest `seats`, the `roomCode` (null offline) and the `online` flag into the game's NEW-GAME section, where the shell's work ends. Fully localized, keys prefixed `shared-lobby-*`. |
+| `lobby_step.dart` | `SharedLobbyStep` — the shared one-screen lobby for games that don't need a wizard: the local seat (persisted `account` name + next free banner color), extra seats joined by entering the game number (field locks while seats are attached, unlocks when all are removed), an **invite section** once a number is committed (see below), and START SOLO. Exactly one callback — `onHandoff(SharedLobbyHandoff)` — carries `self`, the guest `seats`, the `roomCode` (null offline) and the `online` flag into the game's NEW-GAME section, where the shell's work ends. Pass `initialCode:` to seat a player who arrived through an invite link. Fully localized, keys prefixed `shared-lobby-*`. |
+| `join_link.dart` | `JoinInvite` + `joinInviteFromUri` / `joinInviteFromClipboardText` — the invite codec: `…#join=K7QX2` (fragment, or `?join=` for hosted shorteners, optional `&server=`) parses in, `link(base:)` builds the shareable string; `copyJoinLink` / `readJoinLinkClipboard` wrap the system clipboard (null-safe where none exists). |
 
 The multiplayer UI speaks the shell's languages: every player-facing string in the room card, handover section and server dialog comes from `ShellStrings`, following the same `appLocale` pick as the rest of the shell.
 

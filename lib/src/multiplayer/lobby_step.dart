@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import '../app_settings.dart' show account, appLocale;
 import 'banner_color_picker.dart';
+import 'join_link.dart';
 import 'lobby_seat.dart';
 
 /// Everything the host app needs to take over: this device's seat, the rest
@@ -66,7 +69,8 @@ class _SeatRow extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Text(strings.youMarker,
-                style: Theme.of(context).textTheme.bodySmall),          ),
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
       ]),
     );
   }
@@ -84,12 +88,18 @@ class _SeatRow extends StatelessWidget {
 /// colors come from the shared [nextFreeBannerColorHex] picker so the seats'
 /// banners stay distinct.
 class SharedLobbyStep extends StatefulWidget {
-  const SharedLobbyStep({super.key, required this.onHandoff});
+  const SharedLobbyStep({super.key, required this.onHandoff, this.initialCode});
 
   /// Fired exactly once, when the player starts the game (solo, hot-seat,
   /// or online). The game's NEW-GAME section receives the handoff and
   /// creates its world.
   final ValueChanged<SharedLobbyHandoff> onHandoff;
+
+  /// A game number handed to the lobby before it opened — from a parsed
+  /// invite link ([joinInviteFromUri], see [ShellApp]'s link delivery or a
+  /// pasted link). Non-empty commits the number immediately, locking it
+  /// like any join: an invited player never types the code by hand.
+  final String? initialCode;
 
   @override
   State<SharedLobbyStep> createState() => _SharedLobbyStepState();
@@ -106,12 +116,52 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
   /// which clears after a join) so the handoff still carries the code.
   String? _joinedCode;
 
+  /// True once a number is committed — by a join, a received invite, or
+  /// the initial link: the field locks, the invite section appears, and
+  /// the code joins the handoff. Removing every seat releases it.
+  bool _codeLocked = false;
+
+  /// True when the committed number arrived from an invite (initial link
+  /// or paste) rather than a hand-typed join: the invited player keeps
+  /// adding friends' seats to the same table without re-entering it.
+  bool _inviteOnly = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // An invite arrived with the navigation (deep link / parsed link):
+    // the code is committed before the first frame, so the invited
+    // player lands on a locked lobby — seats, invite, start.
+    final initial = widget.initialCode?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _joinedCode = initial;
+      _codeLocked = true;
+      _inviteOnly = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(appLocale.strings.inviteJoinedAs(account.playerName)),
+        ));
+      });
+    }
+  }
+
   @override
   void dispose() {
     _codeController.dispose();
     _codeFocus.dispose();
     super.dispose();
   }
+
+  /// The base a shared invite builds on: the page itself on web (the
+  /// copied link opens the same app elsewhere), a fragment-only string
+  /// on other platforms — the game's own landing URL is the host's to
+  /// know, and `#join=…` pastes onto it cleanly.
+  Uri? get _linkBase => kIsWeb ? Uri.base : null;
+
+  /// The invite string for the committed code, as the host shares it.
+  String get _inviteLink =>
+      JoinInvite(code: _joinedCode ?? '').link(base: _linkBase);
 
   /// This device's seat: the persisted player's name (falling back to the
   /// localized default) carrying the next free banner color.
@@ -124,7 +174,9 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
 
   Future<void> _addSeat() async {
     final strings = appLocale.strings;
-    final code = _codeController.text.trim();
+    // An invited lobby commits its code up front: extra seats join the
+    // same table without re-typing it. A hand-typed lobby reads the field.
+    final code = _joinedCode ?? _codeController.text.trim();
     if (code.isEmpty) {
       setState(() => _codeError = strings.gameNumberMissing);
       _codeFocus.requestFocus();
@@ -147,12 +199,96 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
     setState(() {
       _joining = false;
       _joinedCode = code;
+      _codeLocked = true;
       _guests.add(guest);
       _codeController.clear();
     });
   }
 
-  void _removeSeat(LobbySeat seat) => setState(() => _guests.remove(seat));
+  void _removeSeat(LobbySeat seat) {
+    setState(() {
+      _guests.remove(seat);
+      if (_guests.isEmpty) {
+        // The last seat gone: the committed number is nobody's join any
+        // more — release it (field unlocks, invite section goes).
+        _codeLocked = false;
+        _inviteOnly = false;
+        _joinedCode = null;
+      }
+    });
+  }
+
+  /// Reads a received invite off the clipboard and, after a confirm, sits
+  /// the player at that table: the code commits and locks exactly like a
+  /// hand-typed join.
+  Future<void> _pasteInvite() async {
+    final strings = appLocale.strings;
+    final text = await readJoinLinkClipboard();
+    final invite = joinInviteFromClipboardText(text);
+    if (!mounted) return;
+    if (invite == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(strings.inviteNothingToPaste)));
+      return;
+    }
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.inviteHeader),
+        content: Text(strings.invitePastedJoinAs(account.playerName)),
+        actions: [
+          TextButton(
+            key: const ValueKey('shared-lobby-invite-cancel'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('shared-lobby-invite-accept'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(strings.confirm),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    setState(() {
+      _joinedCode = invite.code;
+      _codeLocked = true;
+      _inviteOnly = true;
+      _codeError = null;
+    });
+  }
+
+  Future<void> _copyInviteLink() async {
+    await copyJoinLink(_inviteLink);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(appLocale.strings.inviteCopied)));
+    }
+  }
+
+  /// Opens the mail client with the invite pre-filled (the player picks
+  /// the recipients — the shell never sees an address book). Where no
+  /// mail handler exists, the link lands on the clipboard instead.
+  Future<void> _emailInviteLink() async {
+    final body = Uri(
+      scheme: 'mailto',
+      queryParameters: {
+        'subject':
+            '${appLocale.strings.inviteLinkLabel} · ${_joinedCode ?? ''}',
+        'body': _inviteLink,
+      },
+    );
+    try {
+      await launcher.launchUrl(body);
+    } catch (_) {
+      await copyJoinLink(_inviteLink);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.inviteCopied)));
+      }
+    }
+  }
 
   void _startSolo() => widget.onHandoff(SharedLobbyHandoff(
         self: _self,
@@ -162,7 +298,7 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
       ));
 
   void _startOnline() {
-    if (_guests.isEmpty) return;
+    if (_guests.isEmpty || !_codeLocked) return;
     widget.onHandoff(SharedLobbyHandoff(
       self: _self,
       seats: List.unmodifiable(_guests),
@@ -189,7 +325,7 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
           key: const ValueKey('shared-lobby-game-number'),
           controller: _codeController,
           focusNode: _codeFocus,
-          enabled: _guests.isEmpty && !_joining,
+          enabled: _guests.isEmpty && !_joining && !_codeLocked,
           decoration: InputDecoration(
             labelText: strings.gameNumberLabel,
             hintText: strings.gameNumberHint,
@@ -203,7 +339,9 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
           alignment: Alignment.centerRight,
           child: FilledButton.tonalIcon(
             key: const ValueKey('shared-lobby-add-seat'),
-            onPressed: (_guests.isEmpty && !_joining) ? _addSeat : null,
+            onPressed: (!_joining && (_inviteOnly || _guests.isEmpty))
+                ? _addSeat
+                : null,
             icon: _joining
                 ? const SizedBox(
                     width: 16,
@@ -213,9 +351,50 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
             label: Text(strings.addSeat),
           ),
         ),
+        if (_codeLocked) ...[
+          const SizedBox(height: 20),
+          Text(strings.inviteHeader,
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          TextField(
+            key: const ValueKey('shared-lobby-invite-link'),
+            controller: TextEditingController(text: _inviteLink),
+            readOnly: true,
+            decoration: InputDecoration(
+              labelText: strings.inviteLinkLabel,
+              hintText: strings.inviteLinkHint,
+              prefixIcon: const Icon(Icons.link),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton.icon(
+              key: const ValueKey('shared-lobby-invite-copy'),
+              onPressed: _copyInviteLink,
+              icon: const Icon(Icons.copy),
+              label: Text(strings.inviteCopy),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('shared-lobby-invite-email'),
+              onPressed: _emailInviteLink,
+              icon: const Icon(Icons.mail_outline),
+              label: Text(strings.inviteSendEmail),
+            ),
+          ]),
+        ] else ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const ValueKey('shared-lobby-invite-paste'),
+              onPressed: _pasteInvite,
+              icon: const Icon(Icons.content_paste),
+              label: Text(strings.invitePaste),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
-        Text(strings.hotSeatNote,
-            style: Theme.of(context).textTheme.bodySmall),
+        Text(strings.hotSeatNote, style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 16),
         FilledButton.icon(
           key: const ValueKey('shared-lobby-start-online'),

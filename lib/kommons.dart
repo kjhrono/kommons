@@ -29,5 +29,6 @@ export 'src/multiplayer/game_server_dialog.dart';
 export 'src/multiplayer/banner_color_picker.dart';
 export 'src/multiplayer/lobby_wizard.dart';
 export 'src/multiplayer/lobby_step.dart';
+export 'src/multiplayer/join_link.dart';
 export 'src/multiplayer/cloud_room_card.dart';
 export 'src/multiplayer/cloud_handover_section.dart';

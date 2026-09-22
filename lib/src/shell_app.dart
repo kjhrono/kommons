@@ -1,10 +1,17 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_settings.dart';
+import 'multiplayer/join_link.dart';
 import 'shell_strings.dart';
+
+/// What [ShellApp] does with an arriving invite: usually a navigator push
+/// of the game's lobby, seeded with [SharedLobbyStep.initialCode].
+typedef ShellJoinHandler = void Function(JoinInvite invite);
 
 /// How [ShellApp] builds each brightness's theme from the host's seed.
 typedef ShellThemeBuilder = ThemeData Function(
@@ -47,6 +54,7 @@ class ShellApp extends StatefulWidget {
     this.localizationsDelegates,
     this.supportedLocales,
     this.debugShowCheckedModeBanner = false,
+    this.onJoinInvite,
   });
 
   /// The app's home — usually the game's [AppSplash].
@@ -81,6 +89,15 @@ class ShellApp extends StatefulWidget {
   /// Passes through to MaterialApp. Games usually keep it false.
   final bool debugShowCheckedModeBanner;
 
+  /// Receives an invite when the app is opened through a join link
+  /// (`…#join=CODE` or `?join=CODE`) — a friend's email, a shared chat
+  /// message, a QR code. The shell detects the link (browser URL on web,
+  /// app links on mobile: cold start and warm returns) and calls this
+  /// once the widget tree is up; the handler navigates to the lobby with
+  /// the code pre-locked. See [SharedLobbyStep.initialCode]. Null (the
+  /// default) ignores join links entirely.
+  final ShellJoinHandler? onJoinInvite;
+
   @override
   State<ShellApp> createState() => _ShellAppState();
 }
@@ -95,11 +112,67 @@ class _ShellAppState extends State<ShellApp> {
     // by themselves (an anonymous player's persisted name changes no
     // notifier value, yet the welcome must re-read it).
     unawaited(_preload());
+    unawaited(_watchJoinLinks());
   }
 
   Future<void> _preload() async {
     await Future.wait([appTheme.load(), appLocale.load(), account.load()]);
     if (mounted) setState(() {});
+  }
+
+  /// Join-link detection: the browser URL on web; app links on mobile —
+  /// the cold-start link plus warm returns while the app runs. Delivers
+  /// at most one invite per distinct link (some platforms replay the
+  /// initial link on the stream). Errors (tests, desktops without a link
+  /// backend) mean "nothing to join here", never a crash.
+  Uri? _lastJoinDelivered;
+
+  Future<void> _watchJoinLinks() async {
+    final handler = widget.onJoinInvite;
+    if (handler == null) return;
+    try {
+      if (kIsWeb) {
+        _deliverJoin(Uri.base, handler);
+        return;
+      }
+      final links = AppLinks();
+      // Warm returns first, so nothing falls in the gap while the
+      // initial link is being read.
+      final subscription = links.uriLinkStream.listen(
+        (uri) => _deliverJoin(uri, handler),
+        onError: (_) {},
+      );
+      final initial = await links.getInitialLink();
+      if (initial != null) _deliverJoin(initial, handler);
+      // The shell lives as long as the app; the subscription rides along.
+      // (Kept referenced so the analyzer sees a deliberate listen.)
+      _joinSubscription = subscription;
+    } catch (_) {
+      // No link backend here — nothing to join.
+    }
+  }
+
+  StreamSubscription<Uri>? _joinSubscription;
+
+  @override
+  void dispose() {
+    unawaited(_joinSubscription?.cancel());
+    super.dispose();
+  }
+
+  void _deliverJoin(Uri uri, ShellJoinHandler handler) {
+    if (uri.toString() == _lastJoinDelivered?.toString()) return;
+    final invite = joinInviteFromUri(uri);
+    if (invite == null) return;
+    _lastJoinDelivered = uri;
+    // Deliver once the tree can navigate (a cold start calls while the
+    // first frame is still building). scheduleFrame guarantees that a
+    // frame actually happens — an idle/static app would otherwise never
+    // run the callback.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) handler(invite);
+    });
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   @override
@@ -122,8 +195,8 @@ class _ShellAppState extends State<ShellApp> {
           darkTheme: themeBuilder(context, Brightness.dark),
           themeMode: widget.themeMode ?? appTheme.value,
           locale: widget.locale ?? appLocale.value?.locale,
-          supportedLocales:
-              widget.supportedLocales ?? ShellLanguage.values.map((l) => l.locale).toList(),
+          supportedLocales: widget.supportedLocales ??
+              ShellLanguage.values.map((l) => l.locale).toList(),
           localizationsDelegates: [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
