@@ -15,6 +15,7 @@ export 'src/app_top_bar.dart';
 export 'src/auth_service.dart';
 export 'src/settings_screen.dart';
 export 'src/shell_strings.dart';
+export 'src/shell_preferences.dart';
 export 'src/app_splash.dart';
 export 'src/oauth_popup_launcher.dart';
 export 'src/shell_app.dart';

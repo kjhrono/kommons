@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'auth_service.dart';
 import 'oauth_popup_launcher.dart' as oauth_launcher;
+import 'shell_preferences.dart';
 import 'shell_strings.dart';
 
 /// A game-server (auth-backend) connection an app hands to the account
@@ -52,6 +54,10 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
   set mode(ThemeMode mode) {
     value = mode;
     _persist();
+    // Sync write-through: a session on any game sharing the auth server
+    // inherits this choice (quiet no-op when not signed in / offline).
+    unawaited(account.preferenceEdited(
+        ShellPrefKey.theme, mode == ThemeMode.light ? 'light' : 'dark'));
   }
 
   /// Restores the remembered choice at startup (before the first frame
@@ -60,6 +66,14 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
     final prefs = await SharedPreferences.getInstance();
     value =
         prefs.getString(_prefKey) == 'light' ? ThemeMode.light : ThemeMode.dark;
+  }
+
+  /// Applies a synced value (from another device, via the account
+  /// controller) without firing the sync push loop again.
+  @visibleForTesting
+  Future<void> applySynced(ThemeMode mode) async {
+    value = mode;
+    await _persist();
   }
 
   /// Clears in-memory state for tests (see [AccountController.resetForTest]).
@@ -110,6 +124,17 @@ class AppLocaleNotifier extends ValueNotifier<ShellLanguage?> {
 
   /// Picks a language and persists it.
   Future<void> setLanguage(ShellLanguage language) async {
+    value = language;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefKey, language.code);
+    // Sync write-through, as the theme toggle does.
+    unawaited(account.preferenceEdited(ShellPrefKey.locale, language.code));
+  }
+
+  /// Applies a synced language (from another device, via the account
+  /// controller) without firing the sync push loop again.
+  @visibleForTesting
+  Future<void> applySynced(ShellLanguage language) async {
     value = language;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefKey, language.code);
@@ -273,6 +298,13 @@ class AccountController extends ValueNotifier<Account?> {
     }
     if (!restored.isExpired) {
       _session = restored;
+      // A temp-password session restored from disk re-opens the shell's
+      // forced change-password form — the flag survives restarts until
+      // the change lands.
+      _resetPasswordArmed = restored.mustChangePassword;
+      // Cross-project preferences ride along with the restored session:
+      // another device's newest theme/language/name applies here too.
+      unawaited(syncPreferencesOnSignIn());
       return;
     }
     final service = await _ensureService();
@@ -282,7 +314,9 @@ class AccountController extends ValueNotifier<Account?> {
     }
     try {
       _session = await service.refresh(restored.refreshToken);
+      _resetPasswordArmed = _session!.mustChangePassword;
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+      unawaited(syncPreferencesOnSignIn());
     } on AuthException {
       _session = null;
       await prefs.remove(_sessionKey);
@@ -309,12 +343,44 @@ class AccountController extends ValueNotifier<Account?> {
     if (service == null) return null;
     try {
       _session = await service.refresh(current.refreshToken);
+      _resetPasswordArmed = _session!.mustChangePassword;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       return _session!.accessToken;
     } on AuthException {
       return null;
     }
+  }
+
+  // -- Cross-project preference sync -----------------------------------------
+
+  /// Local edit stamps (epoch seconds) for the synced preferences, kept in
+  /// a side file so the pull decision works without touching the notifiers
+  /// themselves. First edits before any sync run stamp 0 and still win by
+  /// the seed rule (cloud lacks the key → push).
+  static const _stampsKey = 'prefs.account.prefStamps';
+
+  /// Debounce for the push-after-edit loop; null when nothing is pending.
+  Timer? _syncPushTimer;
+
+  /// Reads the local edit stamps (empty file → empty map).
+  static Future<Map<String, int>> readLocalPreferenceStamps(
+      SharedPreferences prefs) async {
+    final raw = prefs.getString(_stampsKey);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return decoded.map((k, v) => MapEntry('$k', v is int ? v : 0));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Persists the local edit stamps.
+  static Future<void> writeLocalPreferenceStamps(
+      SharedPreferences prefs, Map<String, int> stamps) async {
+    await prefs.setString(_stampsKey, jsonEncode(stamps));
   }
 
   /// Sets the anonymous player's name (settings → player name).
@@ -326,6 +392,250 @@ class AccountController extends ValueNotifier<Account?> {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_nameKey, playerName);
+    // Sync write-through, as the theme and language pickers do.
+    unawaited(preferenceEdited(ShellPrefKey.playerName, playerName));
+  }
+
+  // -- Cross-project preference sync ----------------------------------------
+
+  /// Runs the cross-project preference sync for a fresh session (call on
+  /// every sign-in path and on a restored session): reconcile the cloud
+  /// `kommons` metadata blob against the local notifiers, apply the pull
+  /// side, then push back so the server ends up holding the union.
+  ///
+  /// Per-key last-writer-wins via [ShellPrefKey] stamps (see
+  /// shell_preferences.dart); keys this device never touched are seeded
+  /// from the cloud; values the cloud never saw are seeded up. Offline or
+  /// unconfigured servers fail quietly — the local experience is already
+  /// correct and the next sign-in retries the merge.
+  Future<void> syncPreferencesOnSignIn() async {
+    final session = _session;
+    if (session == null) return;
+    final service = await _ensureService();
+    if (service == null) return;
+    final prefs = await SharedPreferences.getInstance();
+
+    Map<String, dynamic> cloudPreferences;
+    try {
+      final user = await service.fetchUser(session.accessToken);
+      cloudPreferences = shellPreferencesFromMetadata(user.metadata);
+    } catch (_) {
+      // Unreachable server, revoked token, malformed answer: quiet no-op —
+      // the local experience is already correct and the next sign-in
+      // retries the merge. The sync must never break the sign-in itself.
+      return;
+    }
+
+    final localStamps = await readLocalPreferenceStamps(prefs);
+    final locale = appLocale.value;
+    final reconcile = shellPreferencesReconcile(
+      cloudPreferences: cloudPreferences,
+      localTheme: appTheme.value == ThemeMode.light ? 'light' : 'dark',
+      localLocale: locale?.code,
+      // The shell's default name is not a choice: a device that never
+      // picked a name has nothing to push, and the cloud value (if any)
+      // applies. A chosen name goes through setPlayerName and is stamped.
+      localPlayerName:
+          playerName == 'Player' && !localStamps.containsKey('playerName')
+              ? null
+              : playerName,
+      localStamps: localStamps,
+    );
+
+    if (reconcile.pull.isNotEmpty) {
+      var changed = 0;
+      for (final entry in reconcile.pull.entries) {
+        if (await _applyPreferenceLocally(entry.key, entry.value)) changed++;
+      }
+      await _stampLocalEdits(prefs, reconcile.pull,
+          cloudStampFor: (key) =>
+              shellPreferenceTimestamps(cloudPreferences)[key] ?? 0);
+      if (changed > 0) _notifyPreferencesPulled(changed);
+    }
+
+    // Push back so the server carries the union (a fresh account gets this
+    // device's defaults; a merge keeps both sides' newest keys). The patch
+    // stamps the pushed keys now and carries the cloud stamps forward.
+    if (reconcile.push.isNotEmpty) {
+      final pushPayload = shellPreferencePatch(
+          cloudPreferences,
+          {
+            for (final entry in reconcile.push.entries)
+              entry.key.key: entry.value,
+          },
+          DateTime.now().millisecondsSinceEpoch ~/ 1000);
+      try {
+        await service.updateUserMetadata(
+          accessToken: session.accessToken,
+          data: shellPreferencesToMetadata(session.userMetadata, pushPayload),
+        );
+        // Refresh the local session's metadata copy so a later push (e.g.
+        // a settings edit without a new fetch) sees the union.
+        _session = AuthSession(
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+          expiresAt: session.expiresAt,
+          userId: session.userId,
+          email: session.email,
+          userMetadata:
+              shellPreferencesToMetadata(session.userMetadata, pushPayload),
+        );
+        await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+      } on AuthException {
+        // The pull already applied; the push retries on the next sign-in.
+      }
+    }
+  }
+
+  /// Pulled-preference signal: fires with the number of values that
+  /// actually changed locally (a pull that only re-confirms known values
+  /// stays silent). ShellApp listens and tells the player their account
+  /// brought their preferences in; hosts can listen too. UIs acknowledge
+  /// an event via [shouldShowSyncNotice] / [markSyncNoticeShown] so each
+  /// event shows at most once.
+  final ValueNotifier<int> preferencesPulled = ValueNotifier<int>(0);
+
+  /// The pull event the UI last acknowledged (see
+  /// [shouldShowSyncNotice]).
+  int _syncNoticeAck = 0;
+
+  void _notifyPreferencesPulled(int changed) {
+    preferencesPulled.value = preferencesPulled.value + changed;
+  }
+
+  /// True when the pull event [event] has not been acknowledged yet —
+  /// the UI may show its sync notice for it. Zero (no pull so far) never
+  /// shows.
+  bool shouldShowSyncNotice(int event) => event > _syncNoticeAck;
+
+  /// Acknowledges the pull event [event]: the sync notice for it will
+  /// not show again (test re-pumps, host re-listens).
+  void markSyncNoticeShown(int event) {
+    if (event > _syncNoticeAck) _syncNoticeAck = event;
+  }
+
+  /// Writes one pulled or edited preference into the live notifiers (and
+  /// their persisted keys) without triggering the push loop again.
+  /// Returns true when the local value actually changed (same-value pulls
+  /// are no-ops and stay invisible).
+  Future<bool> _applyPreferenceLocally(ShellPrefKey key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    switch (key) {
+      case ShellPrefKey.theme:
+        final mode = value == 'light' ? ThemeMode.light : ThemeMode.dark;
+        if (appTheme.value != mode) {
+          await appTheme.applySynced(mode); // no push side effects
+          return true;
+        }
+        return false;
+      case ShellPrefKey.locale:
+        for (final language in ShellLanguage.values) {
+          if (language.code == value) {
+            if (appLocale.value != language) {
+              await appLocale.applySynced(language);
+              return true;
+            }
+            return false;
+          }
+        }
+        return false;
+      case ShellPrefKey.playerName:
+        if (playerName != value && value.trim().isNotEmpty) {
+          playerName = value.trim();
+          if (this.value != null && this.value!.provider == 'email') {
+            this.value = Account(
+                displayName: playerName,
+                email: this.value!.email,
+                provider: 'email');
+          }
+          await prefs.setString(_nameKey, playerName);
+          notifyListeners();
+          return true;
+        }
+        return false;
+    }
+  }
+
+  /// Stamps the local side of an edit (epoch seconds). Pulled values stamp
+  /// with the cloud's own timestamp so a later merge does not re-apply.
+  Future<void> _stampLocalEdits(
+    SharedPreferences prefs,
+    Map<ShellPrefKey, String?> changes, {
+    int Function(String key)? cloudStampFor,
+  }) async {
+    final stamps =
+        Map<String, int>.from(await readLocalPreferenceStamps(prefs));
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    changes.forEach((key, value) {
+      stamps[key.key] = cloudStampFor?.call(key.key) ?? now;
+    });
+    await writeLocalPreferenceStamps(prefs, stamps);
+  }
+
+  /// One local preference edit (theme toggle, language pick, name save).
+  /// Stamps the edit locally and queues the debounced push; a no-op when
+  /// not cloud-signed-in. Never throws. Rapid edits coalesce: the flush
+  /// drains every key queued since the last successful write in one PUT.
+  Future<void> preferenceEdited(ShellPrefKey key, String value) async {
+    if (_session == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await _stampLocalEdits(prefs, {key: value});
+    _pendingPushes[key] = value;
+    _syncPushTimer?.cancel();
+    _syncPushTimer = Timer(_syncPushDebounce, _flushPendingPushes);
+  }
+
+  /// Keys queued by [preferenceEdited] awaiting the debounced flush.
+  final Map<ShellPrefKey, String> _pendingPushes = {};
+
+  /// The in-flight sign-in sync, if one is running (test seam reads it;
+  /// a new sync replaces it — the latest session wins).
+  Future<void>? _signInSync;
+
+  Future<void> _flushPendingPushes() async {
+    final session = _session;
+    if (session == null || _pendingPushes.isEmpty) return;
+    final service = await _ensureService();
+    if (service == null) return;
+    final pending = Map<ShellPrefKey, String>.from(_pendingPushes);
+    _pendingPushes.clear();
+    final current = shellPreferencesFromMetadata(session.userMetadata);
+    final payload = shellPreferencePatch(
+        current,
+        {for (final entry in pending.entries) entry.key.key: entry.value},
+        DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    try {
+      await service.updateUserMetadata(
+        accessToken: session.accessToken,
+        data: shellPreferencesToMetadata(session.userMetadata, payload),
+      );
+      _session = AuthSession(
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        expiresAt: session.expiresAt,
+        userId: session.userId,
+        email: session.email,
+        userMetadata: shellPreferencesToMetadata(session.userMetadata, payload),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+    } on AuthException {
+      // Offline or token trouble: re-queue so a later edit's flush (or the
+      // next sign-in's reconcile) carries these edits up. The local stamps
+      // already mark this device the winner.
+      _pendingPushes.addAll(pending);
+    }
+  }
+
+  static const _syncPushDebounce = Duration(seconds: 3);
+
+  /// Test seam: runs the debounced push immediately instead of waiting out
+  /// the timer (widget tests use fake clocks; plain tests want no sleeps).
+  @visibleForTesting
+  Future<void> debugFlushPendingPreferencePushes() async {
+    final running = _signInSync;
+    await running;
+    await _flushPendingPushes();
   }
 
   /// Signs in with email only: the account is recorded on this device
@@ -372,6 +682,11 @@ class AccountController extends ValueNotifier<Account?> {
     }
     _session = session;
     _pendingSignupEmail = null;
+    // A session the server flagged with must_change_password (an
+    // admin-issued temporary password) opens the shell's change-password
+    // form right away — but leaves sign-out available: the player knows
+    // this password, they just shouldn't keep it.
+    _resetPasswordArmed = session.mustChangePassword;
     value = Account(
         displayName: playerName,
         email: session.email.isNotEmpty ? session.email : clean,
@@ -380,6 +695,9 @@ class AccountController extends ValueNotifier<Account?> {
     await prefs.setString(_emailKey, value!.email);
     await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
     await prefs.remove(_pendingKey);
+    notifyListeners();
+    _signInSync = syncPreferencesOnSignIn();
+    unawaited(_signInSync!);
   }
 
   /// Called by the settings screen when the server answers that the
@@ -411,6 +729,7 @@ class AccountController extends ValueNotifier<Account?> {
         await service.verifySignup(email: email, token: code.trim());
     _session = session;
     _pendingSignupEmail = null;
+    _resetPasswordArmed = session.mustChangePassword;
     value = Account(
         displayName: playerName,
         email: session.email.isNotEmpty ? session.email : email,
@@ -420,6 +739,8 @@ class AccountController extends ValueNotifier<Account?> {
     await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
     await prefs.remove(_pendingKey);
     notifyListeners();
+    _signInSync = syncPreferencesOnSignIn();
+    unawaited(_signInSync!);
   }
 
   /// Sends the "forgot password" email: the game server mails the
@@ -464,7 +785,10 @@ class AccountController extends ValueNotifier<Account?> {
     _session = session;
     _pendingSignupEmail = null;
     _resetEmail = null; // the reset is complete: the player is back in
+    // Recovery always forces the change; the flag (set alongside an
+    // admin-issued temp password) is redundant here but harmless.
     _resetPasswordArmed = true;
+    _recoveryNoPassword = true;
     value = Account(
       displayName: playerName,
       email: session.email.isNotEmpty ? session.email : email,
@@ -475,12 +799,33 @@ class AccountController extends ValueNotifier<Account?> {
     await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
     await prefs.remove(_pendingKey);
     notifyListeners();
+    _signInSync = syncPreferencesOnSignIn();
+    unawaited(_signInSync!);
   }
 
   /// True while the current cloud session came from a password recovery —
   /// the settings screen shows the change-password form (and no other
   /// account actions) until the player sets their own password.
   bool get passwordResetPending => _resetPasswordArmed;
+
+  /// True when the current session carries the server's
+  /// `must_change_password` flag — the player signed in with an
+  /// admin-issued temporary password, and the shell opens the
+  /// change-password form for it on entry. Cleared server-side and
+  /// locally once [changePassword] lands. [passwordResetPending] covers
+  /// the recovery variant of the same form.
+  bool get mustChangePassword => _session?.mustChangePassword ?? false;
+
+  /// True when the forced change comes from a *recovery* — a session whose
+  /// password the player cannot know — rather than from the server's
+  /// `must_change_password` flag on a temporary password they just typed.
+  /// The settings screen keeps sign-out available in the flag case (the
+  /// player can always sign back in with the temp password) and hides it
+  /// in the recovery case (leaving would strand the account).
+  bool get recoveryInProgress => _recoveryNoPassword;
+
+  /// Set by [verifyRecoveryCode]; cleared once a new password is chosen.
+  bool _recoveryNoPassword = false;
 
   /// Arms the forced change-password state without touching persistence
   /// (used by [verifyRecoveryCode]; the flag is session-scoped on
@@ -489,8 +834,10 @@ class AccountController extends ValueNotifier<Account?> {
   void markPasswordReset() => _resetPasswordArmed = true;
 
   /// Changes the signed-in cloud account's password, then lifts the
-  /// forced-change state. The current session stays valid (GoTrue keeps
-  /// the token pair on a password change) so no refresh is needed.
+  /// forced-change state — clearing the server's `must_change_password`
+  /// flag in the same call so future sessions stop arriving flagged. The
+  /// current session stays valid (GoTrue keeps the token pair on a
+  /// password change) so no refresh is needed.
   Future<void> changePassword(String newPassword) async {
     final session = _session;
     if (session == null) {
@@ -502,9 +849,35 @@ class AccountController extends ValueNotifier<Account?> {
       throw const AuthException('no_server',
           'Configure the game server first (host or join an online room once).');
     }
-    await service.updatePassword(
-        accessToken: session.accessToken, newPassword: newPassword);
+    if (session.mustChangePassword) {
+      await service.updatePassword(
+        accessToken: session.accessToken,
+        newPassword: newPassword,
+        clearMetadata: const {
+          'must_change_password': null, // GoTrue merges: null removes the key
+        },
+      );
+    } else {
+      await service.updatePassword(
+          accessToken: session.accessToken, newPassword: newPassword);
+    }
+    // Keep the local copy honest: the flag is gone from this session too.
+    if (session.userMetadata.isNotEmpty) {
+      final meta = Map<String, dynamic>.from(session.userMetadata)
+        ..remove('must_change_password');
+      _session = AuthSession(
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        expiresAt: session.expiresAt,
+        userId: session.userId,
+        email: session.email,
+        userMetadata: meta,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+    }
     _resetPasswordArmed = false;
+    _recoveryNoPassword = false;
     notifyListeners();
   }
 
@@ -573,7 +946,17 @@ class AccountController extends ValueNotifier<Account?> {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_pendingKey);
-    _session = session;
+    // A provider session on a flagged account opens the change-password
+    // form too — the temporary password (and its flag) is identity-agnostic.
+    _resetPasswordArmed = user.metadata['must_change_password'] == true;
+    _session = AuthSession(
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.expiresAt,
+      userId: user.id,
+      email: user.email,
+      userMetadata: user.metadata,
+    );
     _pendingSignupEmail = null;
     value = Account(
       displayName: playerName,
@@ -581,8 +964,10 @@ class AccountController extends ValueNotifier<Account?> {
       provider: provider,
     );
     await prefs.setString(_emailKey, user.email);
-    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
+    await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
     notifyListeners();
+    _signInSync = syncPreferencesOnSignIn();
+    unawaited(_signInSync!);
   }
 
   /// This app's origin on the web (the authorize redirect's target there),
@@ -644,16 +1029,20 @@ class AccountController extends ValueNotifier<Account?> {
   /// Signs out, keeping the local player name. A cloud session is also
   /// revoked server-side (best effort — it expires on its own anyway).
   Future<void> signOut() async {
-    if (_resetPasswordArmed) {
+    if (_resetPasswordArmed && _recoveryNoPassword) {
       // A recovered session has no known password behind it: leaving it
       // here would strand the player outside their own account. The UI
       // hides the affordance; this guard keeps any future caller honest.
+      // (A must_change_password-flagged session is different: the player
+      // knows the temporary password and may simply leave.)
       throw const AuthException('reset_in_progress',
           'Choose a new password first (a recovered session has none to fall back on).');
     }
     final session = _session;
     _session = null;
     _pendingSignupEmail = null;
+    _syncPushTimer?.cancel();
+    _pendingPushes.clear();
     value = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_emailKey);
@@ -681,6 +1070,10 @@ class AccountController extends ValueNotifier<Account?> {
     collectOAuthFragment = null;
     oauthRedirectUri = null;
     serverConnection = readStandardServerConnection;
+    _syncPushTimer?.cancel();
+    _pendingPushes.clear();
+    preferencesPulled.value = 0;
+    _syncNoticeAck = 0;
   }
 }
 

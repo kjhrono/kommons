@@ -55,6 +55,7 @@ class ShellApp extends StatefulWidget {
     this.supportedLocales,
     this.debugShowCheckedModeBanner = false,
     this.onJoinInvite,
+    this.showPreferencesSyncedNotice = true,
   });
 
   /// The app's home — usually the game's [AppSplash].
@@ -97,6 +98,12 @@ class ShellApp extends StatefulWidget {
   /// the code pre-locked. See [SharedLobbyStep.initialCode]. Null (the
   /// default) ignores join links entirely.
   final ShellJoinHandler? onJoinInvite;
+
+  /// Tells the player their account just brought their preferences in
+  /// (theme, language, name — the cross-project sync, see
+  /// [AccountController.preferencesPulled]). Set false to hush it (hosts
+  /// that surface the sync differently).
+  final bool showPreferencesSyncedNotice;
 
   @override
   State<ShellApp> createState() => _ShellAppState();
@@ -154,12 +161,6 @@ class _ShellAppState extends State<ShellApp> {
 
   StreamSubscription<Uri>? _joinSubscription;
 
-  @override
-  void dispose() {
-    unawaited(_joinSubscription?.cancel());
-    super.dispose();
-  }
-
   void _deliverJoin(Uri uri, ShellJoinHandler handler) {
     if (uri.toString() == _lastJoinDelivered?.toString()) return;
     final invite = joinInviteFromUri(uri);
@@ -175,37 +176,106 @@ class _ShellAppState extends State<ShellApp> {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
+  @override
+  void dispose() {
+    unawaited(_joinSubscription?.cancel());
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      // account included: its load() landing after the first frame repaints
-      // the splash welcome with the restored player name.
-      animation: Listenable.merge([appTheme, appLocale, account]),
-      builder: (context, _) {
-        final themeBuilder = widget.themeBuilder ??
-            (context, brightness) => ThemeData(
-                  colorScheme: ColorScheme.fromSeed(
-                      seedColor: widget.seedColor, brightness: brightness),
-                  useMaterial3: true,
-                );
-        return MaterialApp(
-          title: widget.title,
-          debugShowCheckedModeBanner: widget.debugShowCheckedModeBanner,
-          theme: themeBuilder(context, Brightness.light),
-          darkTheme: themeBuilder(context, Brightness.dark),
-          themeMode: widget.themeMode ?? appTheme.value,
-          locale: widget.locale ?? appLocale.value?.locale,
-          supportedLocales: widget.supportedLocales ??
-              ShellLanguage.values.map((l) => l.locale).toList(),
-          localizationsDelegates: [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-            ...?widget.localizationsDelegates,
-          ],
-          home: widget.home,
-        );
+    // The sync notice posts on MaterialApp's own root ScaffoldMessenger
+    // (handed our key via `scaffoldMessengerKey`) — visible over any
+    // screen, including the settings screen the pull may have just
+    // repainted. Scaffolds register there by default, so the notice has
+    // somewhere to land.
+    return _SyncNotice(
+      messengerKey: _messengerKey,
+      enabled: widget.showPreferencesSyncedNotice,
+      child: AnimatedBuilder(
+        // account included: its load() landing after the first frame repaints
+        // the splash welcome with the restored player name.
+        animation: Listenable.merge([appTheme, appLocale, account]),
+        builder: (context, _) {
+          final themeBuilder = widget.themeBuilder ??
+              (context, brightness) => ThemeData(
+                    colorScheme: ColorScheme.fromSeed(
+                        seedColor: widget.seedColor, brightness: brightness),
+                    useMaterial3: true,
+                  );
+          return MaterialApp(
+            title: widget.title,
+            debugShowCheckedModeBanner: widget.debugShowCheckedModeBanner,
+            scaffoldMessengerKey: _messengerKey,
+            theme: themeBuilder(context, Brightness.light),
+            darkTheme: themeBuilder(context, Brightness.dark),
+            themeMode: widget.themeMode ?? appTheme.value,
+            locale: widget.locale ?? appLocale.value?.locale,
+            supportedLocales: widget.supportedLocales ??
+                ShellLanguage.values.map((l) => l.locale).toList(),
+            localizationsDelegates: [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              ...?widget.localizationsDelegates,
+            ],
+            home: widget.home,
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Listens for pulled preferences and posts the localized snackbar on the
+/// root messenger. A [ValueListenableBuilder] (not a listener callback)
+/// keeps the subscription mounted across rebuilds; the controller's
+/// acknowledge marks ([AccountController.shouldShowSyncNotice] /
+/// [AccountController.markSyncNoticeShown]) keep each pull event to one
+/// notice even if the messenger was not ready the first time around.
+class _SyncNotice extends StatelessWidget {
+  const _SyncNotice({
+    required this.messengerKey,
+    required this.enabled,
+    required this.child,
+  });
+
+  final GlobalKey<ScaffoldMessengerState> messengerKey;
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: account.preferencesPulled,
+      builder: (context, pulled, child) {
+        if (pulled > 0 && enabled && account.shouldShowSyncNotice(pulled)) {
+          final messenger = messengerKey.currentState;
+          if (messenger != null) {
+            account.markSyncNoticeShown(pulled);
+            // Post after the frame: showSnackBar asserts on live Scaffolds,
+            // which a mid-build call would not see. scheduleFrame makes
+            // sure the frame happens (an idle/static app would not).
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              messenger
+                ..clearSnackBars()
+                ..showSnackBar(SnackBar(
+                  // Read now, after the pull landed: if the locale itself
+                  // was pulled, the notice speaks the new language.
+                  content: Text(appLocale.strings.preferencesSynced),
+                  width: 420,
+                  behavior: SnackBarBehavior.floating,
+                ));
+            });
+            WidgetsBinding.instance.scheduleFrame();
+          }
+        }
+        return child!;
       },
+      child: child,
     );
   }
 }

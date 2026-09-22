@@ -197,13 +197,20 @@ class _FakeAuthService extends AuthService {
     // stays recognisable as production traffic.
     final call = redirectTo.replace(
         path: '/auth/v1/authorize',
-        queryParameters: {'provider': provider, 'redirect_to': redirectTo.toString()});
+        queryParameters: {
+          'provider': provider,
+          'redirect_to': redirectTo.toString()
+        });
     authorizeCalls.add(call);
     return call;
   }
 
   @override
-  Future<({String id, String email, bool confirmed})> fetchUser(
-          String accessToken) async =>
-      (id: 'u1', email: 'ada@example.com', confirmed: true);
+  Future<({String id, String email, bool confirmed, Map<String, dynamic> metadata})>
+      fetchUser(String accessToken) async => (
+            id: 'u1',
+            email: 'ada@example.com',
+            confirmed: true,
+            metadata: const <String, dynamic>{},
+          );
 }

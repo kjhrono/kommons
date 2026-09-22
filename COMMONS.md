@@ -61,7 +61,8 @@ dependencies:
 | Export | What it gives you |
 | --- | --- |
 | `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. `onJoinInvite` receives a parsed invite when the app is opened through a join link (see **Invites** below). |
-| `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
+| `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state, **cross-project preference sync**), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
+| `shell_preferences.dart` | The cross-project preference sync codec: the `kommons` slice of GoTrue `user_metadata` (theme, locale, player name) with per-key `updatedAt` stamps, the patch builder and the reconcile rules the controller runs on sign-in. See **Cross-project preference sync** below. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
 | `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession`, `AuthException`. Per-app configuration: point it at your auth server. |
 | `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons, forgot-password sub-form, forced change-password form after recovery, change-password section on the signed-in card), PLAYER NAME, Language (a real picker over `appLocale`). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
@@ -171,9 +172,60 @@ in-app (email templates stay server-side):
   the current password and PUTs the new one (`PUT /auth/v1/user`). It doubles
   as the "first connect with the mailed temporary password, then set your
   own" path: sign in with the temp password, change it here.
+* **Temporary-password flag** — an operator issuing a temporary password
+  (admin API or dashboard) sets `must_change_password: true` in the user's
+  `user_metadata`; the shell reads the flag out of every session response,
+  exposes `account.mustChangePassword`, and **auto-opens the change-password
+  section** on the next settings visit — no link tap. The flagged form skips
+  the current-password field (that session just proved the password) and
+  offers **Not now** (`not-now-password`): the flag nags on every settings
+  visit but never imprisons — sign-out stays available, unlike the recovery
+  flow. A successful change clears the key server-side (GoTrue metadata
+  merge: `"must_change_password": null` removes it) and locally in the same
+  PUT.
 * `cancel-reset` (`resend-reset` beside it) leaves the sub-form without
   side effects; validation errors (`invalid_email`, `shortPassword`,
   `passwordMismatch`) surface inline before any call.
+
+**Cross-project preference sync** — one player, many games, one experience:
+the shell keeps **theme, language and player name** in a namespaced slice of
+the GoTrue user's `user_metadata` (`{"kommons": {"theme": ..., "locale":...,
+"playerName": ..., "updatedAt": {per-key epoch stamps}}}`), so every game
+pointed at the same auth server inherits them on sign-in — email, Google or
+GitHub alike, no schema change, private to the account by construction. The
+namespace keeps provider-written metadata and server flags
+(`must_change_password`) untouched.
+
+* **Pull on sign-in** — every sign-in path *and* a restored session runs
+  `account.syncPreferencesOnSignIn()`: fetch the user, reconcile cloud vs
+  local per key (a cloud value applies when it is at least as new as the
+  local edit — `updatedAt` stamps, `shell_preferences.dart`), then push the
+  union back. Two devices that edited *different* keys both win; a newer
+  local edit is never shadowed by older cloud state. Offline or unreachable
+  servers fail quietly — the local experience is already correct and the
+  next sign-in retries the merge. The sync never throws into the sign-in
+  flow.
+* **Push on change** — the theme toggle, the language picker and the player
+  name field stamp the edit locally (`prefs.account.prefStamps`) and flush a
+  debounced (3 s) `PUT /auth/v1/user` via `AuthService.updateUserMetadata`;
+  rapid edits coalesce into one call, failed flushes re-queue and ride the
+  next sign-in. Not signed in → the edit stays local, exactly as before.
+* **The sync is visible** — when a sign-in pulls values that *actually
+  changed* locally (`account.preferencesPulled`, a change-counting signal;
+  same-value re-confirms stay silent), `ShellApp` shows a small floating
+  "Preferences loaded from your account" snackbar on MaterialApp's root
+  messenger — once per pull, localized (in the *new* language when the
+  locale itself was pulled), and quiet under
+  `ShellApp(showPreferencesSyncedNotice: false)`. Hosts can drive their own
+  UI from `preferencesPulled`, acknowledging events with
+  `shouldShowSyncNotice` / `markSyncNoticeShown`.
+* **What never pushes** — unset choices (no language picked, the default
+  'Player' name) and everything per-game: `extraSections` state, server
+  connections, `gameId`-scoped keys stay host-side by design.
+* **Test seams** — `account.debugFlushPendingPreferencePushes()` (await the
+  sign-in sync, run the flush now), `appTheme.applySynced(mode)` /
+  `appLocale.applySynced(language)` (apply a synced value without re-firing
+  the push loop), 17 tests in `test/preference_sync_test.dart`.
 
 **Splash art ships with the package** — `assets/splash_bg.svg` plus three
 vignettes (`splash_caravan`, `splash_dungeon`, `splash_tame`), referenced as

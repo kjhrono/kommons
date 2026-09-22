@@ -12,6 +12,7 @@ class AuthSession {
     required this.expiresAt,
     required this.userId,
     required this.email,
+    this.userMetadata = const {},
   });
 
   final String accessToken;
@@ -22,6 +23,16 @@ class AuthSession {
   final String userId;
   final String email;
 
+  /// The user's private metadata blob, echoed by GoTrue in every session
+  /// answer. The shell reads the `must_change_password` flag (set by the
+  /// server operator alongside an admin-issued temporary password) so the
+  /// settings screen can force the change-password form on.
+  final Map<String, dynamic> userMetadata;
+
+  /// True when the server flagged this session as signed in with a
+  /// temporary password that must be changed before it's usable.
+  bool get mustChangePassword => userMetadata['must_change_password'] == true;
+
   bool get isExpired =>
       DateTime.now().millisecondsSinceEpoch ~/ 1000 >= expiresAt;
 
@@ -31,6 +42,7 @@ class AuthSession {
         'expires_at': expiresAt,
         'user_id': userId,
         'email': email,
+        'user_metadata': userMetadata,
       };
 
   static AuthSession? fromJson(Object? json) {
@@ -49,6 +61,9 @@ class AuthSession {
       expiresAt: json['expires_at'] is int ? json['expires_at'] as int : 0,
       userId: json['user_id'] is String ? json['user_id'] as String : '',
       email: json['email'] is String ? json['email'] as String : '',
+      userMetadata: json['user_metadata'] is Map<String, dynamic>
+          ? json['user_metadata'] as Map<String, dynamic>
+          : const {},
     );
   }
 }
@@ -202,11 +217,16 @@ class AuthService {
     );
   }
 
-  /// Fetches the account (id, email, confirmed?) for an OAuth session's
-  /// access token — OAuth fragments carry no email, so the controller
-  /// fills it after collecting the fragment.
-  Future<({String id, String email, bool confirmed})> fetchUser(
-      String accessToken) async {
+  /// Fetches the account (id, email, confirmed?, metadata) for an OAuth
+  /// session's access token — OAuth fragments carry no email, so the
+  /// controller fills it after collecting the fragment.
+  Future<
+      ({
+        String id,
+        String email,
+        bool confirmed,
+        Map<String, dynamic> metadata
+      })> fetchUser(String accessToken) async {
     final http.Response response;
     try {
       response = await _client
@@ -242,6 +262,9 @@ class AuthService {
       id: json['id'] as String? ?? '',
       email: json['email'] as String? ?? '',
       confirmed: json['email_confirmed_at'] != null,
+      metadata: json['user_metadata'] is Map<String, dynamic>
+          ? json['user_metadata'] as Map<String, dynamic>
+          : const <String, dynamic>{},
     );
   }
 
@@ -334,10 +357,9 @@ class AuthService {
   /// Verifies the recovery code (or the token embedded in the reset link)
   /// from the password-reset email, returning a fresh session — the player
   /// is now signed in and should choose a new password
-  /// ([updatePassword]). Same dual flavor as [verifySignup]: a
-  /// `{{ .Token }}` template mails a short numeric code, a
-  /// `{{ .ConfirmationURL }}` template carries the token in the link's
-  /// query string — both work here.
+  /// ([updatePassword]). A `{{ .Token }}` template mails a short numeric
+  /// code; a `{{ .ConfirmationURL }}` link's fragment token works here
+  /// too (see [verifyRecoveryTokenHash] for the query-string generation).
   Future<AuthSession> verifyRecovery(
       {required String email, required String token}) {
     return _sessionCall(
@@ -348,10 +370,15 @@ class AuthService {
 
   /// Sets a new password for the signed-in account ([accessToken] comes
   /// from the session — a normal password sign-in or a [verifyRecovery]
-  /// session alike). Servers configured with password reauthentication
+  /// session alike). Pass [clearMetadata] keys to remove from the user's
+  /// metadata in the same call — the controller clears the
+  /// `must_change_password` flag here so the server stops re-flagging
+  /// future sessions. Servers configured with password reauthentication
   /// will reject this with a typed [AuthException] the UI surfaces.
   Future<void> updatePassword(
-      {required String accessToken, required String newPassword}) async {
+      {required String accessToken,
+      required String newPassword,
+      Map<String, dynamic>? clearMetadata}) async {
     final http.Response response;
     try {
       response = await _client.put(
@@ -360,13 +387,45 @@ class AuthService {
           ..._headers,
           'Authorization': 'Bearer $accessToken',
         },
-        body: jsonEncode({'password': newPassword}),
+        body: jsonEncode({
+          'password': newPassword,
+          if (clearMetadata != null && clearMetadata.isNotEmpty)
+            'data': clearMetadata,
+        }),
       );
     } catch (error) {
       throw AuthException('network', 'Could not reach the auth server: $error');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _errorFrom(response, 'Could not change the password');
+    }
+  }
+
+  /// Merges [data] into the user's metadata (PUT /auth/v1/user with the
+  /// `data` field — GoTrue merges top-level keys, so the shell's
+  /// preferences blob under `kommons` never touches other keys). This is
+  /// the write side of the cross-project preference sync: a theme or
+  /// language change on one game reaches every other game that shares
+  /// the auth server. Pass null values inside [data] to remove keys
+  /// (GoTrue's merge contract, same as [updatePassword]'s
+  /// [clearMetadata]).
+  Future<void> updateUserMetadata(
+      {required String accessToken, required Map<String, dynamic> data}) async {
+    final http.Response response;
+    try {
+      response = await _client.put(
+        _base.replace(path: '${_base.path}/user'),
+        headers: {
+          ..._headers,
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: jsonEncode({'data': data}),
+      );
+    } catch (error) {
+      throw AuthException('network', 'Could not reach the auth server: $error');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _errorFrom(response, 'Could not update the account metadata');
     }
   }
 
@@ -453,6 +512,7 @@ class AuthService {
     }
 
     final user = json['user'] as Map<String, dynamic>?;
+    final meta = user?['user_metadata'];
     final expiresAt = json['expires_at'] is int
         ? json['expires_at'] as int
         : (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
@@ -463,6 +523,8 @@ class AuthService {
       expiresAt: expiresAt,
       userId: user?['id'] as String? ?? '',
       email: (user?['email'] as String?) ?? (json['email'] as String? ?? ''),
+      userMetadata:
+          meta is Map<String, dynamic> ? meta : const <String, dynamic>{},
     );
   }
 }

@@ -99,6 +99,8 @@ class ShellStrings {
     this.passwordChanged = 'Password changed.',
     this.passwordChangeFailed = 'Could not change the password',
     this.cancel = 'Cancel',
+    this.notNow = 'Not now',
+    this.preferencesSynced = 'Preferences loaded from your account',
     // Lobby wizard.
     this.back = 'Back',
     this.continueLabel = 'Continue',
@@ -184,8 +186,7 @@ class ShellStrings {
     this.inviteShare = 'Share…',
     this.invitePaste = 'Paste a link you were sent',
     this.invitePastedJoin = 'Invite found — join as {name}?',
-    this.inviteNothingToPaste =
-        'Nothing to paste — copy an invite link first.',
+    this.inviteNothingToPaste = 'Nothing to paste — copy an invite link first.',
     this.inviteJoinedWith = 'Invited as {name} — number locked in.',
   });
 
@@ -256,6 +257,8 @@ class ShellStrings {
         passwordChanged = 'Password cambiata.',
         passwordChangeFailed = 'Impossibile cambiare la password',
         cancel = 'Annulla',
+        notNow = 'Non ora',
+        preferencesSynced = 'Preferenze caricate dal tuo account',
         back = 'Indietro',
         continueLabel = 'Continua',
         welcomePattern = 'Benvenuto, {name}, in {app}',
@@ -413,6 +416,11 @@ class ShellStrings {
   final String passwordChanged;
   final String passwordChangeFailed;
   final String cancel;
+  final String notNow;
+
+  /// Shown when a sign-in pulls cloud preferences in (theme, language,
+  /// name): the cross-project sync made itself visible.
+  final String preferencesSynced;
 
   // -- Lobby wizard -------------------------------------------------------
   final String back;

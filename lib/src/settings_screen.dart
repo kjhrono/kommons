@@ -131,11 +131,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// the card afterwards.
   bool _showChangePassword = false;
 
+  /// A one-shot "Not now" on the flag-driven change form: the section
+  /// closes until the player re-opens it from the card's link (or a new
+  /// flagged session arms it again). Recovery ignores this — that form is
+  /// mandatory until a new password is chosen.
+  bool _changePasswordDismissed = false;
+
   @override
   void initState() {
     super.initState();
     _emailController.text = account.value?.email ?? '';
     _nameController.text = account.playerName;
+    // The server flagged this session (must_change_password in the user
+    // metadata — an admin-issued temporary password): open the
+    // change-password form before the first frame.
+    _showChangePassword = account.mustChangePassword;
     widget.serverSetup?.isConfigured().then((configured) {
       if (mounted) setState(() => _serverConfigured = configured);
     });
@@ -449,12 +459,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ] else ...[
                             if (account.isCloudSignedIn &&
-                                (account.passwordResetPending ||
-                                    _showChangePassword)) ...[
+                                (_showChangePassword ||
+                                    account.passwordResetPending ||
+                                    (account.mustChangePassword &&
+                                        !_changePasswordDismissed))) ...[
                               // -- Change password: forced after recovery (the
-                              // session has no password the player knows), or
-                              // opened from the card's link. A current-password
-                              // field joins when the player asked for it.
+                              // session has no password the player knows),
+                              // forced by the server's must_change_password
+                              // flag (an admin-issued temporary password),
+                              // or opened from the card's link. The
+                              // current-password field joins only when the
+                              // player asked for it — the recovery and flag
+                              // sessions already proved their password.
                               Text(strings.signedInAs(account.value!.email),
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600)),
@@ -466,7 +482,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 style: TextStyle(color: Colors.amber.shade300),
                               ),
                               const SizedBox(height: 12),
-                              if (!account.passwordResetPending) ...[
+                              if (!account.passwordResetPending &&
+                                  !account.mustChangePassword) ...[
                                 TextField(
                                   key: const ValueKey('current-password-field'),
                                   controller: _currentPasswordController,
@@ -491,9 +508,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 autofillHints: const [
                                   AutofillHints.newPassword
                                 ],
-                                onSubmitted: (_) => account.passwordResetPending
-                                    ? _submitNewPassword()
-                                    : _changePassword(),
+                                onSubmitted: (_) =>
+                                    (account.passwordResetPending ||
+                                            account.mustChangePassword)
+                                        ? _submitNewPassword()
+                                        : _changePassword(),
                               ),
                               const SizedBox(height: 8),
                               TextField(
@@ -507,9 +526,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 autofillHints: const [
                                   AutofillHints.newPassword
                                 ],
-                                onSubmitted: (_) => account.passwordResetPending
-                                    ? _submitNewPassword()
-                                    : _changePassword(),
+                                onSubmitted: (_) =>
+                                    (account.passwordResetPending ||
+                                            account.mustChangePassword)
+                                        ? _submitNewPassword()
+                                        : _changePassword(),
                               ),
                               const SizedBox(height: 8),
                               SizedBox(
@@ -518,7 +539,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   key: const ValueKey('save-new-password'),
                                   onPressed: _cloudBusy
                                       ? null
-                                      : account.passwordResetPending
+                                      : (account.passwordResetPending ||
+                                              account.mustChangePassword)
                                           ? _submitNewPassword
                                           : _changePassword,
                                   icon: _cloudBusy
@@ -531,6 +553,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   label: Text(strings.changePassword),
                                 ),
                               ),
+                              if (account.mustChangePassword) ...[
+                                // The flag nags but doesn't imprison: a
+                                // temporary-password session can be left
+                                // (the player knows that password), so the
+                                // card is one dismissal away.
+                                const SizedBox(height: 4),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    key: const ValueKey('not-now-password'),
+                                    onPressed: _cloudBusy
+                                        ? null
+                                        : () => setState(() {
+                                              _showChangePassword = false;
+                                              _changePasswordDismissed = true;
+                                            }),
+                                    child: Text(strings.notNow),
+                                  ),
+                                ),
+                              ],
                             ] else ...[
                               Text(strings.signedInAs(account.value!.email),
                                   style: const TextStyle(
@@ -564,8 +606,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     key: const ValueKey('open-change-password'),
                                     onPressed: _cloudBusy
                                         ? null
-                                        : () => setState(
-                                            () => _showChangePassword = true),
+                                        : () => setState(() {
+                                              _showChangePassword = true;
+                                              _changePasswordDismissed = false;
+                                            }),
                                     child: Text(strings.changePassword),
                                   ),
                                 ),
