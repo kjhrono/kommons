@@ -77,6 +77,27 @@ class ShellStrings {
     this.shortPassword = 'Choose a password of at least 6 characters.',
     this.enterCode = 'Enter the code from the email.',
     this.confirmationResent = 'Confirmation email sent again.',
+    this.forgotPassword = 'Forgot password?',
+    this.resetTitle = 'RESET PASSWORD',
+    this.resetSentPattern =
+        'If an account exists for {email}, a reset email is on its way. Enter the code it carries — or open its link — to sign back in.',
+    this.resetCodeLabel = 'Reset code',
+    this.resetCodeHint = 'the code from the reset email',
+    this.resendReset = 'Resend reset email',
+    this.cancelReset = 'Cancel',
+    this.resetEmailSent = 'Reset email sent.',
+    this.changePassword = 'Change password',
+    this.changePasswordHint =
+        'You are signed in with a temporary password. Choose a new one to finish recovering your account.',
+    this.changePasswordSectionHint = 'Pick a new password for your account.',
+    this.currentPasswordLabel = 'Current password',
+    this.enterCurrentPassword = 'Enter your current password first.',
+    this.newPasswordLabel = 'New password',
+    this.newPasswordHint = '6+ characters',
+    this.newPasswordConfirmLabel = 'Repeat the new password',
+    this.passwordMismatch = 'The two passwords do not match.',
+    this.passwordChanged = 'Password changed.',
+    this.passwordChangeFailed = 'Could not change the password',
     this.cancel = 'Cancel',
     // Lobby wizard.
     this.back = 'Back',
@@ -199,6 +220,28 @@ class ShellStrings {
         shortPassword = 'Scegli una password di almeno 6 caratteri.',
         enterCode = 'Inserisci il codice dalla mail.',
         confirmationResent = 'Email di conferma inviata di nuovo.',
+        forgotPassword = 'Password dimenticata?',
+        resetTitle = 'REIMPOSTA PASSWORD',
+        resetSentPattern =
+            'Se esiste un account per {email}, la email di reset è in arrivo. Inserisci il codice che contiene — o apri il suo link — per rientrare.',
+        resetCodeLabel = 'Codice di reset',
+        resetCodeHint = 'il codice dalla email di reset',
+        resendReset = 'Reinvia la email di reset',
+        cancelReset = 'Annulla',
+        resetEmailSent = 'Email di reset inviata.',
+        changePassword = 'Cambia password',
+        changePasswordHint =
+            'Sei dentro con una password temporanea. Scegline una nuova per completare il recupero dell\'account.',
+        changePasswordSectionHint =
+            'Scegli una nuova password per il tuo account.',
+        currentPasswordLabel = 'Password attuale',
+        enterCurrentPassword = 'Inserisci prima la password attuale.',
+        newPasswordLabel = 'Nuova password',
+        newPasswordHint = '6+ caratteri',
+        newPasswordConfirmLabel = 'Ripeti la nuova password',
+        passwordMismatch = 'Le due password non coincidono.',
+        passwordChanged = 'Password cambiata.',
+        passwordChangeFailed = 'Impossibile cambiare la password',
         cancel = 'Annulla',
         back = 'Indietro',
         continueLabel = 'Continua',
@@ -261,16 +304,18 @@ class ShellStrings {
         gameNumberLabel = 'Numero della partita',
         gameNumberHint = 'es. K7QX2',
         joinGame = 'ENTRA NELLA PARTITA',
-        gameNumberMissing = 'Inserisci il numero della partita che ti ha condiviso l\'host.',
+        gameNumberMissing =
+            'Inserisci il numero della partita che ti ha condiviso l\'host.',
         gameRoomMissing =
             'Nessuna partita risponde a quel numero — verificalo con l\'host.',
         gameWrongPassword = 'Password della partita errata.',
         gameJoinFailed = 'Impossibile raggiungere il game server. Riprova.',
-        joinPasswordLabel = 'Password della partita (se l\'host ne ha messa una)',
-    hotSeatNote =
-        'Posti sullo stesso dispositivo — passa il device tra i bannieri.',
-    removeSeatTooltip = 'Rimuovi questo posto',
-    youMarker = '(tu)';
+        joinPasswordLabel =
+            'Password della partita (se l\'host ne ha messa una)',
+        hotSeatNote =
+            'Posti sullo stesso dispositivo — passa il device tra i bannieri.',
+        removeSeatTooltip = 'Rimuovi questo posto',
+        youMarker = '(tu)',;
 
   /// The catalog for [language] (unknown codes fall back to English, the
   /// same rule the persisted-locale loader applies).
@@ -320,6 +365,27 @@ class ShellStrings {
   final String shortPassword;
   final String enterCode;
   final String confirmationResent;
+
+  // -- Password reset + change --------------------------------------------
+  final String forgotPassword;
+  final String resetTitle;
+  final String resetSentPattern;
+  final String resetCodeLabel;
+  final String resetCodeHint;
+  final String resendReset;
+  final String cancelReset;
+  final String resetEmailSent;
+  final String changePassword;
+  final String changePasswordHint;
+  final String changePasswordSectionHint;
+  final String currentPasswordLabel;
+  final String enterCurrentPassword;
+  final String newPasswordLabel;
+  final String newPasswordHint;
+  final String newPasswordConfirmLabel;
+  final String passwordMismatch;
+  final String passwordChanged;
+  final String passwordChangeFailed;
   final String cancel;
 
   // -- Lobby wizard -------------------------------------------------------
@@ -451,6 +517,10 @@ class ShellStrings {
   String confirmationSent(String email) =>
       confirmationSentPattern.replaceAll('{email}', email);
 
+  /// The reset-email-sent line with the address spelled out.
+  String resetSent(String email) =>
+      resetSentPattern.replaceAll('{email}', email);
+
   /// The lobby wizard's step header.
   String stepHeader(int step, int total, String title) => stepHeaderPattern
       .replaceAll('{step}', '$step')
@@ -467,8 +537,7 @@ class ShellStrings {
   String youName(String name) => '$name $youSuffix';
 
   /// The room status clock ('clock 42').
-  String clockStatus(int hour) =>
-      clockStatusPattern.replaceAll('{n}', '$hour');
+  String clockStatus(int hour) => clockStatusPattern.replaceAll('{n}', '$hour');
 
   /// A pending host handover, as the status line shows it.
   String hostHandoverPending(String name) =>

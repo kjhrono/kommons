@@ -85,6 +85,37 @@ Notes:
 - The allow-list is per server. A game's staging server and production
   server have separate lists.
 
+## The recovery email template: `{{ .Token }}` vs a link
+
+The shell's forgot-password form (Authentication → Emails → Templates →
+**Reset Password**; GoTrue's `mailer.templates.recovery`) sends whatever
+token the template carries — the template decides whether the player
+gets a code or a link. Whichever it is, the shell POSTs what the player
+typed (or pasted) to `/auth/v1/verify?type=recovery` unchanged:
+
+| Template token | What the player receives | In the shell's reset form |
+| --- | --- | --- |
+| `{{ .Token }}` | a 6-digit code (expiry: the mailer OTP setting) | type the digits — the smooth path, **recommended** |
+| `{{ .ConfirmationURL }}` | a verify link — but what it embeds varies by backend and GoTrue version (Netlify-era links carry an implicit access token; newer Supabase links a `token_hash`) | not a supported path — use `{{ .Token }}` |
+
+Prefer `{{ .Token }}`: the code lands on the same device as the app and
+types straight into `reset-code-field`, after which the shell forces the
+change-password step (COMMONS.md's *Lost & changed passwords*). Two
+operational notes:
+
+- **Recovery links don't auto-sign-in (yet).** A link template lands on
+  the app with a fragment or query payload, but the shell consumes OAuth
+  fragments inside its popup flow only — there is no cold-start handler
+  for recovery payloads, by design. If a future shell adds one, the
+  template can move to `{{ .ConfirmationURL }}` without app changes.
+- **No cross-talk with invites.** Join-link detection keys on `join=`;
+  recovery fragments (`access_token=…`) and OAuth fragments are ignored
+  by it, and vice versa.
+
+Recovery requests are rate-limited per address by GoTrue; the app
+surfaces the `over_email_send_rate_limit` message verbatim, so a spammy
+tester sees the server's own complaint — not a bug.
+
 ## What the server must NOT do
 
 - **No provider logic app-side.** The client never exchanges codes or
@@ -112,3 +143,5 @@ Notes:
       (the `/gt/*` pages are hosted there)
 - [ ] A smoke test: provider sign-in on the web build, then on a mobile
       build (warm return *and* a force-killed cold start)
+- [ ] Recovery email template set to `{{ .Token }}` — the 6-digit code
+      is the path the shell's reset form is built around

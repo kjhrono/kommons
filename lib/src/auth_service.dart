@@ -22,7 +22,8 @@ class AuthSession {
   final String userId;
   final String email;
 
-  bool get isExpired => DateTime.now().millisecondsSinceEpoch ~/ 1000 >= expiresAt;
+  bool get isExpired =>
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 >= expiresAt;
 
   Map<String, dynamic> toJson() => {
         'access_token': accessToken,
@@ -36,7 +37,10 @@ class AuthSession {
     if (json is! Map<String, dynamic>) return null;
     final access = json['access_token'];
     final refresh = json['refresh_token'];
-    if (access is! String || access.isEmpty || refresh is! String || refresh.isEmpty) {
+    if (access is! String ||
+        access.isEmpty ||
+        refresh is! String ||
+        refresh.isEmpty) {
       return null;
     }
     return AuthSession(
@@ -71,6 +75,9 @@ class AuthException implements Exception {
 ///   POST `<server>/auth/v1/token?grant_type=password`   → sign in
 ///   POST `<server>/auth/v1/token?grant_type=refresh_token`
 ///   POST `<server>/auth/v1/logout`
+///   POST `<server>/auth/v1/recover`                     → password-reset email
+///   POST `<server>/auth/v1/verify` (type=recovery)      → recovery code → session
+///   PUT  `<server>/auth/v1/user`                        → set a new password
 ///
 /// OAuth providers (Google, GitHub, …) run as GoTrue's hosted web flow:
 /// the app opens `<server>/auth/v1/authorize?provider={provider}`, the server
@@ -93,7 +100,9 @@ class AuthService {
   AuthService({required String serverUrl, String? apiKey, http.Client? client})
       : _apiKey = apiKey,
         _client = client ?? http.Client() {
-    final normalized = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final normalized = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     _base = Uri.parse('$normalized/auth/v1');
   }
 
@@ -119,7 +128,8 @@ class AuthService {
   /// `user_already_registered` for known addresses — callers (the account
   /// controller) turn that into a sign-in attempt with the same password,
   /// so "sign up or in" feels like one action.
-  Future<AuthSession> signUp({required String email, required String password}) async {
+  Future<AuthSession> signUp(
+      {required String email, required String password}) async {
     return _sessionCall(
       _base.replace(path: '${_base.path}/signup'),
       jsonEncode({'email': email, 'password': password}),
@@ -127,9 +137,12 @@ class AuthService {
   }
 
   /// Signs an existing account in with its password.
-  Future<AuthSession> signIn({required String email, required String password}) async {
+  Future<AuthSession> signIn(
+      {required String email, required String password}) async {
     return _sessionCall(
-      _base.replace(path: '${_base.path}/token', queryParameters: {'grant_type': 'password'}),
+      _base.replace(
+          path: '${_base.path}/token',
+          queryParameters: {'grant_type': 'password'}),
       jsonEncode({'email': email, 'password': password}),
     );
   }
@@ -169,14 +182,17 @@ class AuthService {
         Uri(query: raw).queryParameters; // fragment is x-www-urlencoded
     final access = params['access_token'];
     final refresh = params['refresh_token'];
-    if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
+    if (access == null ||
+        access.isEmpty ||
+        refresh == null ||
+        refresh.isEmpty) {
       return null;
     }
-    final expiresAt = params['expires_at'] is String &&
-            params['expires_at']!.isNotEmpty
-        ? int.tryParse(params['expires_at']!) ?? 0
-        : (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
-            (int.tryParse(params['expires_in'] ?? '') ?? 3600);
+    final expiresAt =
+        params['expires_at'] is String && params['expires_at']!.isNotEmpty
+            ? int.tryParse(params['expires_at']!) ?? 0
+            : (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
+                (int.tryParse(params['expires_in'] ?? '') ?? 3600);
     return AuthSession(
       accessToken: access,
       refreshToken: refresh,
@@ -204,18 +220,23 @@ class AuthService {
     Map<String, dynamic>? json;
     if (response.body.isNotEmpty) {
       try {
-      json = jsonDecode(response.body) as Map<String, dynamic>;
-    } catch (_) {
-      json = null;
-    }
+        json = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        json = null;
+      }
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final code = json?['error_code'] as String? ?? 'http_${response.statusCode}';
-      final message = json?['msg'] as String? ?? json?['message'] as String? ?? response.body;
-      throw AuthException(code, message.isEmpty ? 'Auth failed (${response.statusCode})' : message);
+      final code =
+          json?['error_code'] as String? ?? 'http_${response.statusCode}';
+      final message = json?['msg'] as String? ??
+          json?['message'] as String? ??
+          response.body;
+      throw AuthException(code,
+          message.isEmpty ? 'Auth failed (${response.statusCode})' : message);
     }
     if (json == null) {
-      throw AuthException('http_${response.statusCode}', 'Unexpected empty auth response');
+      throw AuthException(
+          'http_${response.statusCode}', 'Unexpected empty auth response');
     }
     return (
       id: json['id'] as String? ?? '',
@@ -228,7 +249,9 @@ class AuthService {
   /// is short-lived by design; the refresh token survives it).
   Future<AuthSession> refresh(String refreshToken) async {
     return _sessionCall(
-      _base.replace(path: '${_base.path}/token', queryParameters: {'grant_type': 'refresh_token'}),
+      _base.replace(
+          path: '${_base.path}/token',
+          queryParameters: {'grant_type': 'refresh_token'}),
       jsonEncode({'refresh_token': refreshToken}),
     );
   }
@@ -238,7 +261,8 @@ class AuthService {
   /// verify endpoint answers for both flavors: an email template that
   /// embeds `{{ .Token }}` shows a short numeric code, and one that embeds
   /// `{{ .ConfirmationURL }}` carries the same token in its query string.
-  Future<AuthSession> verifySignup({required String email, required String token}) async {
+  Future<AuthSession> verifySignup(
+      {required String email, required String token}) async {
     return _sessionCall(
       _base.replace(path: '${_base.path}/verify'),
       jsonEncode({'type': 'signup', 'email': email, 'token': token}),
@@ -267,10 +291,102 @@ class AuthService {
           json = null;
         }
       }
-      final code = json?['error_code'] as String? ?? 'http_${response.statusCode}';
-      final message = json?['msg'] as String? ?? json?['message'] as String? ?? response.body;
-      throw AuthException(code, message.isEmpty ? 'Could not resend (HTTP ${response.statusCode})' : message);
+      final code =
+          json?['error_code'] as String? ?? 'http_${response.statusCode}';
+      final message = json?['msg'] as String? ??
+          json?['message'] as String? ??
+          response.body;
+      throw AuthException(
+          code,
+          message.isEmpty
+              ? 'Could not resend (HTTP ${response.statusCode})'
+              : message);
     }
+  }
+
+  /// Sends the password-reset ("forgot password") email. GoTrue mails the
+  /// server's recovery template — either a `{{ .ConfirmationURL }}` link or
+  /// a `{{ .Token }}` short code, per the template config. The happy answer
+  /// is 200 with an empty body (and, to prevent address enumeration, 200 is
+  /// returned for unknown addresses too — the player simply receives
+  /// nothing and retries with the right address).
+  Future<void> resetPassword({required String email}) async {
+    final http.Response response;
+    try {
+      response = await _client.post(
+        _base.replace(path: '${_base.path}/recover'),
+        headers: _headers,
+        body: jsonEncode({'email': email}),
+      );
+    } catch (error) {
+      throw AuthException('network', 'Could not reach the auth server: $error');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _errorFrom(response, 'Could not send the reset email');
+    }
+  }
+
+  /// Re-sends the password-reset email. A thin alias over [resetPassword]
+  /// so callers read symmetrically with the signup resend.
+  Future<void> resendResetEmail({required String email}) =>
+      resetPassword(email: email);
+
+  /// Verifies the recovery code (or the token embedded in the reset link)
+  /// from the password-reset email, returning a fresh session — the player
+  /// is now signed in and should choose a new password
+  /// ([updatePassword]). Same dual flavor as [verifySignup]: a
+  /// `{{ .Token }}` template mails a short numeric code, a
+  /// `{{ .ConfirmationURL }}` template carries the token in the link's
+  /// query string — both work here.
+  Future<AuthSession> verifyRecovery(
+      {required String email, required String token}) {
+    return _sessionCall(
+      _base.replace(path: '${_base.path}/verify'),
+      jsonEncode({'type': 'recovery', 'email': email, 'token': token}),
+    );
+  }
+
+  /// Sets a new password for the signed-in account ([accessToken] comes
+  /// from the session — a normal password sign-in or a [verifyRecovery]
+  /// session alike). Servers configured with password reauthentication
+  /// will reject this with a typed [AuthException] the UI surfaces.
+  Future<void> updatePassword(
+      {required String accessToken, required String newPassword}) async {
+    final http.Response response;
+    try {
+      response = await _client.put(
+        _base.replace(path: '${_base.path}/user'),
+        headers: {
+          ..._headers,
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: jsonEncode({'password': newPassword}),
+      );
+    } catch (error) {
+      throw AuthException('network', 'Could not reach the auth server: $error');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _errorFrom(response, 'Could not change the password');
+    }
+  }
+
+  /// Parses a non-2xx auth response into a typed [AuthException], reading
+  /// GoTrue's `error_code` / `msg` JSON shape when present.
+  AuthException _errorFrom(http.Response response, String fallback) {
+    Map<String, dynamic>? json;
+    if (response.body.isNotEmpty) {
+      try {
+        json = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        json = null; // non-JSON error page
+      }
+    }
+    final code =
+        json?['error_code'] as String? ?? 'http_${response.statusCode}';
+    final message =
+        json?['msg'] as String? ?? json?['message'] as String? ?? response.body;
+    return AuthException(
+        code, message.isEmpty ? '$fallback (${response.statusCode})' : message);
   }
 
   /// Best-effort server-side revocation; sessions also simply expire, so
@@ -304,17 +420,25 @@ class AuthService {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final code = json?['error_code'] as String? ?? 'http_${response.statusCode}';
-      final message = json?['msg'] as String? ?? json?['message'] as String? ?? response.body;
-      throw AuthException(code, message.isEmpty ? 'Auth failed (${response.statusCode})' : message);
+      final code =
+          json?['error_code'] as String? ?? 'http_${response.statusCode}';
+      final message = json?['msg'] as String? ??
+          json?['message'] as String? ??
+          response.body;
+      throw AuthException(code,
+          message.isEmpty ? 'Auth failed (${response.statusCode})' : message);
     }
     if (json == null) {
-      throw AuthException('http_${response.statusCode}', 'Unexpected empty auth response');
+      throw AuthException(
+          'http_${response.statusCode}', 'Unexpected empty auth response');
     }
 
     final access = json['access_token'];
     final refresh = json['refresh_token'];
-    if (access is! String || access.isEmpty || refresh is! String || refresh.isEmpty) {
+    if (access is! String ||
+        access.isEmpty ||
+        refresh is! String ||
+        refresh.isEmpty) {
       // GoTrue answers 200 without a session when signup needs e-mail
       // confirmation (autoconfirm off): the account exists, the session
       // does not. Surface that distinctly so the UI can explain it.
@@ -322,14 +446,17 @@ class AuthService {
       final confirmed = user?['email_confirmed_at'] != null;
       throw AuthException(
         confirmed ? 'session_missing' : 'email_not_confirmed',
-        confirmed ? 'The server accepted the account but issued no session' : 'Confirm the email (inbox link) before signing in',
+        confirmed
+            ? 'The server accepted the account but issued no session'
+            : 'Confirm the email (inbox link) before signing in',
       );
     }
 
     final user = json['user'] as Map<String, dynamic>?;
     final expiresAt = json['expires_at'] is int
         ? json['expires_at'] as int
-        : (DateTime.now().millisecondsSinceEpoch ~/ 1000) + ((json['expires_in'] as num?)?.toInt() ?? 3600);
+        : (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
+            ((json['expires_in'] as num?)?.toInt() ?? 3600);
     return AuthSession(
       accessToken: access,
       refreshToken: refresh,

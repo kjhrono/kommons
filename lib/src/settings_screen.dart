@@ -114,6 +114,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _pendingSignupEmail;
   final _codeController = TextEditingController();
 
+  // -- Password reset + change ----------------------------------------------
+  final _resetCodeController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _currentPasswordController = TextEditingController();
+
+  /// The address a reset email was sent to (mirrors the account
+  /// controller's parked reset; non-null switches the account card to the
+  /// reset sub-form).
+  String? _resetEmail;
+
+  /// True opens the change-password section on the signed-in card. It
+  /// starts open when the player signed in with the server's temporary
+  /// password (the forced-change UX) and stays reachable from a link on
+  /// the card afterwards.
+  bool _showChangePassword = false;
+
   @override
   void initState() {
     super.initState();
@@ -130,16 +147,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_pendingSignupEmail != null) {
         _emailController.text = _pendingSignupEmail!;
       }
+      _resetEmail = account.pendingResetEmail;
     } else {
       account.load().then((_) {
         if (!mounted) return;
         final pending = account.pendingSignupEmail;
-        if (pending != null) {
-          setState(() {
-            _pendingSignupEmail = pending;
-            _emailController.text = pending;
-          });
-        }
+        final reset = account.pendingResetEmail;
+        if (pending == null && reset == null) return;
+        setState(() {
+          _pendingSignupEmail = pending;
+          if (pending != null) _emailController.text = pending;
+          _resetEmail = reset;
+        });
       });
     }
   }
@@ -150,6 +169,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _passwordController.dispose();
     _nameController.dispose();
     _codeController.dispose();
+    _resetCodeController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    _currentPasswordController.dispose();
     super.dispose();
   }
 
@@ -175,7 +198,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final strings = appLocale.strings;
-    final account_ = account.value;
     return Scaffold(
       appBar: AppBar(title: Text(strings.settingsTitle)),
       body: ListView(
@@ -184,210 +206,374 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             // -- Account (host may hide it and own identity elsewhere) ----------
             if (widget.showAccountCard) ...[
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          const Icon(Icons.person_outline),
-                          const SizedBox(width: 8),
-                          Text(strings.accountHeader,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.2)),
-                          const Spacer(),
-                          Text(
-                            account_ == null
-                                ? strings.guest
-                                : account_.provider,
-                            style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 12),
-                          ),
-                        ]),
-                        const SizedBox(height: 12),
-                        if (_pendingSignupEmail != null) ...[
-                          // -- Awaiting email confirmation ---------------------------------
+              ListenableBuilder(
+                listenable: account,
+                builder: (context, _) => Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Row(children: [
-                            const Icon(Icons.mark_email_unread_outlined,
-                                color: Colors.amber),
+                            const Icon(Icons.person_outline),
                             const SizedBox(width: 8),
-                            Text(strings.checkYourInbox,
+                            Text(strings.accountHeader,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: 1.2)),
+                            const Spacer(),
+                            Text(
+                              account.value == null
+                                  ? strings.guest
+                                  : account.value!.provider,
+                              style: TextStyle(
+                                  color: Colors.grey.shade500, fontSize: 12),
+                            ),
                           ]),
-                          const SizedBox(height: 8),
-                          Text(
-                            strings.confirmationSent(_pendingSignupEmail!),
-                            style: TextStyle(color: Colors.grey.shade400),
-                          ),
                           const SizedBox(height: 12),
-                          TextField(
-                            key: const ValueKey('verification-code-field'),
-                            controller: _codeController,
-                            decoration: InputDecoration(
-                              labelText: strings.verificationCodeLabel,
-                              hintText: strings.verificationCodeHint,
-                              border: const OutlineInputBorder(),
+                          if (_pendingSignupEmail != null) ...[
+                            // -- Awaiting email confirmation ---------------------------------
+                            Row(children: [
+                              const Icon(Icons.mark_email_unread_outlined,
+                                  color: Colors.amber),
+                              const SizedBox(width: 8),
+                              Text(strings.checkYourInbox,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
+                            ]),
+                            const SizedBox(height: 8),
+                            Text(
+                              strings.confirmationSent(_pendingSignupEmail!),
+                              style: TextStyle(color: Colors.grey.shade400),
                             ),
-                            keyboardType: TextInputType.number,
-                            onSubmitted: (_) => _verifyCode(),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(children: [
-                            FilledButton.icon(
-                              key: const ValueKey('verify-code'),
-                              onPressed: _cloudBusy ? null : _verifyCode,
-                              icon: _cloudBusy
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2))
-                                  : const Icon(Icons.verified_outlined),
-                              label: Text(strings.confirm),
+                            const SizedBox(height: 12),
+                            TextField(
+                              key: const ValueKey('verification-code-field'),
+                              controller: _codeController,
+                              decoration: InputDecoration(
+                                labelText: strings.verificationCodeLabel,
+                                hintText: strings.verificationCodeHint,
+                                border: const OutlineInputBorder(),
+                              ),
+                              keyboardType: TextInputType.number,
+                              onSubmitted: (_) => _verifyCode(),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              FilledButton.icon(
+                                key: const ValueKey('verify-code'),
+                                onPressed: _cloudBusy ? null : _verifyCode,
+                                icon: _cloudBusy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Icon(Icons.verified_outlined),
+                                label: Text(strings.confirm),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                key: const ValueKey('resend-confirmation'),
+                                onPressed:
+                                    _cloudBusy ? null : _resendConfirmation,
+                                child: Text(strings.resendEmail),
+                              ),
+                            ]),
                             TextButton(
-                              key: const ValueKey('resend-confirmation'),
-                              onPressed:
-                                  _cloudBusy ? null : _resendConfirmation,
-                              child: Text(strings.resendEmail),
+                              key: const ValueKey('cancel-pending'),
+                              onPressed: _cancelPendingSignup,
+                              child: Text(strings.useDifferentAddress),
                             ),
-                          ]),
-                          TextButton(
-                            key: const ValueKey('cancel-pending'),
-                            onPressed: _cancelPendingSignup,
-                            child: Text(strings.useDifferentAddress),
-                          ),
-                        ] else if (account_ == null) ...[
-                          Text(strings.signInPitch,
-                              style: TextStyle(color: Colors.grey.shade400)),
-                          const SizedBox(height: 12),
-                          TextField(
-                            key: const ValueKey('email-field'),
-                            controller: _emailController,
-                            decoration: InputDecoration(
-                              labelText: strings.emailLabel,
-                              hintText: strings.emailHint,
-                              errorText: _emailError,
-                              border: const OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email],
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            key: const ValueKey('password-field'),
-                            controller: _passwordController,
-                            obscureText: true,
-                            decoration: InputDecoration(
-                              labelText: strings.passwordLabel,
-                              hintText: strings.passwordHint,
-                              border: const OutlineInputBorder(),
-                            ),
-                            autofillHints: const [AutofillHints.password],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(children: [
-                            FilledButton.icon(
-                              key: const ValueKey('email-signin'),
-                              onPressed: _signIn,
-                              icon: const Icon(Icons.mail_outline),
-                              label: Text(strings.signInWithEmail),
-                            ),
-                            const SizedBox(width: 8),
-                            OutlinedButton(
-                              key: const ValueKey('oauth-google'),
-                              onPressed: _providerEnabled('google')
-                                  ? () => _runProvider('google')
-                                  : null,
-                              child: const Text('Google'),
-                            ),
-                            const SizedBox(width: 8),
-                            OutlinedButton(
-                              key: const ValueKey('oauth-github'),
-                              onPressed: _providerEnabled('github')
-                                  ? () => _runProvider('github')
-                                  : null,
-                              child: const Text('GitHub'),
-                            ),
-                          ]),
-                          if (!_serverConfigured &&
-                              widget.serverSetup != null) ...[
+                          ] else if (_resetEmail != null &&
+                              account.value == null) ...[
+                            // -- Password reset in progress ----------------------------------
+                            Row(children: [
+                              const Icon(Icons.lock_reset, color: Colors.amber),
+                              const SizedBox(width: 8),
+                              Text(strings.resetTitle,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
+                            ]),
                             const SizedBox(height: 8),
-                            Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(Icons.dns_outlined,
-                                      size: 16, color: Colors.amber.shade300),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      strings.serverOnboardingHint,
-                                      style: const TextStyle(fontSize: 12),
+                            Text(
+                              strings.resetSent(_resetEmail!),
+                              style: TextStyle(color: Colors.grey.shade400),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              key: const ValueKey('reset-code-field'),
+                              controller: _resetCodeController,
+                              decoration: InputDecoration(
+                                labelText: strings.resetCodeLabel,
+                                hintText: strings.resetCodeHint,
+                                border: const OutlineInputBorder(),
+                              ),
+                              onSubmitted: (_) => _verifyResetCode(),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              FilledButton.icon(
+                                key: const ValueKey('verify-reset'),
+                                onPressed: _cloudBusy ? null : _verifyResetCode,
+                                icon: _cloudBusy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Icon(Icons.verified_outlined),
+                                label: Text(strings.confirm),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                key: const ValueKey('resend-reset'),
+                                onPressed: _cloudBusy ? null : _resendReset,
+                                child: Text(strings.resendReset),
+                              ),
+                            ]),
+                            TextButton(
+                              key: const ValueKey('cancel-reset'),
+                              onPressed: _cloudBusy ? null : _cancelReset,
+                              child: Text(strings.cancelReset),
+                            ),
+                          ] else if (account.value == null) ...[
+                            Text(strings.signInPitch,
+                                style: TextStyle(color: Colors.grey.shade400)),
+                            const SizedBox(height: 12),
+                            TextField(
+                              key: const ValueKey('email-field'),
+                              controller: _emailController,
+                              decoration: InputDecoration(
+                                labelText: strings.emailLabel,
+                                hintText: strings.emailHint,
+                                errorText: _emailError,
+                                border: const OutlineInputBorder(),
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email],
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              key: const ValueKey('password-field'),
+                              controller: _passwordController,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                labelText: strings.passwordLabel,
+                                hintText: strings.passwordHint,
+                                border: const OutlineInputBorder(),
+                              ),
+                              autofillHints: const [AutofillHints.password],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              FilledButton.icon(
+                                key: const ValueKey('email-signin'),
+                                onPressed: _signIn,
+                                icon: const Icon(Icons.mail_outline),
+                                label: Text(strings.signInWithEmail),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton(
+                                key: const ValueKey('oauth-google'),
+                                onPressed: _providerEnabled('google')
+                                    ? () => _runProvider('google')
+                                    : null,
+                                child: const Text('Google'),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton(
+                                key: const ValueKey('oauth-github'),
+                                onPressed: _providerEnabled('github')
+                                    ? () => _runProvider('github')
+                                    : null,
+                                child: const Text('GitHub'),
+                              ),
+                            ]),
+                            if (!_serverConfigured &&
+                                widget.serverSetup != null) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.dns_outlined,
+                                        size: 16, color: Colors.amber.shade300),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        strings.serverOnboardingHint,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
                                     ),
-                                  ),
-                                ]),
+                                  ]),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                key: const ValueKey('connect-server'),
+                                onPressed: () async {
+                                  final configured = await widget.serverSetup!
+                                      .showConnectionDialog(context);
+                                  if (configured && mounted) {
+                                    setState(() => _serverConfigured = true);
+                                  }
+                                },
+                                icon: const Icon(Icons.lan_outlined),
+                                label: Text(strings.connectGameServer),
+                              ),
+                            ],
                             const SizedBox(height: 8),
-                            OutlinedButton.icon(
-                              key: const ValueKey('connect-server'),
-                              onPressed: () async {
-                                final configured = await widget.serverSetup!
-                                    .showConnectionDialog(context);
-                                if (configured && mounted) {
-                                  setState(() => _serverConfigured = true);
-                                }
-                              },
-                              icon: const Icon(Icons.lan_outlined),
-                              label: Text(strings.connectGameServer),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                key: const ValueKey('cloud-signin'),
+                                onPressed: _cloudBusy ? null : _cloudSignIn,
+                                icon: _cloudBusy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Icon(Icons.cloud_outlined),
+                                label: Text(strings.createOrSignInCloud),
+                              ),
                             ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                key: const ValueKey('forgot-password'),
+                                onPressed:
+                                    _cloudBusy ? null : _startPasswordReset,
+                                child: Text(strings.forgotPassword),
+                              ),
+                            ),
+                          ] else ...[
+                            if (account.isCloudSignedIn &&
+                                (account.passwordResetPending ||
+                                    _showChangePassword)) ...[
+                              // -- Change password: forced after recovery (the
+                              // session has no password the player knows), or
+                              // opened from the card's link. A current-password
+                              // field joins when the player asked for it.
+                              Text(strings.signedInAs(account.value!.email),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 4),
+                              Text(
+                                account.passwordResetPending
+                                    ? strings.changePasswordHint
+                                    : strings.changePasswordSectionHint,
+                                style: TextStyle(color: Colors.amber.shade300),
+                              ),
+                              const SizedBox(height: 12),
+                              if (!account.passwordResetPending) ...[
+                                TextField(
+                                  key: const ValueKey('current-password-field'),
+                                  controller: _currentPasswordController,
+                                  obscureText: true,
+                                  decoration: InputDecoration(
+                                    labelText: strings.currentPasswordLabel,
+                                    border: const OutlineInputBorder(),
+                                  ),
+                                  autofillHints: const [AutofillHints.password],
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              TextField(
+                                key: const ValueKey('new-password-field'),
+                                controller: _newPasswordController,
+                                obscureText: true,
+                                decoration: InputDecoration(
+                                  labelText: strings.newPasswordLabel,
+                                  hintText: strings.newPasswordHint,
+                                  border: const OutlineInputBorder(),
+                                ),
+                                autofillHints: const [
+                                  AutofillHints.newPassword
+                                ],
+                                onSubmitted: (_) => account.passwordResetPending
+                                    ? _submitNewPassword()
+                                    : _changePassword(),
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                key: const ValueKey('confirm-password-field'),
+                                controller: _confirmPasswordController,
+                                obscureText: true,
+                                decoration: InputDecoration(
+                                  labelText: strings.newPasswordConfirmLabel,
+                                  border: const OutlineInputBorder(),
+                                ),
+                                autofillHints: const [
+                                  AutofillHints.newPassword
+                                ],
+                                onSubmitted: (_) => account.passwordResetPending
+                                    ? _submitNewPassword()
+                                    : _changePassword(),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  key: const ValueKey('save-new-password'),
+                                  onPressed: _cloudBusy
+                                      ? null
+                                      : account.passwordResetPending
+                                          ? _submitNewPassword
+                                          : _changePassword,
+                                  icon: _cloudBusy
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2))
+                                      : const Icon(Icons.save_outlined),
+                                  label: Text(strings.changePassword),
+                                ),
+                              ),
+                            ] else ...[
+                              Text(strings.signedInAs(account.value!.email),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
+                              Text(
+                                account.isCloudSignedIn
+                                    ? strings.cloudAccountReady
+                                    : strings.deviceLocalAccount,
+                                style: TextStyle(
+                                    color: Colors.grey.shade500, fontSize: 12),
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                key: const ValueKey('signout'),
+                                // signOut is async (prefs write + best-effort server call)
+                                // but its notifier update is synchronous — call it outside
+                                // setState; wrapping it inside would return a Future from
+                                // the callback and throw.
+                                onPressed: () {
+                                  account.signOut();
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.logout),
+                                label: Text(strings.signOut),
+                              ),
+                              if (account.isCloudSignedIn) ...[
+                                const SizedBox(height: 4),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    key: const ValueKey('open-change-password'),
+                                    onPressed: _cloudBusy
+                                        ? null
+                                        : () => setState(
+                                            () => _showChangePassword = true),
+                                    child: Text(strings.changePassword),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ],
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              key: const ValueKey('cloud-signin'),
-                              onPressed: _cloudBusy ? null : _cloudSignIn,
-                              icon: _cloudBusy
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2))
-                                  : const Icon(Icons.cloud_outlined),
-                              label: Text(strings.createOrSignInCloud),
-                            ),
-                          ),
-                        ] else ...[
-                          Text(strings.signedInAs(account_.email),
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600)),
-                          Text(
-                            account.isCloudSignedIn
-                                ? strings.cloudAccountReady
-                                : strings.deviceLocalAccount,
-                            style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 12),
-                          ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            key: const ValueKey('signout'),
-                            // signOut is async (prefs write + best-effort server call)
-                            // but its notifier update is synchronous — call it outside
-                            // setState; wrapping it inside would return a Future from
-                            // the callback and throw.
-                            onPressed: () {
-                              account.signOut();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.logout),
-                            label: Text(strings.signOut),
-                          ),
-                        ],
-                      ]),
+                        ]),
+                  ),
                 ),
               ),
             ],
@@ -603,6 +789,179 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _pendingSignupEmail = null;
         _codeController.clear();
       });
+    }
+  }
+
+  // -- Password reset + change ----------------------------------------------
+
+  /// Sends the reset email for the address in the email field and parks it
+  /// — the card switches to the reset-code sub-form.
+  Future<void> _startPasswordReset() async {
+    final email = _emailController.text.trim();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      setState(() => _emailError = appLocale.strings.invalidEmail);
+      return;
+    }
+    if (!_serverConfigured && widget.serverSetup != null) {
+      final configured =
+          await widget.serverSetup!.showConnectionDialog(context);
+      if (!mounted || !configured) return; // player cancelled
+      setState(() => _serverConfigured = true);
+    }
+    setState(() => _cloudBusy = true);
+    try {
+      await account.requestPasswordReset(email);
+      await account.parkPasswordReset(email);
+      if (mounted) {
+        setState(() {
+          _resetEmail = email;
+          _resetCodeController.clear();
+        });
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
+    }
+  }
+
+  /// The change-password section on the signed-in card: verifies the
+  /// current password with a plain sign-in, then PUTs the new one. Runs
+  /// through the same `_submitNewPassword` as the forced form, so both
+  /// paths share validation and error surfacing.
+  Future<void> _changePassword() async {
+    final current = _currentPasswordController.text;
+    if (current.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(appLocale.strings.enterCurrentPassword)),
+      );
+      return;
+    }
+    setState(() => _cloudBusy = true);
+    try {
+      // Proves the current password (and re-locks the session):
+      // a wrong one surfaces the server's own invalid-credentials error.
+      await account.signInWithPassword(account.value!.email, current);
+      final password = _newPasswordController.text;
+      if (password.length < 6) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.shortPassword)),
+          );
+        }
+        return;
+      }
+      if (password != _confirmPasswordController.text) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.passwordMismatch)),
+          );
+        }
+        return;
+      }
+      await _submitNewPassword();
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
+    }
+  }
+
+  /// Verifies the reset code: on success the player is signed in and the
+  /// account card switches to the forced change-password form.
+  Future<void> _verifyResetCode() async {
+    final code = _resetCodeController.text.trim();
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(appLocale.strings.enterCode)));
+      return;
+    }
+    setState(() => _cloudBusy = true);
+    try {
+      await account.verifyRecoveryCode(code);
+      if (mounted) {
+        setState(() {
+          _resetEmail = null;
+          _resetCodeController.clear();
+        });
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
+    }
+  }
+
+  /// Re-sends the reset email for the parked address.
+  Future<void> _resendReset() async {
+    try {
+      await account.resendPasswordReset();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.resetEmailSent)));
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
+  /// Abandons the reset — back to the sign-in form.
+  Future<void> _cancelReset() async {
+    await account.cancelPasswordReset();
+    if (mounted) {
+      setState(() {
+        _resetEmail = null;
+        _resetCodeController.clear();
+      });
+    }
+  }
+
+  /// Applies the new password: validates both fields agree and are long
+  /// enough, calls the controller, and clears the form on success.
+  Future<void> _submitNewPassword() async {
+    final password = _newPasswordController.text;
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(appLocale.strings.shortPassword)),
+      );
+      return;
+    }
+    if (password != _confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(appLocale.strings.passwordMismatch)),
+      );
+      return;
+    }
+    setState(() => _cloudBusy = true);
+    try {
+      await account.changePassword(password);
+      if (mounted) {
+        _newPasswordController.clear();
+        _confirmPasswordController.clear();
+        _currentPasswordController.clear();
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.passwordChanged)));
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
     }
   }
 

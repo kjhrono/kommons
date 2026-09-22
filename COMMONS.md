@@ -63,8 +63,8 @@ dependencies:
 | `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. |
 | `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
-| `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession`, `AuthException`. Per-app configuration: point it at your auth server. |
-| `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons), PLAYER NAME, Language (a real picker over `appLocale`). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
+| `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession`, `AuthException`. Per-app configuration: point it at your auth server. |
+| `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons, forgot-password sub-form, forced change-password form after recovery, change-password section on the signed-in card), PLAYER NAME, Language (a real picker over `appLocale`). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
 | `app_splash.dart` | `AppSplash` — background art, big title, welcome (reads `account`: anonymous vs signed-in form), flavor scene, action buttons, description footer. Config: `appName`, `description`, `welcomeName`, `background`, `scenes` (defaults to `kDefaultSplashScenes`), `continueEnabled`/`continueLabel` (null = localized default), `actions` (`SplashActions.both` = NEW GAME + Continue, `startOnly` = NEW GAME alone, `direct` = PLAY alone — straight into the app, no lobby, or `directAndNewGame` = PLAY leading with NEW GAME behind), `onDirect`/`directLabel` for the direct variants, `settingsBuilder`, `debugSceneIndex` (test seam), `animateEntrance`. |
 
 **Localization** — the shell carries its own strings in
@@ -115,6 +115,26 @@ operator side — enabling the providers in the game server's GoTrue/Supabase
 dashboard and allow-listing every redirect target — is documented in
 [docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md), alongside the
 schema notes.
+
+**Lost & changed passwords** — the account card covers the whole lifecycle
+in-app (email templates stay server-side):
+
+* **Forgot password** — a link under the email sign-in form opens a sub-form
+  (`forgot-password` → `reset-code-field`): the shell emails a recovery code
+  (GoTrue `/auth/v1/recover`), the player types it back and lands signed-in
+  with `account.passwordResetPending` true — the forced change-password form
+  is the only step on the card (sign-out is refused until a new password is
+  chosen, code `reset_in_progress`). If the server's template instead mails a
+  link, its token works in the same field.
+* **Change password** — the signed-in card carries a section
+  (`change-password-section`, fields `current/current-password-field`,
+  `new/new-password-field`, `confirm/confirm-password-field`) that verifies
+  the current password and PUTs the new one (`PUT /auth/v1/user`). It doubles
+  as the "first connect with the mailed temporary password, then set your
+  own" path: sign in with the temp password, change it here.
+* `cancel-reset` (`resend-reset` beside it) leaves the sub-form without
+  side effects; validation errors (`invalid_email`, `shortPassword`,
+  `passwordMismatch`) surface inline before any call.
 
 **Splash art ships with the package** — `assets/splash_bg.svg` plus three
 vignettes (`splash_caravan`, `splash_dungeon`, `splash_tame`), referenced as

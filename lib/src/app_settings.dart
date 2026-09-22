@@ -32,7 +32,8 @@ Future<ServerConnection?> readStandardServerConnection() async {
   final url = prefs.getString('prefs.online.serverUrl') ?? '';
   if (url.isEmpty) return null;
   final key = prefs.getString('prefs.online.anonKey');
-  return ServerConnection(url: url, apiKey: (key == null || key.isEmpty) ? null : key);
+  return ServerConnection(
+      url: url, apiKey: (key == null || key.isEmpty) ? null : key);
 }
 
 /// The app's theme mode, persisted and read by the root widget. A global
@@ -57,7 +58,8 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
   /// reads the mode).
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    value = prefs.getString(_prefKey) == 'light' ? ThemeMode.light : ThemeMode.dark;
+    value =
+        prefs.getString(_prefKey) == 'light' ? ThemeMode.light : ThemeMode.dark;
   }
 
   /// Clears in-memory state for tests (see [AccountController.resetForTest]).
@@ -68,7 +70,8 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKey, value == ThemeMode.light ? 'light' : 'dark');
+    await prefs.setString(
+        _prefKey, value == ThemeMode.light ? 'light' : 'dark');
   }
 
   static const _prefKey = 'prefs.app.themeMode';
@@ -90,7 +93,8 @@ class AppLocaleNotifier extends ValueNotifier<ShellLanguage?> {
   bool get isSet => value != null;
 
   /// The strings for the current language — English until a choice exists.
-  ShellStrings get strings => ShellStrings.forLanguage(value ?? ShellLanguage.english);
+  ShellStrings get strings =>
+      ShellStrings.forLanguage(value ?? ShellLanguage.english);
 
   /// The language as a MaterialApp locale (null = no choice made yet).
   Locale? get locale => value?.locale;
@@ -145,7 +149,8 @@ final appTheme = AppThemeNotifier();
 /// record for now — the auth service (Google, GitHub, email+cloud) plugs
 /// in behind [signOut] and [signInWithEmail] without the UI changing.
 class Account {
-  const Account({required this.displayName, required this.email, required this.provider});
+  const Account(
+      {required this.displayName, required this.email, required this.provider});
 
   /// Human-facing name ('Marcuz', or the provider's display name).
   final String displayName;
@@ -205,6 +210,15 @@ class AccountController extends ValueNotifier<Account?> {
   AuthSession? _session;
   bool _loaded = false;
 
+  /// The address a password-reset email was sent to, while the player is
+  /// entering its code (mirrors [_pendingSignupEmail]'s shape).
+  String? _resetEmail;
+
+  /// Whether the current session came from a password recovery and must
+  /// choose a new password before anything else (the settings screen
+  /// gates the account card on this).
+  bool _resetPasswordArmed = false;
+
   /// A signup awaiting email confirmation: the address is registered on
   /// the game server but GoTrue issued no session until the confirmation
   /// email's code (or link) is verified. Persisted so a reload (or app
@@ -217,6 +231,10 @@ class AccountController extends ValueNotifier<Account?> {
   /// True once [load] has run (cloud-room lists wait for the player name
   /// it restores, so callers can await this instead of guessing).
   bool get isLoaded => _loaded;
+
+  /// The address a reset email was sent to (the reset sub-form pre-fills
+  /// and confirms it).
+  String? get pendingResetEmail => _resetEmail;
 
   /// The live cloud session, when signed in with a password.
   AuthSession? get session => _session;
@@ -303,7 +321,8 @@ class AccountController extends ValueNotifier<Account?> {
   Future<void> setPlayerName(String name) async {
     playerName = name.trim().isEmpty ? 'Player' : name.trim();
     if (value != null && value!.provider == 'email') {
-      value = Account(displayName: playerName, email: value!.email, provider: 'email');
+      value = Account(
+          displayName: playerName, email: value!.email, provider: 'email');
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_nameKey, playerName);
@@ -328,7 +347,8 @@ class AccountController extends ValueNotifier<Account?> {
     final clean = email.trim();
     final service = await _ensureService();
     if (service == null) {
-      throw const AuthException('no_server', 'Configure the game server first (host or join an online room once).');
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
     }
     AuthSession session;
     try {
@@ -344,12 +364,18 @@ class AccountController extends ValueNotifier<Account?> {
       }
       // Known address: fall through to a password sign-in, so "sign up or
       // in" is one action for the player.
-      if (error.code != 'user_already_registered' && error.code != 'email_exists') rethrow;
+      if (error.code != 'user_already_registered' &&
+          error.code != 'email_exists') {
+        rethrow;
+      }
       session = await service.signIn(email: clean, password: password);
     }
     _session = session;
     _pendingSignupEmail = null;
-    value = Account(displayName: playerName, email: session.email.isNotEmpty ? session.email : clean, provider: 'email');
+    value = Account(
+        displayName: playerName,
+        email: session.email.isNotEmpty ? session.email : clean,
+        provider: 'email');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_emailKey, value!.email);
     await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
@@ -373,20 +399,118 @@ class AccountController extends ValueNotifier<Account?> {
   Future<void> confirmSignupCode(String code) async {
     final email = _pendingSignupEmail;
     if (email == null) {
-      throw const AuthException('no_pending', 'No registration is waiting for confirmation.');
+      throw const AuthException(
+          'no_pending', 'No registration is waiting for confirmation.');
     }
     final service = await _ensureService();
     if (service == null) {
-      throw const AuthException('no_server', 'Configure the game server first (host or join an online room once).');
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
     }
-    final session = await service.verifySignup(email: email, token: code.trim());
+    final session =
+        await service.verifySignup(email: email, token: code.trim());
     _session = session;
     _pendingSignupEmail = null;
-    value = Account(displayName: playerName, email: session.email.isNotEmpty ? session.email : email, provider: 'email');
+    value = Account(
+        displayName: playerName,
+        email: session.email.isNotEmpty ? session.email : email,
+        provider: 'email');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_emailKey, value!.email);
     await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
     await prefs.remove(_pendingKey);
+    notifyListeners();
+  }
+
+  /// Sends the "forgot password" email: the game server mails the
+  /// address a recovery link (or short code, per the server's template).
+  /// Validation-level failures (no server, empty email) throw; server
+  /// answers surface as [AuthException] messages for the UI. A
+  /// non-existent address stays quiet server-side (no enumeration), so
+  /// success here only means "the request was accepted" — the player
+  /// checks their inbox for the actual proof.
+  Future<void> requestPasswordReset(String email) async {
+    final clean = email.trim();
+    if (clean.isEmpty) {
+      throw const AuthException('invalid_email', 'Enter the email to recover.');
+    }
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    await service.resetPassword(email: clean);
+  }
+
+  /// Finishes the recovery: verifies the code (or link token) from the
+  /// password-reset email and signs the player in. [markPasswordReset]
+  /// then arms the shell's forced change-password form, which blocks
+  /// sign-out (a recovered session may only be left by choosing a new
+  /// password first) until [changePassword] succeeds — the "temp
+  /// password → connect → change it" loop, all in-app.
+  Future<void> verifyRecoveryCode(String code) async {
+    final email = _resetEmail;
+    if (email == null) {
+      throw const AuthException('no_reset',
+          'Request a password reset first (enter your email and tap the reset link below the sign-in form).');
+    }
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    final session =
+        await service.verifyRecovery(email: email, token: code.trim());
+    _session = session;
+    _pendingSignupEmail = null;
+    _resetEmail = null; // the reset is complete: the player is back in
+    _resetPasswordArmed = true;
+    value = Account(
+      displayName: playerName,
+      email: session.email.isNotEmpty ? session.email : email,
+      provider: 'email',
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_emailKey, value!.email);
+    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
+    await prefs.remove(_pendingKey);
+    notifyListeners();
+  }
+
+  /// True while the current cloud session came from a password recovery —
+  /// the settings screen shows the change-password form (and no other
+  /// account actions) until the player sets their own password.
+  bool get passwordResetPending => _resetPasswordArmed;
+
+  /// Arms the forced change-password state without touching persistence
+  /// (used by [verifyRecoveryCode]; the flag is session-scoped on
+  /// purpose — a restart lands on the normal sign-in form).
+  @visibleForTesting
+  void markPasswordReset() => _resetPasswordArmed = true;
+
+  /// Changes the signed-in cloud account's password, then lifts the
+  /// forced-change state. The current session stays valid (GoTrue keeps
+  /// the token pair on a password change) so no refresh is needed.
+  Future<void> changePassword(String newPassword) async {
+    final session = _session;
+    if (session == null) {
+      throw const AuthException(
+          'not_signed_in', 'Sign in before changing the password.');
+    }
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    await service.updatePassword(
+        accessToken: session.accessToken, newPassword: newPassword);
+    _resetPasswordArmed = false;
+    notifyListeners();
+  }
+
+  /// Abandons an in-progress password reset (back to the sign-in form).
+  Future<void> cancelPasswordReset() async {
+    _resetEmail = null;
     notifyListeners();
   }
 
@@ -411,13 +535,15 @@ class AccountController extends ValueNotifier<Account?> {
       throw const AuthException('no_server',
           'Configure the game server first (host or join an online room once).');
     }
-    final collector = collectOAuthFragment ?? oauth_launcher.collectOAuthFragment;
+    final collector =
+        collectOAuthFragment ?? oauth_launcher.collectOAuthFragment;
 
     // The default web collector pops a window back onto this app's origin
     // (null off the web); custom collectors — tests, callback pages, deep
     // links — pick their own target and may ignore the redirect entirely.
     final target = redirectTo ?? oauthRedirectUri ?? _webOrigin() ?? Uri();
-    final authorize = service.authorizeUrl(provider: provider, redirectTo: target);
+    final authorize =
+        service.authorizeUrl(provider: provider, redirectTo: target);
 
     // A parked email signup would be overwritten by the provider session —
     // mirror the cancel path: the player chose a different route in.
@@ -467,15 +593,40 @@ class AccountController extends ValueNotifier<Account?> {
     return Uri.parse(Uri.base.origin);
   }
 
+  /// Sends the reset email and parks the address for the code entry (the
+  /// parked state survives a settings-screen rebuild; a full app restart
+  /// just asks again).
+  Future<void> parkPasswordReset(String email) async {
+    _resetEmail = email.trim();
+    notifyListeners();
+  }
+
+  /// Re-sends the reset email for the parked address.
+  Future<void> resendPasswordReset() async {
+    final email = _resetEmail;
+    if (email == null) {
+      throw const AuthException(
+          'no_reset', 'No password reset is in progress.');
+    }
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    await service.resendResetEmail(email: email);
+  }
+
   /// Re-sends the confirmation email for the parked registration.
   Future<void> resendSignupConfirmation() async {
     final email = _pendingSignupEmail;
     if (email == null) {
-      throw const AuthException('no_pending', 'No registration is waiting for confirmation.');
+      throw const AuthException(
+          'no_pending', 'No registration is waiting for confirmation.');
     }
     final service = await _ensureService();
     if (service == null) {
-      throw const AuthException('no_server', 'Configure the game server first (host or join an online room once).');
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
     }
     await service.resendConfirmation(email: email);
   }
@@ -493,6 +644,13 @@ class AccountController extends ValueNotifier<Account?> {
   /// Signs out, keeping the local player name. A cloud session is also
   /// revoked server-side (best effort — it expires on its own anyway).
   Future<void> signOut() async {
+    if (_resetPasswordArmed) {
+      // A recovered session has no known password behind it: leaving it
+      // here would strand the player outside their own account. The UI
+      // hides the affordance; this guard keeps any future caller honest.
+      throw const AuthException('reset_in_progress',
+          'Choose a new password first (a recovered session has none to fall back on).');
+    }
     final session = _session;
     _session = null;
     _pendingSignupEmail = null;
@@ -515,6 +673,8 @@ class AccountController extends ValueNotifier<Account?> {
     value = null;
     _session = null;
     _pendingSignupEmail = null;
+    _resetEmail = null;
+    _resetPasswordArmed = false;
     _loaded = false;
     playerName = 'Player';
     authService = null; // tests inject their own per case
