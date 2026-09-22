@@ -232,7 +232,8 @@ class CloudRoomService {
     // the listing works against either shape.
     final roomsResponse = await _client.get(
       _table('rooms', {
-        'select': 'code,clock,session,password,host_secret,designated_host,roster(room_code,player_name,color_hex,ready)',
+        'select':
+            'code,clock,session,password,host_secret,designated_host,roster(room_code,player_name,color_hex,ready)',
         'order': 'updated_at.desc',
         'roster.order': 'joined_at',
       }),

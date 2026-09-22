@@ -20,7 +20,8 @@ import 'settings_screen.dart';
 /// [SettingsScreen] opens); games with their own sections wrap them in a
 /// builder.
 class AppTopBar extends StatefulWidget {
-  const AppTopBar({super.key, this.title, this.gameId = 'app', this.settingsBuilder});
+  const AppTopBar(
+      {super.key, this.title, this.gameId = 'app', this.settingsBuilder});
 
   /// Host screen title, rendered between the version and the controls.
   final String? title;
@@ -52,7 +53,8 @@ class _AppTopBarState extends State<AppTopBar> {
   }
 
   void _openSettings() {
-    final builder = widget.settingsBuilder ?? () => SettingsScreen(gameId: widget.gameId);
+    final builder =
+        widget.settingsBuilder ?? () => SettingsScreen(gameId: widget.gameId);
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => builder()),
@@ -66,7 +68,9 @@ class _AppTopBarState extends State<AppTopBar> {
       child: Row(children: [
         // Left: release identity for tester bug reports.
         Text(
-          _packageInfo == null ? '' : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
+          _packageInfo == null
+              ? ''
+              : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
           key: const ValueKey('app-version-chip'),
           style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
         ),
@@ -75,7 +79,10 @@ class _AppTopBarState extends State<AppTopBar> {
           Expanded(
             child: Text(
               widget.title!,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 1.5),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 1.5),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -86,10 +93,15 @@ class _AppTopBarState extends State<AppTopBar> {
           key: const ValueKey('theme-toggle'),
           tooltip: appLocale.strings.switchThemeTooltip,
           icon: Icon(
-            appTheme.mode == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+            appTheme.mode == ThemeMode.light
+                ? Icons.dark_mode_outlined
+                : Icons.light_mode_outlined,
             size: 20,
           ),
-          onPressed: () => setState(() => appTheme.mode = appTheme.mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light),
+          onPressed: () => setState(() => appTheme.mode =
+              appTheme.mode == ThemeMode.light
+                  ? ThemeMode.dark
+                  : ThemeMode.light),
         ),
         IconButton(
           key: const ValueKey('settings-button'),
@@ -129,23 +141,31 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
   Widget build(BuildContext context) {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text(
-        _packageInfo == null ? '' : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
+        _packageInfo == null
+            ? ''
+            : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
       ),
       IconButton(
         tooltip: appLocale.strings.switchThemeTooltip,
         icon: Icon(
-          appTheme.mode == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+          appTheme.mode == ThemeMode.light
+              ? Icons.dark_mode_outlined
+              : Icons.light_mode_outlined,
           size: 20,
         ),
-        onPressed: () => setState(() => appTheme.mode = appTheme.mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light),
+        onPressed: () => setState(() => appTheme.mode =
+            appTheme.mode == ThemeMode.light
+                ? ThemeMode.dark
+                : ThemeMode.light),
       ),
       IconButton(
         tooltip: appLocale.strings.settingsTooltip,
         icon: const Icon(Icons.settings_outlined, size: 20),
         onPressed: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => SettingsScreen(gameId: widget.gameId)),
+          MaterialPageRoute(
+              builder: (_) => SettingsScreen(gameId: widget.gameId)),
         ),
       ),
     ]);

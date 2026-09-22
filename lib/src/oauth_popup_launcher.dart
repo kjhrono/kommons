@@ -15,8 +15,7 @@
 library;
 
 import 'oauth_default_native.dart'
-        if (dart.library.js_interop) 'oauth_default_web.dart'
-    as platform;
+    if (dart.library.js_interop) 'oauth_default_web.dart' as platform;
 
 export 'oauth_default_native.dart'
     if (dart.library.js_interop) 'oauth_default_web.dart'

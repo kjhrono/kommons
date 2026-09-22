@@ -21,11 +21,14 @@ const gameServerAnonKeyPrefKey = 'prefs.online.anonKey';
 /// player can establish the connection from either entry point — most
 /// importantly from settings, before any multiplayer room ever existed,
 /// because cloud account registration needs a server to register with.
-Future<GameServerConnection?> showGameServerConnectionDialog(BuildContext context) async {
+Future<GameServerConnection?> showGameServerConnectionDialog(
+    BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
   if (!context.mounted) return null;
-  final urlController = TextEditingController(text: prefs.getString(gameServerUrlPrefKey) ?? '');
-  final keyController = TextEditingController(text: prefs.getString(gameServerAnonKeyPrefKey) ?? '');
+  final urlController =
+      TextEditingController(text: prefs.getString(gameServerUrlPrefKey) ?? '');
+  final keyController = TextEditingController(
+      text: prefs.getString(gameServerAnonKeyPrefKey) ?? '');
   final strings = appLocale.strings;
   final connection = await showDialog<GameServerConnection>(
     context: context,
@@ -62,7 +65,10 @@ Future<GameServerConnection?> showGameServerConnectionDialog(BuildContext contex
         FilledButton(
           onPressed: () => Navigator.pop(
             dialogContext,
-            (url: urlController.text.trim(), anonKey: keyController.text.trim()),
+            (
+              url: urlController.text.trim(),
+              anonKey: keyController.text.trim()
+            ),
           ),
           child: Text(strings.connect),
         ),
@@ -78,7 +84,9 @@ Future<GameServerConnection?> showGameServerConnectionDialog(BuildContext contex
 Future<void> saveGameServerConnection(GameServerConnection connection) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(gameServerUrlPrefKey, connection.url);
-  if (connection.anonKey.isNotEmpty) await prefs.setString(gameServerAnonKeyPrefKey, connection.anonKey);
+  if (connection.anonKey.isNotEmpty) {
+    await prefs.setString(gameServerAnonKeyPrefKey, connection.anonKey);
+  }
 }
 
 /// The remembered server URL, or '' when none was configured yet.

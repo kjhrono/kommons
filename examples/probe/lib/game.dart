@@ -47,7 +47,8 @@ class ProbeGameScreen extends StatelessWidget {
               for (final seat in handoff.seats)
                 ListTile(
                   key: ValueKey('herald-seat-${seat.name}'),
-                  leading: CircleAvatar(backgroundColor: seat.color, radius: 12),
+                  leading:
+                      CircleAvatar(backgroundColor: seat.color, radius: 12),
                   title: Text(seat.name),
                 ),
               const SizedBox(height: 24),

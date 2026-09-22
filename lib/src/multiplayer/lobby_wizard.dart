@@ -4,7 +4,8 @@ import '../app_settings.dart';
 
 /// One node of the lobby wizard's progress rail.
 class LobbyStepDescriptor {
-  const LobbyStepDescriptor({required this.title, required this.icon, this.subtitle});
+  const LobbyStepDescriptor(
+      {required this.title, required this.icon, this.subtitle});
 
   final String title;
   final IconData icon;
@@ -79,9 +80,11 @@ class LobbyWizard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(appLocale.strings
-                        .stepHeader(current + 1, steps.length, steps[current].title),
-                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                    Text(
+                        appLocale.strings.stepHeader(
+                            current + 1, steps.length, steps[current].title),
+                        style: const TextStyle(
+                            fontSize: 28, fontWeight: FontWeight.bold)),
                     if (steps[current].subtitle != null) ...[
                       const SizedBox(height: 4),
                       Text(steps[current].subtitle!,
@@ -105,7 +108,8 @@ class LobbyWizard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Row(children: [
           for (var i = 0; i < steps.length; i++) ...[
-            if (i > 0) Expanded(child: Container(height: 2, color: Colors.white12)),
+            if (i > 0)
+              Expanded(child: Container(height: 2, color: Colors.white12)),
             Tooltip(
               message: steps[i].title,
               child: InkWell(

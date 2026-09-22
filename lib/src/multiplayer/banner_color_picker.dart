@@ -25,11 +25,13 @@ const List<String> bannerPalette = [
 ];
 
 /// Returns the ARGB hex string (no leading 0x) for a [Color].
-String bannerColorHex(Color color) => color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase();
+String bannerColorHex(Color color) =>
+    color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase();
 
 Color bannerColor(String hex) {
   final normalized = hex.trim().replaceFirst('#', '').toUpperCase();
-  final padded = normalized.length == 6 ? 'FF$normalized' : normalized.padLeft(8, '0');
+  final padded =
+      normalized.length == 6 ? 'FF$normalized' : normalized.padLeft(8, '0');
   return Color(int.tryParse(padded, radix: 16) ?? 0xFF9C27FF);
 }
 
@@ -55,7 +57,8 @@ Future<String?> showBannerColorPicker(
 }) {
   return showDialog<String>(
     context: context,
-    builder: (dialogContext) => _BannerColorDialog(slot: slot, takenColors: takenColors),
+    builder: (dialogContext) =>
+        _BannerColorDialog(slot: slot, takenColors: takenColors),
   );
 }
 
@@ -71,7 +74,8 @@ class _BannerColorDialog extends StatefulWidget {
 
 class _BannerColorDialogState extends State<_BannerColorDialog> {
   late HSVColor _hsv = HSVColor.fromColor(bannerColor(widget.slot.colorHex));
-  late final TextEditingController _hexController = TextEditingController(text: _hex(_hsv.toColor()));
+  late final TextEditingController _hexController =
+      TextEditingController(text: _hex(_hsv.toColor()));
 
   static String _hex(Color color) => '#${bannerColorHex(color).substring(2)}';
 
@@ -82,7 +86,8 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
     });
   }
 
-  void _commit(Color color) => Navigator.pop(dialogContext, bannerColorHex(color));
+  void _commit(Color color) =>
+      Navigator.pop(dialogContext, bannerColorHex(color));
 
   BuildContext get dialogContext => context;
 
@@ -110,12 +115,17 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.flag, color: Colors.black54, size: 20),
                     const SizedBox(width: 8),
-                    Text(widget.slot.name, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                    Text(widget.slot.name,
+                        style: const TextStyle(
+                            color: Colors.black87,
+                            fontWeight: FontWeight.bold)),
                   ]),
                 ),
               ),
               const SizedBox(height: 12),
-              const Text('PALETTE', style: TextStyle(fontSize: 11, letterSpacing: 1.1, color: Colors.grey)),
+              const Text('PALETTE',
+                  style: TextStyle(
+                      fontSize: 11, letterSpacing: 1.1, color: Colors.grey)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 10,
@@ -125,13 +135,16 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
                     _Swatch(
                       color: bannerColor(hex),
                       selected: bannerColorHex(current) == hex.toUpperCase(),
-                      takenByOther: widget.takenColors.contains(hex.toUpperCase()),
+                      takenByOther:
+                          widget.takenColors.contains(hex.toUpperCase()),
                       onTap: () => _apply(bannerColor(hex)),
                     ),
                 ],
               ),
               const SizedBox(height: 16),
-              const Text('CUSTOM', style: TextStyle(fontSize: 11, letterSpacing: 1.1, color: Colors.grey)),
+              const Text('CUSTOM',
+                  style: TextStyle(
+                      fontSize: 11, letterSpacing: 1.1, color: Colors.grey)),
               _HueSlider(
                 hue: _hsv.hue,
                 saturation: _hsv.saturation,
@@ -143,7 +156,8 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
                 Expanded(
                   child: Slider(
                     value: _hsv.saturation,
-                    onChanged: (saturation) => _apply(_hsv.withSaturation(saturation).toColor()),
+                    onChanged: (saturation) =>
+                        _apply(_hsv.withSaturation(saturation).toColor()),
                     label: 'Saturation',
                   ),
                 ),
@@ -153,7 +167,8 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
                 Expanded(
                   child: Slider(
                     value: _hsv.value,
-                    onChanged: (value) => _apply(_hsv.withValue(value).toColor()),
+                    onChanged: (value) =>
+                        _apply(_hsv.withValue(value).toColor()),
                     label: 'Brightness',
                   ),
                 ),
@@ -178,7 +193,9 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel')),
         FilledButton.icon(
           icon: const Icon(Icons.check, size: 16),
           label: const Text('Use this color'),
@@ -190,7 +207,11 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
 }
 
 class _Swatch extends StatelessWidget {
-  const _Swatch({required this.color, required this.selected, required this.takenByOther, required this.onTap});
+  const _Swatch(
+      {required this.color,
+      required this.selected,
+      required this.takenByOther,
+      required this.onTap});
 
   final Color color;
   final bool selected;
@@ -209,11 +230,15 @@ class _Swatch extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            border: Border.all(color: selected ? Colors.white : Colors.white24, width: selected ? 3 : 1),
+            border: Border.all(
+                color: selected ? Colors.white : Colors.white24,
+                width: selected ? 3 : 1),
           ),
           child: takenByOther
               ? const Icon(Icons.person, size: 14, color: Colors.black45)
-              : (selected ? const Icon(Icons.check, size: 16, color: Colors.black54) : null),
+              : (selected
+                  ? const Icon(Icons.check, size: 16, color: Colors.black54)
+                  : null),
         ),
       ),
     );
@@ -222,7 +247,11 @@ class _Swatch extends StatelessWidget {
 
 /// Horizontal hue strip with a subtle rainbow gradient and the value thumb.
 class _HueSlider extends StatelessWidget {
-  const _HueSlider({required this.hue, required this.saturation, required this.value, required this.onChanged});
+  const _HueSlider(
+      {required this.hue,
+      required this.saturation,
+      required this.value,
+      required this.onChanged});
 
   final double hue;
   final double saturation;

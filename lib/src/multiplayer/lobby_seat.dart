@@ -29,7 +29,8 @@ class LobbySeat {
   /// contracts at world gen and complete them over time as the clock runs.
   bool isAi;
 
-  Color get color => Color(int.parse(colorHex.length == 6 ? 'FF$colorHex' : colorHex, radix: 16));
+  Color get color => Color(
+      int.parse(colorHex.length == 6 ? 'FF$colorHex' : colorHex, radix: 16));
 
   Map<String, dynamic> toMap() => {
         'name': name,

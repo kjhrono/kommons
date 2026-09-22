@@ -51,8 +51,7 @@ class CloudHandoverSection extends StatelessWidget {
                 color: Colors.amber.shade300)),
         if (error != null)
           Text(error!,
-              style: TextStyle(
-                  color: Colors.redAccent.shade100, fontSize: 12)),
+              style: TextStyle(color: Colors.redAccent.shade100, fontSize: 12)),
         for (final room in rooms)
           CloudRoomCard(
             key: ValueKey('handover-${room.code}'),

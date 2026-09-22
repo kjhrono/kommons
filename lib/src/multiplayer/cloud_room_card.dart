@@ -81,7 +81,9 @@ class CloudRoomCard extends StatelessWidget {
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(
         begin: Colors.transparent,
-        end: flashing ? Colors.amber.withValues(alpha: 0.18) : Colors.transparent,
+        end: flashing
+            ? Colors.amber.withValues(alpha: 0.18)
+            : Colors.transparent,
       ),
       duration: const Duration(milliseconds: 600),
       builder: (context, color, child) => Card(
@@ -90,17 +92,20 @@ class CloudRoomCard extends StatelessWidget {
         child: child,
       ),
       child: ListTile(
-        leading: Icon(room.isLocalHost ? Icons.dns_outlined : Icons.groups_outlined),
+        leading:
+            Icon(room.isLocalHost ? Icons.dns_outlined : Icons.groups_outlined),
         title: Text(
             '${strings.worldTitle(room.code)}${room.isLocalHost ? strings.hostedHere : ''}',
             style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        subtitle:
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 4),
           Wrap(
             spacing: 10,
             runSpacing: 4,
             children: [
-              for (final seat in seatsLocalFirst(room, localSeatName: localSeatName))
+              for (final seat
+                  in seatsLocalFirst(room, localSeatName: localSeatName))
                 cloudSeatChip(room.code, seat,
                     isLocal: seat.name == localSeatName, room: room),
             ],
@@ -110,7 +115,8 @@ class CloudRoomCard extends StatelessWidget {
             Text(
               flashMessage!,
               key: ValueKey('flash-note-${room.code}'),
-              style: TextStyle(color: Colors.amber.shade900, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: Colors.amber.shade900, fontWeight: FontWeight.w600),
             ),
           const SizedBox(height: 4),
           Text([
@@ -143,70 +149,73 @@ class CloudRoomCard extends StatelessWidget {
             ),
           if (hasMenu)
             PopupMenuButton<String>(
-            key: ValueKey('cloud-menu-${room.code}'),
-            tooltip: strings.roomOptions,
-            onSelected: (choice) {
-              if (choice == 'delete') {
-                onDelete?.call(room);
-              } else if (choice == 'leave') {
-                onLeave?.call(room);
-              } else if (choice == 'handover') {
-                onHandover?.call(room);
-              } else if (choice == 'cancel-handover') {
-                onCancelHandover?.call(room);
-              }
-            },
-          itemBuilder: (context) => [
-            if (room.isLocalHost && room.designatedHost.isNotEmpty && onCancelHandover != null)
-              PopupMenuItem(
-                key: ValueKey('cloud-cancel-handover-${room.code}'),
-                value: 'cancel-handover',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.undo),
-                  title: Text(strings.cancelHandover),
-                  subtitle: Text(strings.withdrawPromotion(room.designatedHost),
-                      style: const TextStyle(fontSize: 11)),
-                ),
-              ),
-            if (room.isLocalHost && onHandover != null)
-              PopupMenuItem(
-                key: ValueKey('cloud-handover-${room.code}'),
-                value: 'handover',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.how_to_reg_outlined),
-                  title: Text(strings.handOverHost),
-                  subtitle: Text(strings.promoteSeatHint,
-                      style: const TextStyle(fontSize: 11)),
-                ),
-              ),
-            if (room.isLocalHost && onDelete != null)
-              PopupMenuItem(
-                key: ValueKey('cloud-delete-${room.code}'),
-                value: 'delete',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.delete_forever),
-                  title: Text(strings.deleteRoom),
-                  subtitle: Text(strings.endsWorldHint,
-                      style: const TextStyle(fontSize: 11)),
-                ),
-              ),
-            if (!room.isLocalHost && onLeave != null)
-              PopupMenuItem(
-                key: ValueKey('cloud-leave-${room.code}'),
-                value: 'leave',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.exit_to_app),
-                  title: Text(strings.leaveRoom),
-                  subtitle: Text(strings.seatLeavesHint,
-                      style: const TextStyle(fontSize: 11)),
-                ),
-              ),
-            ],
-          ),
+              key: ValueKey('cloud-menu-${room.code}'),
+              tooltip: strings.roomOptions,
+              onSelected: (choice) {
+                if (choice == 'delete') {
+                  onDelete?.call(room);
+                } else if (choice == 'leave') {
+                  onLeave?.call(room);
+                } else if (choice == 'handover') {
+                  onHandover?.call(room);
+                } else if (choice == 'cancel-handover') {
+                  onCancelHandover?.call(room);
+                }
+              },
+              itemBuilder: (context) => [
+                if (room.isLocalHost &&
+                    room.designatedHost.isNotEmpty &&
+                    onCancelHandover != null)
+                  PopupMenuItem(
+                    key: ValueKey('cloud-cancel-handover-${room.code}'),
+                    value: 'cancel-handover',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.undo),
+                      title: Text(strings.cancelHandover),
+                      subtitle: Text(
+                          strings.withdrawPromotion(room.designatedHost),
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                  ),
+                if (room.isLocalHost && onHandover != null)
+                  PopupMenuItem(
+                    key: ValueKey('cloud-handover-${room.code}'),
+                    value: 'handover',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.how_to_reg_outlined),
+                      title: Text(strings.handOverHost),
+                      subtitle: Text(strings.promoteSeatHint,
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                  ),
+                if (room.isLocalHost && onDelete != null)
+                  PopupMenuItem(
+                    key: ValueKey('cloud-delete-${room.code}'),
+                    value: 'delete',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.delete_forever),
+                      title: Text(strings.deleteRoom),
+                      subtitle: Text(strings.endsWorldHint,
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                  ),
+                if (!room.isLocalHost && onLeave != null)
+                  PopupMenuItem(
+                    key: ValueKey('cloud-leave-${room.code}'),
+                    value: 'leave',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.exit_to_app),
+                      title: Text(strings.leaveRoom),
+                      subtitle: Text(strings.seatLeavesHint,
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                  ),
+              ],
+            ),
         ]),
         onTap: () => onOpen?.call(room),
       ),
@@ -245,7 +254,8 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
       const SizedBox(width: 3),
       Tooltip(
         message: appLocale.strings.hostOfThisRoom,
-        child: const Icon(Icons.workspace_premium, size: 13, color: Colors.amber),
+        child:
+            const Icon(Icons.workspace_premium, size: 13, color: Colors.amber),
       ),
     ],
     const SizedBox(width: 2),
@@ -313,7 +323,8 @@ Future<String?> showHandoverSeatPicker(BuildContext context, CloudRoom room,
 
 /// The delete confirmation: explicit, and reminds the host the removal is
 /// universal. Returns true only after the "Delete for everyone" press.
-Future<bool> confirmDeleteRoomDialog(BuildContext context, CloudRoom room) async {
+Future<bool> confirmDeleteRoomDialog(
+    BuildContext context, CloudRoom room) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -352,7 +363,10 @@ Future<bool> confirmLeaveRoomDialog(BuildContext context, CloudRoom room,
                 .leaveRoomBodyAll(room.seats.map((s) => s.name).join(', '))
             : appLocale.strings.leaveRoomBodySeat(
                 seatName,
-                room.seats.map((s) => s.name).where((n) => n != seatName).join(', '),
+                room.seats
+                    .map((s) => s.name)
+                    .where((n) => n != seatName)
+                    .join(', '),
               ),
       ),
       actions: [
@@ -385,7 +399,12 @@ bool hostCredentialsRevoked(Object error) {
 }
 
 /// Outcome of [claimHostPowers] — why a promotion could not be claimed.
-enum HostClaimStatus { success, worldNotStarted, promotionConsumed, rejoinFailed }
+enum HostClaimStatus {
+  success,
+  worldNotStarted,
+  promotionConsumed,
+  rejoinFailed
+}
 
 /// The host-claim protocol, shared by every surface that lists a pending
 /// designation (saved-games cards, lobby handover lists): the promoted seat

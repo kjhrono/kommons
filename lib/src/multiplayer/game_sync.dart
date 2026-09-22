@@ -66,7 +66,8 @@ abstract class GameSyncService {
   /// Validate a room code + optional password before a joiner builds a
   /// session. The default outcome is always-valid: hot-seat (local) sync has
   /// no rooms to check; online implementations gate on the real room row.
-  Future<RoomJoinResult> joinRoom({required String code, String? password}) async {
+  Future<RoomJoinResult> joinRoom(
+      {required String code, String? password}) async {
     return RoomJoinResult.ok;
   }
 

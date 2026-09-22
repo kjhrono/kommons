@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 
 import 'package:url_launcher/url_launcher.dart';
+
 /// How long the collector waits for the redirect before treating the flow
 /// as abandoned (the player back-swiped into the app and gave up) — null
 /// resolves to a cancelled sign-in, not an error.

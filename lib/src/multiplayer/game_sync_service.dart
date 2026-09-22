@@ -12,12 +12,15 @@ class InMemorySyncService implements GameSyncService {
   InMemorySyncService({List<LobbySeat>? players}) : _players = players ?? [];
 
   @override
-  Future<RoomJoinResult> joinRoom({required String code, String? password}) async => RoomJoinResult.ok;
+  Future<RoomJoinResult> joinRoom(
+          {required String code, String? password}) async =>
+      RoomJoinResult.ok;
 
   final List<LobbySeat> _players;
   String? _sessionJson;
   int? _clock;
   final List<SyncEvent> _pending = [];
+
   /// Shared action envelope queue: joiners push, the host takes. One queue
   /// per service instance — tests create one instance and share it, mirroring
   /// a server both seats would talk to.
@@ -30,7 +33,8 @@ class InMemorySyncService implements GameSyncService {
   String? get roomCode => null;
 
   @override
-  Future<void> publishSession(String encodedJson) async => _sessionJson = encodedJson;
+  Future<void> publishSession(String encodedJson) async =>
+      _sessionJson = encodedJson;
 
   @override
   Future<String?> fetchSessionJson() async => _sessionJson;
@@ -42,7 +46,8 @@ class InMemorySyncService implements GameSyncService {
       _players[existing] = slot;
     } else {
       _players.add(slot);
-      _pending.add(SyncEvent(type: SyncEventType.playerJoined, playerName: slot.name));
+      _pending.add(
+          SyncEvent(type: SyncEventType.playerJoined, playerName: slot.name));
     }
   }
 
@@ -50,7 +55,10 @@ class InMemorySyncService implements GameSyncService {
   Future<void> setReady(String playerName, bool ready) async {
     final matches = _players.where((p) => p.name == playerName).toList();
     if (matches.isNotEmpty) matches.first.ready = ready;
-    _pending.add(SyncEvent(type: SyncEventType.playerReady, playerName: playerName, payload: {'ready': ready}));
+    _pending.add(SyncEvent(
+        type: SyncEventType.playerReady,
+        playerName: playerName,
+        payload: {'ready': ready}));
   }
 
   @override
@@ -135,13 +143,16 @@ class PostgrestSyncService implements GameSyncService {
   })  : roomCode = code ?? _generateCode(),
         // Hosts get a room secret (the claim_host credential); pass one to
         // recreate the same room deterministically (tests, reconnection).
-        hostSecret = createsRoom ? (hostSecret ?? _generateSecret()) : hostSecret,
+        hostSecret =
+            createsRoom ? (hostSecret ?? _generateSecret()) : hostSecret,
         // Hashed once here: the room row stores only this digest, and joiner
         // claims send the same digest (the server compares digests, never
         // seeing the original passphrase).
         _passwordHash = _hashPassword(joinPassword),
         _client = client ?? http.Client() {
-    final normalized = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+    final normalized = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
     _baseUrl = Uri.parse(normalized);
   }
 
@@ -199,9 +210,13 @@ class PostgrestSyncService implements GameSyncService {
   /// the stored digest. Network failures propagate to the caller so the UI
   /// can distinguish "no such room" from "cannot reach the server".
   @override
-  Future<RoomJoinResult> joinRoom({required String code, String? password}) async {
+  Future<RoomJoinResult> joinRoom(
+      {required String code, String? password}) async {
     final response = await _client.get(
-      _table('rooms', {'code': 'eq.${code.trim().toUpperCase()}', 'select': 'code,password'}),
+      _table('rooms', {
+        'code': 'eq.${code.trim().toUpperCase()}',
+        'select': 'code,password'
+      }),
       headers: _headers,
     );
     if (response.statusCode == 404) {
@@ -212,7 +227,8 @@ class PostgrestSyncService implements GameSyncService {
     _ensureOk(response, 'look up room $code');
     final rows = jsonDecode(response.body) as List<dynamic>;
     if (rows.isEmpty) return RoomJoinResult.roomMissing;
-    final stored = (rows.first as Map<String, dynamic>)['password'] as String? ?? '';
+    final stored =
+        (rows.first as Map<String, dynamic>)['password'] as String? ?? '';
     final presented = _hashPassword(password);
     if (stored.isEmpty || stored == presented) return RoomJoinResult.ok;
     return RoomJoinResult.wrongPassword;
@@ -233,7 +249,8 @@ class PostgrestSyncService implements GameSyncService {
   static String _generateCode() {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final random = Random.secure();
-    return List.generate(5, (_) => alphabet[random.nextInt(alphabet.length)]).join();
+    return List.generate(5, (_) => alphabet[random.nextInt(alphabet.length)])
+        .join();
   }
 
   /// 128-bit host credential, hex-encoded. It is compared against the
@@ -241,7 +258,8 @@ class PostgrestSyncService implements GameSyncService {
   /// host token for that room.
   static String _generateSecret() {
     final random = Random.secure();
-    return List.generate(32, (_) => random.nextInt(16).toRadixString(16)).join();
+    return List.generate(32, (_) => random.nextInt(16).toRadixString(16))
+        .join();
   }
 
   static const _defaultColorHex = 'FF9C27FF';
@@ -312,7 +330,8 @@ class PostgrestSyncService implements GameSyncService {
   /// token (claim_seat, which also registers the roster row). A 404 means
   /// the server predates the claim RPCs — remember that and let writes fall
   /// back to anon; other failures surface to the caller.
-  Future<void> _ensureRoleToken({bool asHost = false, String? playerName}) async {
+  Future<void> _ensureRoleToken(
+      {bool asHost = false, String? playerName}) async {
     final margin = DateTime.now().add(const Duration(seconds: 60));
     if (_roleToken != null &&
         (_roleTokenExpiresAt == null || _roleTokenExpiresAt!.isAfter(margin))) {
@@ -344,7 +363,11 @@ class PostgrestSyncService implements GameSyncService {
         },
         body: jsonEncode(asHost
             ? {'p_code': roomCode, 'p_secret': hostSecret}
-            : {'p_code': roomCode, 'p_name': playerName, 'p_password': _passwordHash}),
+            : {
+                'p_code': roomCode,
+                'p_name': playerName,
+                'p_password': _passwordHash
+              }),
       );
       if (response.statusCode == 404) {
         // Server without the claim RPCs: legacy anon-writable mode.
@@ -376,9 +399,12 @@ class PostgrestSyncService implements GameSyncService {
     if (parts.length != 3) return null;
     try {
       final normalized = base64Url.normalize(parts[1]);
-      final claims = jsonDecode(utf8.decode(base64Url.decode(normalized))) as Map<String, dynamic>;
+      final claims = jsonDecode(utf8.decode(base64Url.decode(normalized)))
+          as Map<String, dynamic>;
       final exp = claims['exp'];
-      return exp is int ? DateTime.fromMillisecondsSinceEpoch(exp * 1000) : null;
+      return exp is int
+          ? DateTime.fromMillisecondsSinceEpoch(exp * 1000)
+          : null;
     } on FormatException {
       return null;
     }
@@ -386,7 +412,8 @@ class PostgrestSyncService implements GameSyncService {
 
   void _ensureOk(http.Response response, String action) {
     if (response.statusCode >= 400) {
-      throw Exception('Failed to $action (HTTP ${response.statusCode}): ${response.body}');
+      throw Exception(
+          'Failed to $action (HTTP ${response.statusCode}): ${response.body}');
     }
   }
 
@@ -399,7 +426,12 @@ class PostgrestSyncService implements GameSyncService {
       final created = await _client.post(
         _table('rooms'),
         headers: {..._headers, 'Prefer': 'resolution=ignore-duplicates'},
-        body: jsonEncode({'code': roomCode, 'clock': 0, if (hostSecret != null) 'host_secret': hostSecret, if (_passwordHash.isNotEmpty) 'password': _passwordHash}),
+        body: jsonEncode({
+          'code': roomCode,
+          'clock': 0,
+          if (hostSecret != null) 'host_secret': hostSecret,
+          if (_passwordHash.isNotEmpty) 'password': _passwordHash
+        }),
       );
       if (created.statusCode == 409) {
         // A 409 can be two things: a stranger owns this code (reroll once),
@@ -412,7 +444,12 @@ class PostgrestSyncService implements GameSyncService {
           final retried = await _client.post(
             _table('rooms'),
             headers: {..._headers, 'Prefer': 'resolution=ignore-duplicates'},
-            body: jsonEncode({'code': roomCode, 'clock': 0, if (hostSecret != null) 'host_secret': hostSecret, if (_passwordHash.isNotEmpty) 'password': _passwordHash}),
+            body: jsonEncode({
+              'code': roomCode,
+              'clock': 0,
+              if (hostSecret != null) 'host_secret': hostSecret,
+              if (_passwordHash.isNotEmpty) 'password': _passwordHash
+            }),
           );
           _ensureOk(retried, 'open room $roomCode');
         }
@@ -470,9 +507,11 @@ class PostgrestSyncService implements GameSyncService {
 
   @override
   Future<void> setReady(String playerName, bool ready) async {
-    await _ensureRoleToken(asHost: createsRoom, playerName: createsRoom ? null : playerName);
+    await _ensureRoleToken(
+        asHost: createsRoom, playerName: createsRoom ? null : playerName);
     final response = await _client.patch(
-      _table('roster', {'room_code': 'eq.$roomCode', 'player_name': 'eq.$playerName'}),
+      _table('roster',
+          {'room_code': 'eq.$roomCode', 'player_name': 'eq.$playerName'}),
       headers: _writeHeaders(),
       body: jsonEncode({'ready': ready}),
     );
@@ -482,7 +521,8 @@ class PostgrestSyncService implements GameSyncService {
   @override
   Future<List<LobbySeat>> roster() async {
     final response = await _client.get(
-      _table('roster', {'room_code': 'eq.$roomCode', 'select': '*', 'order': 'joined_at'}),
+      _table('roster',
+          {'room_code': 'eq.$roomCode', 'select': '*', 'order': 'joined_at'}),
       headers: _headers,
     );
     _ensureOk(response, 'fetch roster');
@@ -504,7 +544,10 @@ class PostgrestSyncService implements GameSyncService {
     final events = <SyncEvent>[];
     for (final slot in await roster()) {
       if (slot.ready) {
-        events.add(SyncEvent(type: SyncEventType.playerReady, playerName: slot.name, payload: {'ready': true}));
+        events.add(SyncEvent(
+            type: SyncEventType.playerReady,
+            playerName: slot.name,
+            payload: {'ready': true}));
       }
     }
     return events;
@@ -579,7 +622,8 @@ class PostgrestSyncService implements GameSyncService {
           'payload': actions[i],
         }
     ];
-    final response = await _client.post(_table('actions'), headers: _writeHeaders(), body: jsonEncode(rows));
+    final response = await _client.post(_table('actions'),
+        headers: _writeHeaders(), body: jsonEncode(rows));
     _ensureOk(response, 'push actions');
   }
 
@@ -599,7 +643,8 @@ class PostgrestSyncService implements GameSyncService {
     if (decoded is! List || decoded.isEmpty) return const [];
     final envelopes = <Map<String, dynamic>>[
       for (final row in decoded)
-        if ((row as Map)['payload'] is Map<String, dynamic>) (row['payload'] as Map<String, dynamic>),
+        if ((row as Map)['payload'] is Map<String, dynamic>)
+          (row['payload'] as Map<String, dynamic>),
     ];
     // Fetch-then-delete leaves a tiny race if two hosts poll one room; only
     // the host polls, so this stays safe in practice.
