@@ -32,7 +32,8 @@ void main() {
         provider: 'google',
         redirectTo: Uri.parse('https://shell.test'),
       );
-      expect(url.toString(),
+      expect(
+          url.toString(),
           'https://shell.test/auth/v1/authorize?provider=google'
           '&redirect_to=https%3A%2F%2Fshell.test');
       expect(url.path, '/auth/v1/authorize');
@@ -94,8 +95,8 @@ void main() {
     late Uri? capturedAuthorize;
 
     Future<void> givenServer() async {
-      account.serverConnection =
-          () async => const ServerConnection(url: 'https://shell.test', apiKey: 'k');
+      account.serverConnection = () async =>
+          const ServerConnection(url: 'https://shell.test', apiKey: 'k');
       account.authService = AuthService(
         serverUrl: 'https://shell.test',
         apiKey: 'k',
@@ -165,8 +166,8 @@ void main() {
       account.authService = AuthService(
         serverUrl: 'https://shell.test',
         apiKey: 'k',
-        client: MockClient((request) async =>
-            http.Response(jsonEncode({'id': 'u9', 'email': 'g@gmail.com'}), 200)),
+        client: MockClient((request) async => http.Response(
+            jsonEncode({'id': 'u9', 'email': 'g@gmail.com'}), 200)),
       );
       await expectLater(
         account.signInWithProvider('github'),
@@ -179,8 +180,8 @@ void main() {
     test('no configured server explains itself', () async {
       await expectLater(
         account.signInWithProvider('google'),
-        throwsA(isA<AuthException>()
-            .having((e) => e.code, 'code', 'no_server')),
+        throwsA(
+            isA<AuthException>().having((e) => e.code, 'code', 'no_server')),
       );
     });
 
@@ -218,7 +219,9 @@ void main() {
       await tester.pump();
 
       expect(
-          tester.widget<OutlinedButton>(find.byKey(const ValueKey('oauth-google')))
+          tester
+              .widget<OutlinedButton>(
+                  find.byKey(const ValueKey('oauth-google')))
               .onPressed,
           isNotNull);
 

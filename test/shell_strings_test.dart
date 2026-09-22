@@ -61,8 +61,7 @@ void main() {
       expect(strings.back, 'Back');
       expect(strings.continueLabel, 'Continue');
       expect(strings.stepHeader(2, 3, 'Options'), 'Step 2 of 3 — Options');
-      expect(strings.welcome('Marcuz', 'PROBE'),
-          'Welcome, Marcuz, to PROBE');
+      expect(strings.welcome('Marcuz', 'PROBE'), 'Welcome, Marcuz, to PROBE');
       expect(strings.welcomeBack('Marcuz', 'PROBE'),
           'Welcome back, Marcuz — PROBE awaits');
     });
@@ -78,8 +77,8 @@ void main() {
     });
 
     test('unknown codes fall back to English', () {
-      expect(ShellStrings.forLanguage(ShellLanguage.english).newGame,
-          'NEW GAME');
+      expect(
+          ShellStrings.forLanguage(ShellLanguage.english).newGame, 'NEW GAME');
     });
 
     test('multiplayer strings: English stays byte-identical', () {
@@ -87,12 +86,11 @@ void main() {
       expect(strings.worldTitle('KZ9Q2'), 'World KZ9Q2');
       expect(strings.youName('Mara'), 'Mara (you)');
       expect(strings.clockStatus(42), 'clock 42');
-      expect(strings.hostHandoverPending('Mara'),
-          'host handover to Mara pending');
+      expect(
+          strings.hostHandoverPending('Mara'), 'host handover to Mara pending');
       expect(strings.claimHost, 'Claim host');
       expect(strings.pendingHandovers, 'PENDING HOST HANDOVERS');
-      expect(
-          strings.deleteRoomTitle('KZ9Q2'), 'Delete world KZ9Q2?');
+      expect(strings.deleteRoomTitle('KZ9Q2'), 'Delete world KZ9Q2?');
       expect(strings.deleteRoomBody('Mara, Marcuz'),
           contains('removed for every seat — Mara, Marcuz'));
       expect(strings.leaveRoomBodySeat('Mara', 'Marcuz'),

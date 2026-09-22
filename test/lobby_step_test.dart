@@ -18,13 +18,12 @@ void main() {
   testWidgets('solo start hands off offline with only the local seat',
       (tester) async {
     SharedLobbyHandoff? handoff;
-    await tester.pumpWidget(
-        host(onHandoff: (h) => handoff = h));
+    await tester.pumpWidget(host(onHandoff: (h) => handoff = h));
     await tester.pump();
 
     // The local seat renders with the persisted player's name.
-    expect(find.byKey(const ValueKey('shared-lobby-seat-Player')),
-        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('shared-lobby-seat-Player')), findsOneWidget);
     expect(find.text('(you)'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('shared-lobby-start-solo')));
@@ -70,8 +69,7 @@ void main() {
     expect(handoff!.self.name, 'Player');
   });
 
-  testWidgets('removing a guest unlocks the game number again',
-      (tester) async {
+  testWidgets('removing a guest unlocks the game number again', (tester) async {
     SharedLobbyHandoff? handoff;
     await tester.pumpWidget(host(onHandoff: (h) => handoff = h));
     await tester.pump();
@@ -83,11 +81,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('shared-lobby-remove-Guest 2')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('shared-lobby-seat-Guest 2')),
-        findsNothing);
+    expect(
+        find.byKey(const ValueKey('shared-lobby-seat-Guest 2')), findsNothing);
     final add = tester.widget<FilledButton>(
         find.byKey(const ValueKey('shared-lobby-add-seat')));
-    expect(add.onPressed, isNotNull, reason: 'the number unlocked for a new join');
+    expect(add.onPressed, isNotNull,
+        reason: 'the number unlocked for a new join');
     expect(handoff, isNull, reason: 'removing a seat never fires the handoff');
   });
 
@@ -100,14 +99,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Enter the game number the host shared.'),
-        findsOneWidget);
+    expect(find.text('Enter the game number the host shared.'), findsOneWidget);
     expect(handoff, isNull);
   });
 
   testWidgets('the local seat carries the persisted player name',
       (tester) async {
-    SharedPreferences.setMockInitialValues({'prefs.account.playerName': 'Mara'});
+    SharedPreferences.setMockInitialValues(
+        {'prefs.account.playerName': 'Mara'});
     account.resetForTest();
     await account.load();
     SharedLobbyHandoff? handoff;

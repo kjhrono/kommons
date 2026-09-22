@@ -16,12 +16,15 @@ void main() {
     appTheme.resetForTest();
   });
 
-  testWidgets('settings screen shows shared sections and app extras', (tester) async {
+  testWidgets('settings screen shows shared sections and app extras',
+      (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
       home: SettingsScreen(
         gameId: 'probe',
-        extraSections: const [Card(key: ValueKey('game-section'), child: SizedBox())],
+        extraSections: const [
+          Card(key: ValueKey('game-section'), child: SizedBox())
+        ],
       ),
     ));
     await tester.pump();
@@ -46,16 +49,21 @@ void main() {
     expect(find.byKey(const ValueKey('game-section')), findsOneWidget);
   });
 
-  testWidgets('oauth buttons enable only for registered providers and run their handler', (tester) async {
+  testWidgets(
+      'oauth buttons enable only for registered providers and run their handler',
+      (tester) async {
     var googleRuns = 0;
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
-      home: SettingsScreen(oauthProviders: {'google': () async => googleRuns++}),
+      home:
+          SettingsScreen(oauthProviders: {'google': () async => googleRuns++}),
     ));
     await tester.pump();
 
-    final google = tester.widget<OutlinedButton>(find.byKey(const ValueKey('oauth-google')));
-    final github = tester.widget<OutlinedButton>(find.byKey(const ValueKey('oauth-github')));
+    final google = tester
+        .widget<OutlinedButton>(find.byKey(const ValueKey('oauth-google')));
+    final github = tester
+        .widget<OutlinedButton>(find.byKey(const ValueKey('oauth-github')));
     expect(google.onPressed, isNotNull);
     expect(github.onPressed, isNull);
 
@@ -64,7 +72,9 @@ void main() {
     expect(googleRuns, 1);
   });
 
-  testWidgets('server onboarding appears while unconfigured and clears after the dialog', (tester) async {
+  testWidgets(
+      'server onboarding appears while unconfigured and clears after the dialog',
+      (tester) async {
     var configured = false;
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
@@ -87,7 +97,8 @@ void main() {
     expect(find.byKey(const ValueKey('connect-server')), findsNothing);
   });
 
-  testWidgets('top bar opens the host settings builder and toggles the theme', (tester) async {
+  testWidgets('top bar opens the host settings builder and toggles the theme',
+      (tester) async {
     ThemeMode? openedWith;
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
@@ -96,7 +107,9 @@ void main() {
           title: 'PROBE',
           settingsBuilder: () => SettingsScreen(
             gameId: 'probe',
-            extraSections: const [Card(key: ValueKey('host-section'), child: SizedBox())],
+            extraSections: const [
+              Card(key: ValueKey('host-section'), child: SizedBox())
+            ],
           ),
         ),
       ),
@@ -130,12 +143,16 @@ void main() {
     appTheme.mode = ThemeMode.dark; // don't leak into the next test
   });
 
-  test('account controller resolves a connection through the injected resolver', () async {
-    account.serverConnection = () async => const ServerConnection(url: 'https://shell.test', apiKey: 'k');
+  test('account controller resolves a connection through the injected resolver',
+      () async {
+    account.serverConnection = () async =>
+        const ServerConnection(url: 'https://shell.test', apiKey: 'k');
     account.authService = AuthService(
       serverUrl: 'https://shell.test',
       apiKey: 'k',
-      client: MockClient((request) async => http.Response('{"access_token":"a","refresh_token":"r","expires_in":3600,"user":{"id":"u1","email":"p@shell.test"}}', 200)),
+      client: MockClient((request) async => http.Response(
+          '{"access_token":"a","refresh_token":"r","expires_in":3600,"user":{"id":"u1","email":"p@shell.test"}}',
+          200)),
     );
     await account.signInWithPassword('p@shell.test', 'secret1');
     expect(account.isCloudSignedIn, isTrue);

@@ -10,7 +10,8 @@ void main() {
       LobbyStepDescriptor(title: 'Ready?', icon: Icons.rocket_launch),
     ];
 
-    Future<int> pumpAt(WidgetTester tester, int current, {ValueChanged<int>? onGoto}) async {
+    Future<int> pumpAt(WidgetTester tester, int current,
+        {ValueChanged<int>? onGoto}) async {
       await tester.pumpWidget(MaterialApp(
         home: LobbyWizard(
           steps: steps,
@@ -53,7 +54,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: LobbyWizard(
           steps: const [
-            LobbyStepDescriptor(title: 'World', icon: Icons.public,
+            LobbyStepDescriptor(
+                title: 'World',
+                icon: Icons.public,
                 subtitle: 'Seed, size and events.'),
             LobbyStepDescriptor(title: 'Recap', icon: Icons.rocket_launch),
           ],
@@ -70,7 +73,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: LobbyWizard(
           steps: const [
-            LobbyStepDescriptor(title: 'World', icon: Icons.public,
+            LobbyStepDescriptor(
+                title: 'World',
+                icon: Icons.public,
                 subtitle: 'Seed, size and events.'),
             LobbyStepDescriptor(title: 'Recap', icon: Icons.rocket_launch),
           ],
@@ -102,16 +107,20 @@ void main() {
       await tester.pumpWidget(gate(false));
       await tester.pump();
       expect(
-          tester.widget<FilledButton>(
-              find.widgetWithText(FilledButton, 'Continue')).onPressed,
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Continue'))
+              .onPressed,
           isNull);
 
       // The host completes the step: a rebuild re-evaluates the gate.
       await tester.pumpWidget(gate(true));
       await tester.pump();
       expect(
-          tester.widget<FilledButton>(
-              find.widgetWithText(FilledButton, 'Continue')).onPressed,
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Continue'))
+              .onPressed,
           isNotNull);
 
       // The gate is per-step: the last step hides Continue entirely, so the
@@ -132,7 +141,8 @@ void main() {
       expect(find.text('Continue'), findsNothing);
     });
 
-    testWidgets('rail navigation stays free while the gate holds the primary path',
+    testWidgets(
+        'rail navigation stays free while the gate holds the primary path',
         (tester) async {
       // Even with the gate closed, jumping back to an earlier step via the
       // rail remains possible — the gate steers Continue, not the map.
@@ -154,8 +164,10 @@ void main() {
 
       expect(find.text('Continue'), findsOneWidget);
       expect(
-          tester.widget<FilledButton>(
-              find.widgetWithText(FilledButton, 'Continue')).onPressed,
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Continue'))
+              .onPressed,
           isNull);
       await tester.tap(find.byTooltip('A'));
       expect(wentTo, 0);
@@ -180,8 +192,7 @@ void main() {
       await tester.pump();
       expect(find.text('PENDING NOTICE'), findsOneWidget);
       // Above the rail: the notice precedes the step header in reading order.
-      expect(
-          tester.getTopLeft(find.text('PENDING NOTICE')).dy,
+      expect(tester.getTopLeft(find.text('PENDING NOTICE')).dy,
           lessThan(tester.getTopLeft(find.text('Step 1 of 2 — A')).dy));
 
       // Still there on another step.
@@ -234,7 +245,11 @@ void main() {
 
   group('LobbySeat', () {
     test('roundtrips through its map with defaults for old saves', () {
-      final seat = LobbySeat(name: 'Mara', colorHex: 'FF4CAF50', interactEveryDays: 2, ready: true);
+      final seat = LobbySeat(
+          name: 'Mara',
+          colorHex: 'FF4CAF50',
+          interactEveryDays: 2,
+          ready: true);
       final restored = LobbySeat.fromMap(seat.toMap());
       expect(restored.name, 'Mara');
       expect(restored.colorHex, 'FF4CAF50');

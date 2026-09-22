@@ -30,10 +30,10 @@ void main() {
       await tester.pump();
 
       // Local seat leads and is labeled "(you)".
-      final mara = tester.getRect(
-          find.byKey(const ValueKey('cloud-seat-KZ9Q2-Mara')));
-      final marcuz = tester.getRect(
-          find.byKey(const ValueKey('cloud-seat-KZ9Q2-Marcuz')));
+      final mara =
+          tester.getRect(find.byKey(const ValueKey('cloud-seat-KZ9Q2-Mara')));
+      final marcuz =
+          tester.getRect(find.byKey(const ValueKey('cloud-seat-KZ9Q2-Marcuz')));
       expect(mara.left, lessThan(marcuz.left));
       expect(find.text('Mara (you)'), findsOneWidget);
       // First seat holds the crown.
@@ -56,8 +56,7 @@ void main() {
       expect(find.text('Mara is ready'), findsOneWidget);
     });
 
-    testWidgets('host menu offers handover, cancel and delete',
-        (tester) async {
+    testWidgets('host menu offers handover, cancel and delete', (tester) async {
       await tester.pumpWidget(host(CloudRoomCard(
         room: room(designatedHost: 'Mara'),
         localSeatName: 'Marcuz',
@@ -71,15 +70,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('cloud-menu-KZ9Q2')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('cloud-handover-KZ9Q2')), findsOneWidget);
       expect(
-          find.byKey(const ValueKey('cloud-cancel-handover-KZ9Q2')),
+          find.byKey(const ValueKey('cloud-handover-KZ9Q2')), findsOneWidget);
+      expect(find.byKey(const ValueKey('cloud-cancel-handover-KZ9Q2')),
           findsOneWidget);
       expect(find.byKey(const ValueKey('cloud-delete-KZ9Q2')), findsOneWidget);
       expect(find.byKey(const ValueKey('cloud-leave-KZ9Q2')), findsNothing);
     });
 
-    testWidgets('claim button renders only for the designated local seat and fires',
+    testWidgets(
+        'claim button renders only for the designated local seat and fires',
         (tester) async {
       var claimed = 0;
       final designated = CloudRoomCard(
@@ -192,11 +192,12 @@ void main() {
     testWidgets('delete confirmation needs the explicit universal press',
         (tester) async {
       late bool confirmed;
-      await tester.pumpWidget(host(Builder(builder: (context) => TextButton(
-        onPressed: () async =>
-            confirmed = await confirmDeleteRoomDialog(context, room()),
-        child: const Text('go'),
-      ))));
+      await tester.pumpWidget(host(Builder(
+          builder: (context) => TextButton(
+                onPressed: () async =>
+                    confirmed = await confirmDeleteRoomDialog(context, room()),
+                child: const Text('go'),
+              ))));
       await tester.pump();
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
@@ -216,17 +217,20 @@ void main() {
     testWidgets('handover picker lists seats local-first and returns a name',
         (tester) async {
       late String? picked;
-      await tester.pumpWidget(host(Builder(builder: (context) => TextButton(
-        onPressed: () async => picked = await showHandoverSeatPicker(
-            context, room(), localSeatName: 'Mara'),
-        child: const Text('go'),
-      ))));
+      await tester.pumpWidget(host(Builder(
+          builder: (context) => TextButton(
+                onPressed: () async => picked = await showHandoverSeatPicker(
+                    context, room(),
+                    localSeatName: 'Mara'),
+                child: const Text('go'),
+              ))));
       await tester.pump();
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('handover-KZ9Q2-Mara')), findsOneWidget);
-      expect(find.byKey(const ValueKey('handover-KZ9Q2-Marcuz')), findsOneWidget);
+      expect(
+          find.byKey(const ValueKey('handover-KZ9Q2-Marcuz')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('handover-KZ9Q2-Marcuz')));
       await tester.pumpAndSettle();
       expect(picked, 'Marcuz');

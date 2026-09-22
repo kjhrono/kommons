@@ -37,7 +37,8 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
 
-    expect(capturedBrightness, Brightness.dark, reason: 'appTheme defaults to dark');
+    expect(capturedBrightness, Brightness.dark,
+        reason: 'appTheme defaults to dark');
     expect(capturedLocale, const Locale('en'),
         reason: 'no language picked: MaterialApp resolves the platform default '
             '(en in the test harness) over the shell\'s supported locales');
