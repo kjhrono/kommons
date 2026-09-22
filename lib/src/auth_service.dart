@@ -368,6 +368,19 @@ class AuthService {
     );
   }
 
+  /// Verifies the *hashed* recovery token a `{{ .ConfirmationURL }}` link
+  /// carries in its query string (`?token_hash=…&type=recovery`) — the
+  /// newer GoTrue/Supabase generation, where the server mails a link
+  /// whose value is already the secret. No email accompanies it: the
+  /// hash itself addresses the account. A failure (expired, already
+  /// used, wrong generation) surfaces as a typed [AuthException].
+  Future<AuthSession> verifyRecoveryTokenHash(String tokenHash) {
+    return _sessionCall(
+      _base.replace(path: '${_base.path}/verify'),
+      jsonEncode({'type': 'recovery', 'token_hash': tokenHash}),
+    );
+  }
+
   /// Sets a new password for the signed-in account ([accessToken] comes
   /// from the session — a normal password sign-in or a [verifyRecovery]
   /// session alike). Pass [clearMetadata] keys to remove from the user's

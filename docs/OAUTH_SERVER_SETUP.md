@@ -93,24 +93,29 @@ token the template carries — the template decides whether the player
 gets a code or a link. Whichever it is, the shell POSTs what the player
 typed (or pasted) to `/auth/v1/verify?type=recovery` unchanged:
 
-| Template token | What the player receives | In the shell's reset form |
+| Template token | What the player receives | In the shell |
 | --- | --- | --- |
-| `{{ .Token }}` | a 6-digit code (expiry: the mailer OTP setting) | type the digits — the smooth path, **recommended** |
-| `{{ .ConfirmationURL }}` | a verify link — but what it embeds varies by backend and GoTrue version (Netlify-era links carry an implicit access token; newer Supabase links a `token_hash`) | not a supported path — use `{{ .Token }}` |
+| `{{ .Token }}` | a 6-digit code (expiry: the mailer OTP setting) | type the digits into the reset form — the smooth path, **recommended** |
+| `{{ .ConfirmationURL }}` | a verify link — **supported**: a `?token_hash=…&type=recovery` link (newer Supabase generation) signs the player back in wherever it opens; a `#token=…&type=recovery` fragment link signs back in on the device that requested the reset, or pastes into the reset form | opens the app straight into the forced change-password step |
 
-Prefer `{{ .Token }}`: the code lands on the same device as the app and
-types straight into `reset-code-field`, after which the shell forces the
-change-password step (COMMONS.md's *Lost & changed passwords*). Two
+Both templates now complete the flow in-app (COMMONS.md's *Lost & changed
+passwords*). `{{ .Token }}` remains the recommendation — one fewer hop, and
+it works on any device — but a link template is no longer a dead end. Two
 operational notes:
 
-- **Recovery links don't auto-sign-in (yet).** A link template lands on
-  the app with a fragment or query payload, but the shell consumes OAuth
-  fragments inside its popup flow only — there is no cold-start handler
-  for recovery payloads, by design. If a future shell adds one, the
-  template can move to `{{ .ConfirmationURL }}` without app changes.
+- **Link generations differ.** Newer Supabase/GoTrue links carry
+  `token_hash` in the query string — self-addressing, they sign the player
+  in wherever they open. Older/Netlify-era links carry a plain `token` in
+  the fragment; the shell verifies those against the reset email, which
+  only the device that requested the reset knows (elsewhere the player
+  falls back to pasting the link into the reset form on the requesting
+  device, or to the code the same email also carries when the template
+  includes it). Check one real email from your server to know which
+  generation you mail.
 - **No cross-talk with invites.** Join-link detection keys on `join=`;
-  recovery fragments (`access_token=…`) and OAuth fragments are ignored
-  by it, and vice versa.
+  recovery links key on `type=recovery` (with `token=`/`token_hash=`),
+  OAuth fragments on `access_token=` — each detector ignores the others'
+  payloads.
 
 Recovery requests are rate-limited per address by GoTrue; the app
 surfaces the `over_email_send_rate_limit` message verbatim, so a spammy

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_settings.dart';
 import 'auth_service.dart';
+import 'recovery_link.dart';
 import 'shell_strings.dart';
 
 /// A handler an app registers for an OAuth provider button ('google',
@@ -924,6 +925,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (code.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(appLocale.strings.enterCode)));
+      return;
+    }
+    // A whole pasted link (the `{{ .ConfirmationURL }}` template's email
+    // copied instead of its code) completes the same flow.
+    final pasted = recoveryLinkFromClipboardText(code);
+    if (pasted != null) {
+      setState(() => _cloudBusy = true);
+      try {
+        await account.completeRecoveryLink(pasted);
+        if (mounted) {
+          setState(() {
+            _resetEmail = null;
+            _resetCodeController.clear();
+          });
+        }
+      } on AuthException catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(error.message)));
+        }
+      } finally {
+        if (mounted) setState(() => _cloudBusy = false);
+      }
       return;
     }
     setState(() => _cloudBusy = true);

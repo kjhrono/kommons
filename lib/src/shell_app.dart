@@ -7,11 +7,20 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_settings.dart';
 import 'multiplayer/join_link.dart';
+import 'recovery_link.dart';
 import 'shell_strings.dart';
 
 /// What [ShellApp] does with an arriving invite: usually a navigator push
 /// of the game's lobby, seeded with [SharedLobbyStep.initialCode].
 typedef ShellJoinHandler = void Function(JoinInvite invite);
+
+/// What [ShellApp] does with a recovery link: push the game's settings
+/// screen (the shell's [SettingsScreen] opens on the account card), or a
+/// host's own recovery destination. The handler receives the parsed link;
+/// completing it is the app's job — `account.completeRecoveryLink(link)`
+/// (usually in the handler, or after navigation) signs the player in and
+/// forces the change-password step.
+typedef ShellRecoveryHandler = void Function(RecoveryLink link);
 
 /// How [ShellApp] builds each brightness's theme from the host's seed.
 typedef ShellThemeBuilder = ThemeData Function(
@@ -55,6 +64,7 @@ class ShellApp extends StatefulWidget {
     this.supportedLocales,
     this.debugShowCheckedModeBanner = false,
     this.onJoinInvite,
+    this.onRecoveryLink,
     this.showPreferencesSyncedNotice = true,
   });
 
@@ -99,6 +109,17 @@ class ShellApp extends StatefulWidget {
   /// default) ignores join links entirely.
   final ShellJoinHandler? onJoinInvite;
 
+  /// Receives a password-recovery token when the app is opened through a
+  /// reset email's link (`…#token=…&type=recovery` or
+  /// `…?token_hash=…&type=recovery`) — the `{{ .ConfirmationURL }}`
+  /// template as a first-class sign-back-in path. The shell detects the
+  /// link (browser URL on web, app links on mobile) and calls this once
+  /// the widget tree is up; the handler navigates somewhere the flow can
+  /// complete (the settings screen's account card) and calls
+  /// `account.completeRecoveryLink(link)`. Null (the default) ignores
+  /// recovery links entirely — the 6-digit-code flow still works.
+  final ShellRecoveryHandler? onRecoveryLink;
+
   /// Tells the player their account just brought their preferences in
   /// (theme, language, name — the cross-project sync, see
   /// [AccountController.preferencesPulled]). Set false to hush it (hosts
@@ -120,6 +141,7 @@ class _ShellAppState extends State<ShellApp> {
     // notifier value, yet the welcome must re-read it).
     unawaited(_preload());
     unawaited(_watchJoinLinks());
+    unawaited(_watchRecoveryLinks());
   }
 
   Future<void> _preload() async {
@@ -176,12 +198,54 @@ class _ShellAppState extends State<ShellApp> {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  /// Recovery-link detection: the same deliveries the join watcher
+  /// rides — browser URL on web, app links (cold start + warm returns)
+  /// on mobile. Recovery and join links are disjoint by construction
+  /// (`type=recovery` vs `join=`), so a link can only ever be one thing;
+  /// delivering a recovery link here never suppresses a join delivery.
+  Uri? _lastRecoveryDelivered;
+
+  Future<void> _watchRecoveryLinks() async {
+    final handler = widget.onRecoveryLink;
+    if (handler == null) return;
+    try {
+      if (kIsWeb) {
+        _deliverRecovery(Uri.base, handler);
+        return;
+      }
+      final links = AppLinks();
+      final subscription = links.uriLinkStream.listen(
+        (uri) => _deliverRecovery(uri, handler),
+        onError: (_) {},
+      );
+      final initial = await links.getInitialLink();
+      if (initial != null) _deliverRecovery(initial, handler);
+      _recoverySubscription = subscription;
+    } catch (_) {
+      // No link backend here — nothing to recover.
+    }
+  }
+
+  StreamSubscription<Uri>? _recoverySubscription;
+
+  void _deliverRecovery(Uri uri, ShellRecoveryHandler handler) {
+    if (uri.toString() == _lastRecoveryDelivered?.toString()) return;
+    final link = recoveryLinkFromUri(uri);
+    if (link == null) return;
+    _lastRecoveryDelivered = uri;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) handler(link);
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
   final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
   @override
   void dispose() {
     unawaited(_joinSubscription?.cancel());
+    unawaited(_recoverySubscription?.cancel());
     super.dispose();
   }
 

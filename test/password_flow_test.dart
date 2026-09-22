@@ -226,6 +226,71 @@ void main() {
         throwsA(isA<AuthException>().having((e) => e.code, 'code', 'no_reset')),
       );
     });
+
+    test('a flagged temp-password session arms the form and clears on save',
+        () async {
+      String flaggedSession() => jsonEncode({
+            'access_token': 'at-flag',
+            'refresh_token': 'rt-flag',
+            'expires_at': 1900000000,
+            'user': {
+              'id': 'u7',
+              'email': 'temp@shell.test',
+              'user_metadata': {'must_change_password': true},
+            },
+          });
+
+      var clearedMetadata = false;
+      account.serverConnection = () async =>
+          const ServerConnection(url: 'https://shell.test', apiKey: 'k');
+      account.authService = AuthService(
+        serverUrl: 'https://shell.test',
+        apiKey: 'k',
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/v1/signup')) {
+            return http.Response(
+                jsonEncode({
+                  'error_code': 'user_already_registered',
+                  'msg': 'User already registered',
+                }),
+                422);
+          }
+          if (request.url.path.endsWith('/auth/v1/token')) {
+            return http.Response(flaggedSession(), 200);
+          }
+          if (request.url.path.endsWith('/auth/v1/user')) {
+            expect(request.method, 'PUT');
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            expect(
+                (body['data'] as Map<String, dynamic>)['must_change_password'],
+                isNull);
+            clearedMetadata = true;
+            return http.Response('{}', 200);
+          }
+          return http.Response('unexpected', 404);
+        }),
+      );
+
+      await account.signInWithPassword('temp@shell.test', 'temp-pass-1');
+      expect(account.isCloudSignedIn, isTrue);
+      expect(account.mustChangePassword, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('prefs.account.session'),
+          contains('must_change_password'));
+
+      // Unlike recovery, sign-out stays available — the player knows this
+      // temporary password, they just shouldn't keep it.
+      await account.signOut();
+      expect(account.value, isNull);
+
+      // Sign back in and change it: the flag clears locally and server-side
+      // in the same PUT.
+      await account.signInWithPassword('temp@shell.test', 'temp-pass-1');
+      await account.changePassword('brand-new-7');
+      expect(clearedMetadata, isTrue);
+      expect(account.mustChangePassword, isFalse);
+      expect(account.passwordResetPending, isFalse);
+    });
   });
 
   group('Settings screen password forms', () {
@@ -510,6 +575,99 @@ void main() {
       expect(find.text('brand-new-7'), findsNothing);
       expect(account.isCloudSignedIn, isTrue);
       expect(account.passwordResetPending, isFalse);
+    });
+
+    testWidgets('a pasted whole reset link completes the same flow',
+        (tester) async {
+      givenServer();
+      await pumpSettings(tester);
+
+      await tester.enterText(
+          find.byKey(const ValueKey('email-field')), 'lost@shell.test');
+      await tester.dragUntilVisible(
+        find.byKey(const ValueKey('forgot-password')),
+        find.byKey(const ValueKey('settings-list')),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('forgot-password')));
+      await tester.pumpAndSettle();
+
+      // Paste the whole emailed link instead of its 6-digit code.
+      await tester.enterText(find.byKey(const ValueKey('reset-code-field')),
+          'https://shell.test/#token=123456&type=recovery');
+      await tester.tap(find.byKey(const ValueKey('verify-reset')));
+      await tester.pumpAndSettle();
+
+      // Same landing as the code: signed in, forced to choose a password.
+      expect(find.byKey(const ValueKey('new-password-field')), findsOneWidget);
+      expect(account.isCloudSignedIn, isTrue);
+      expect(account.passwordResetPending, isTrue);
+    });
+
+    testWidgets('a flagged temp-password session auto-opens the change form',
+        (tester) async {
+      account.serverConnection = () async =>
+          const ServerConnection(url: 'https://shell.test', apiKey: 'k');
+      account.authService = AuthService(
+        serverUrl: 'https://shell.test',
+        apiKey: 'k',
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/v1/signup')) {
+            return http.Response(
+                jsonEncode({
+                  'error_code': 'user_already_registered',
+                  'msg': 'User already registered',
+                }),
+                422);
+          }
+          if (request.url.path.endsWith('/auth/v1/token')) {
+            return http.Response(
+                jsonEncode({
+                  'access_token': 'at-t',
+                  'refresh_token': 'rt-t',
+                  'expires_at': 1900000000,
+                  'user': {
+                    'id': 'u7',
+                    'email': 'temp@shell.test',
+                    'user_metadata': {'must_change_password': true},
+                  },
+                }),
+                200);
+          }
+          if (request.url.path.endsWith('/auth/v1/user')) {
+            return http.Response('{}', 200);
+          }
+          return http.Response('unexpected', 404);
+        }),
+      );
+      await pumpSettings(tester);
+
+      await tester.enterText(
+          find.byKey(const ValueKey('email-field')), 'temp@shell.test');
+      await tester.dragUntilVisible(
+        find.byKey(const ValueKey('password-field')),
+        find.byKey(const ValueKey('settings-list')),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('password-field')), 'temp-pass-1');
+      // The email+password sign-in lives on the cloud button; email-signin
+      // is the passwordless one.
+      await tester.ensureVisible(find.byKey(const ValueKey('cloud-signin')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('cloud-signin')));
+      await tester.pumpAndSettle();
+
+      // The section is open without any link tap, and skips the current-
+      // password field: this session just proved that password.
+      expect(find.byKey(const ValueKey('new-password-field')), findsOneWidget);
+      expect(
+          find.byKey(const ValueKey('current-password-field')), findsNothing);
+      // The flag-driven form greets with the temporary-password sentence.
+      expect(find.text(appLocale.strings.changePasswordHint), findsOneWidget);
+      expect(find.text(appLocale.strings.notNow), findsOneWidget);
     });
   });
 

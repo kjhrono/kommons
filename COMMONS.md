@@ -164,8 +164,26 @@ in-app (email templates stay server-side):
   (GoTrue `/auth/v1/recover`), the player types it back and lands signed-in
   with `account.passwordResetPending` true — the forced change-password form
   is the only step on the card (sign-out is refused until a new password is
-  chosen, code `reset_in_progress`). If the server's template instead mails a
-  link, its token works in the same field.
+  chosen, code `reset_in_progress`).
+* **Recovery links** (`recovery_link.dart`) — a `{{ .ConfirmationURL }}`
+  template's whole link is a supported sign-back-in path, two ways:
+
+  * *Opened as a link* — register `ShellApp.onRecoveryLink`; the shell
+    detects `…?token_hash=…&type=recovery` (newer generation,
+    self-addressing) and `…#token=…&type=recovery` (fragment, verified
+    against this device's parked reset email) on the browser URL (web) or
+    app links (mobile, cold start and warm returns) and hands the parsed
+    link to the handler — HERALD completes it with
+    `account.completeRecoveryLink(link)` and pushes the settings screen.
+  * *Pasted* — the reset sub-form's code field accepts the whole pasted
+    link (`recoveryLinkFromClipboardText`); a plain-token paste rides the
+    email this device parked, so it always verifies.
+
+  A plain-token link opened on a device that never requested the reset
+  throws `recovery_email_unknown` (honest message: use the code, or have
+  the server mail token-hash links). Delivery is disjoint from joins by
+  construction (`type=recovery` vs `join=`) — 18 tests in
+  `test/recovery_link_test.dart`.
 * **Change password** — the signed-in card carries a section
   (`change-password-section`, fields `current/current-password-field`,
   `new/new-password-field`, `confirm/confirm-password-field`) that verifies

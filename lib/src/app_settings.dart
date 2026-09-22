@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'auth_service.dart';
 import 'oauth_popup_launcher.dart' as oauth_launcher;
+import 'recovery_link.dart';
 import 'shell_preferences.dart';
 import 'shell_strings.dart';
 
@@ -792,6 +793,54 @@ class AccountController extends ValueNotifier<Account?> {
     value = Account(
       displayName: playerName,
       email: session.email.isNotEmpty ? session.email : email,
+      provider: 'email',
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_emailKey, value!.email);
+    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
+    await prefs.remove(_pendingKey);
+    notifyListeners();
+    _signInSync = syncPreferencesOnSignIn();
+    unawaited(_signInSync!);
+  }
+
+  /// Completes a password reset that arrived as a whole link — the
+  /// `{{ .ConfirmationURL }}` template's email opened the app (cold
+  /// start, or the player pasted the link into the reset sub-form).
+  ///
+  /// Token-hash links (`?token_hash=…`) are self-addressing — they sign
+  /// back in wherever they are opened. Plain-token links (`#token=…`)
+  /// verify against the account's email, which only the device that
+  /// requested the reset knows: there the parked reset email (this
+  /// device's own "forgot password" request) completes the flow, and a
+  /// cold start without one throws `recovery_email_unknown` — the fix is
+  /// the 6-digit code, or a server template on the token_hash generation.
+  /// Success lands exactly where the code lands: signed in, forced to
+  /// choose a new password.
+  Future<void> completeRecoveryLink(RecoveryLink link) async {
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    if (!link.isTokenHash && (_resetEmail == null || _resetEmail!.isEmpty)) {
+      throw const AuthException(
+          'recovery_email_unknown',
+          'This recovery link must be opened on the device that requested '
+              'the reset (or the server should mail token-hash links).');
+    }
+    final session = link.isTokenHash
+        ? await service.verifyRecoveryTokenHash(link.tokenHash!)
+        : await service.verifyRecovery(
+            email: _resetEmail ?? '', token: link.token!);
+    _session = session;
+    _pendingSignupEmail = null;
+    _resetEmail = null;
+    _resetPasswordArmed = true;
+    _recoveryNoPassword = true;
+    value = Account(
+      displayName: playerName,
+      email: session.email.isNotEmpty ? session.email : '',
       provider: 'email',
     );
     final prefs = await SharedPreferences.getInstance();
