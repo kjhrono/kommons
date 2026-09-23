@@ -18,6 +18,7 @@ export 'src/shell_strings.dart';
 export 'src/shell_preferences.dart';
 export 'src/app_splash.dart';
 export 'src/oauth_popup_launcher.dart';
+export 'src/oauth_session_link.dart';
 export 'src/recovery_link.dart';
 export 'src/shell_app.dart';
 

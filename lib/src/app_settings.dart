@@ -218,6 +218,27 @@ class AccountController extends ValueNotifier<Account?> {
   /// custom delivery (a dedicated callback page, a replayed redirect).
   Future<String?> Function(String authorizeUrl)? collectOAuthFragment;
 
+  /// True while [signInWithProvider]'s collector is waiting for the
+  /// authorize redirect: the flow owns the delivery, so the shell's
+  /// session-link watcher must not also restore it. Exposed for the
+  /// delivery-time gate in ShellApp.
+  @visibleForTesting
+  bool get oauthFlowInFlight => _oauthFlowInFlight;
+  bool _oauthFlowInFlight = false;
+
+  /// The fragment the OAuth flow last consumed (its redirect completed
+  /// the flow) — the shell's watcher dedupes against it so the same link
+  /// is never installed twice (flow install + watcher restore).
+  String? _fragmentConsumedByFlow;
+
+  /// Test seam: pretends the sign-in flow consumed [fragment] (what a
+  /// completed deep-link flow does), so the watcher's dedupe can be
+  /// driven without a real browser round-trip.
+  @visibleForTesting
+  void debugMarkFragmentConsumedByFlow(String fragment) {
+    _fragmentConsumedByFlow = fragment;
+  }
+
   /// Where the game server's authorize redirect should land on the mobile
   /// builds — the app's custom scheme or universal-link origin, e.g.
   /// `Uri.parse('mygame://auth')`. The server must allow-list it next to
@@ -299,6 +320,14 @@ class AccountController extends ValueNotifier<Account?> {
     }
     if (!restored.isExpired) {
       _session = restored;
+      // The provider story survives restarts: a restored provider session
+      // is a google/github account, not a local email record.
+      if (restored.providerName != null) {
+        value = Account(
+            displayName: playerName,
+            email: restored.email,
+            provider: restored.providerName!);
+      }
       // A temp-password session restored from disk re-opens the shell's
       // forced change-password form — the flag survives restarts until
       // the change lands.
@@ -314,8 +343,20 @@ class AccountController extends ValueNotifier<Account?> {
       return;
     }
     try {
-      _session = await service.refresh(restored.refreshToken);
-      _resetPasswordArmed = _session!.mustChangePassword;
+      _session = await service
+          .refresh(restored.refreshToken)
+          // A refreshed session never repeats the fragment's provider
+          // grant; carry the persisted one so sign-out can still revoke.
+          .then((s) => s.copyWith(
+              providerToken: restored.providerToken,
+              providerName: restored.providerName));
+      if (restored.providerName != null) {
+        value = Account(
+            displayName: playerName,
+            email: _session!.email,
+            provider: restored.providerName!);
+      }
+
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       unawaited(syncPreferencesOnSignIn());
     } on AuthException {
@@ -343,8 +384,11 @@ class AccountController extends ValueNotifier<Account?> {
     final service = await _ensureService();
     if (service == null) return null;
     try {
-      _session = await service.refresh(current.refreshToken);
-      _resetPasswordArmed = _session!.mustChangePassword;
+      _session = await service.refresh(current.refreshToken).then((s) =>
+          s.copyWith(
+              providerToken: current.providerToken,
+              providerName: current.providerName));
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       return _session!.accessToken;
@@ -1026,12 +1070,16 @@ class AccountController extends ValueNotifier<Account?> {
     await cancelPendingSignup();
 
     String? fragment;
+    _oauthFlowInFlight = true;
     try {
       fragment = await collector(authorize.toString());
+      _fragmentConsumedByFlow = fragment;
     } on UnsupportedError catch (error) {
       // A host's custom collector may declare the platform unsupported —
       // surface it as the flow's own typed failure.
       throw AuthException('oauth_unsupported', '$error');
+    } finally {
+      _oauthFlowInFlight = false;
     }
     if (fragment == null) return; // popup closed: cancelled, not an error
     final session = AuthService.sessionFromImplicitFragment(fragment);
@@ -1052,14 +1100,10 @@ class AccountController extends ValueNotifier<Account?> {
     // A provider session on a flagged account opens the change-password
     // form too — the temporary password (and its flag) is identity-agnostic.
     _resetPasswordArmed = user.metadata['must_change_password'] == true;
-    _session = AuthSession(
-      accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
-      expiresAt: session.expiresAt,
-      userId: user.id,
-      email: user.email,
-      userMetadata: user.metadata,
-    );
+    // copyWith keeps the fragment's provider fields (the grant and its
+    // name) — later metadata writes must not drop them.
+    _session = session.copyWith(
+        userId: user.id, email: user.email, userMetadata: user.metadata);
     _pendingSignupEmail = null;
     value = Account(
       displayName: playerName,
@@ -1071,6 +1115,74 @@ class AccountController extends ValueNotifier<Account?> {
     notifyListeners();
     _signInSync = syncPreferencesOnSignIn();
     unawaited(_signInSync!);
+  }
+
+  /// Installs an OAuth session carried by an app link and runs the
+  /// cross-project preference sync on it — a warm return (or cold start)
+  /// from an authorize redirect that no collector was waiting for. The
+  /// identity is confirmed via `fetchUser` (the fragment carries no
+  /// email); failures throw typed errors the caller surfaces.
+  ///
+  /// Returns false without throwing when the token was already redeemed,
+  /// revoked or expired: the fragment itself is proof the server once
+  /// issued it, so a dead link is a quiet "nothing to restore", not a
+  /// sign-in failure to punish the player with.
+  Future<bool> restoreFromSessionFragment(String fragment) async {
+    // The sign-in flow owns its own redirect: a delivery racing an armed
+    // collector completes the flow, and the fragment it consumed must not
+    // be installed a second time by the watcher.
+    if (_oauthFlowInFlight || fragment == _fragmentConsumedByFlow) {
+      return false;
+    }
+    final session = AuthService.sessionFromImplicitFragment(fragment);
+    if (session == null) {
+      throw const AuthException(
+          'oauth_invalid', 'The link carries no sign-in session.');
+    }
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    ({
+      String id,
+      String email,
+      bool confirmed,
+      Map<String, dynamic> metadata
+    }) user;
+    try {
+      user = await service.fetchUser(session.accessToken);
+    } on AuthException {
+      // Redeemed/revoked/expired token: the provider link is dead — not
+      // an error the player can act on.
+      return false;
+    }
+    if (!user.confirmed) {
+      throw const AuthException('email_not_confirmed',
+          'Confirm the email (inbox link) before signing in.');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await cancelPendingSignup();
+    _resetPasswordArmed = user.metadata['must_change_password'] == true;
+    _session = session.copyWith(
+        userId: user.id, email: user.email, userMetadata: user.metadata);
+    _pendingSignupEmail = null;
+    // The specific provider (the fragment names it) — 'oauth' only when
+    // an older fragment predates the field.
+    value = Account(
+      displayName: playerName,
+      email: user.email,
+      provider: session.providerName ?? 'oauth',
+    );
+    await prefs.setString(_emailKey, user.email);
+    await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+    notifyListeners();
+    // The restore IS a sign-in for the preference sync: the pull fires
+    // the same "preferences loaded" notice as any other path.
+    _signInSync = syncPreferencesOnSignIn();
+    unawaited(_signInSync!);
+    return true;
   }
 
   /// This app's origin on the web (the authorize redirect's target there),
@@ -1171,6 +1283,8 @@ class AccountController extends ValueNotifier<Account?> {
     playerName = 'Player';
     authService = null; // tests inject their own per case
     collectOAuthFragment = null;
+    _oauthFlowInFlight = false;
+    _fragmentConsumedByFlow = null;
     oauthRedirectUri = null;
     _prefOrigins = null;
     _originsLoadStarted = false;

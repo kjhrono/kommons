@@ -13,6 +13,8 @@ class AuthSession {
     required this.userId,
     required this.email,
     this.userMetadata = const {},
+    this.providerToken,
+    this.providerName,
   });
 
   final String accessToken;
@@ -29,12 +31,47 @@ class AuthSession {
   /// settings screen can force the change-password form on.
   final Map<String, dynamic> userMetadata;
 
+  /// The provider's own grant token (`provider_token` from an OAuth
+  /// redirect fragment — the Google/GitHub grant itself, distinct from
+  /// GoTrue's session pair). Present only on provider sessions;
+  /// [AccountController.signOut] uses it to revoke the grant where the
+  /// provider allows a client-side revocation (Google).
+  final String? providerToken;
+
+  /// Which provider issued [providerToken] ('google', 'github', …).
+  final String? providerName;
+
   /// True when the server flagged this session as signed in with a
   /// temporary password that must be changed before it's usable.
   bool get mustChangePassword => userMetadata['must_change_password'] == true;
 
   bool get isExpired =>
       DateTime.now().millisecondsSinceEpoch ~/ 1000 >= expiresAt;
+
+  /// A copy of this session with the given fields replaced — how the
+  /// controller refreshes metadata in place without losing the provider
+  /// grant (or the tokens) it was signed in with.
+  AuthSession copyWith({
+    String? accessToken,
+    String? refreshToken,
+    int? expiresAt,
+    String? userId,
+    String? email,
+    Map<String, dynamic>? userMetadata,
+    String? providerToken,
+    String? providerName,
+  }) {
+    return AuthSession(
+      accessToken: accessToken ?? this.accessToken,
+      refreshToken: refreshToken ?? this.refreshToken,
+      expiresAt: expiresAt ?? this.expiresAt,
+      userId: userId ?? this.userId,
+      email: email ?? this.email,
+      userMetadata: userMetadata ?? this.userMetadata,
+      providerToken: providerToken ?? this.providerToken,
+      providerName: providerName ?? this.providerName,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'access_token': accessToken,
@@ -43,6 +80,8 @@ class AuthSession {
         'user_id': userId,
         'email': email,
         'user_metadata': userMetadata,
+        if (providerToken != null) 'provider_token': providerToken,
+        if (providerName != null) 'provider_name': providerName,
       };
 
   static AuthSession? fromJson(Object? json) {
@@ -64,6 +103,12 @@ class AuthSession {
       userMetadata: json['user_metadata'] is Map<String, dynamic>
           ? json['user_metadata'] as Map<String, dynamic>
           : const {},
+      providerToken: json['provider_token'] is String
+          ? json['provider_token'] as String
+          : null,
+      providerName: json['provider_name'] is String
+          ? json['provider_name'] as String
+          : null,
     );
   }
 }
@@ -214,6 +259,10 @@ class AuthService {
       expiresAt: expiresAt,
       userId: params['provider_id'] ?? '',
       email: '',
+      // The provider grant rides along: sign-out revokes it (Google) so
+      // the next provider sign-in asks for consent again.
+      providerToken: params['provider_token'],
+      providerName: params['provider'],
     );
   }
 

@@ -60,7 +60,7 @@ dependencies:
 
 | Export | What it gives you |
 | --- | --- |
-| `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. `onJoinInvite` receives a parsed invite when the app is opened through a join link (see **Invites** below). |
+| `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. `onJoinInvite` receives a parsed invite when the app is opened through a join link (see **Invites** below); `onRecoveryLink` receives a reset-email link the same way. When an authorize-redirect link (`…#access_token=…`) re-opens the app with no OAuth flow waiting, the shell restores the session it carries (`restoreSessionsFromLinks: false` opts out). |
 | `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state, **cross-project preference sync**), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
 | `shell_preferences.dart` | The cross-project preference sync codec: the `kommons` slice of GoTrue `user_metadata` (theme, locale, player name) with per-key `updatedAt` stamps, the patch builder and the reconcile rules the controller runs on sign-in. See **Cross-project preference sync** below. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
@@ -227,8 +227,11 @@ GitHub alike, no schema change, private to the account by construction. The
 namespace keeps provider-written metadata and server flags
 (`must_change_password`) untouched.
 
-* **Pull on sign-in** — every sign-in path *and* a restored session runs
-  `account.syncPreferencesOnSignIn()`: fetch the user, reconcile cloud vs
+* **Pull on sign-in** — every sign-in path runs
+  `account.syncPreferencesOnSignIn()` — including a session restored from
+  an app link (`account.restoreFromSessionFragment`, an authorize redirect
+  that re-opened the app with no collector waiting): fetch the user,
+  reconcile cloud vs
   local per key (a cloud value applies when it is at least as new as the
   local edit — `updatedAt` stamps, `shell_preferences.dart`), then push the
   union back. Two devices that edited *different* keys both win; a newer

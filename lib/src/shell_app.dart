@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_settings.dart';
+import 'auth_service.dart' show AuthException;
 import 'multiplayer/join_link.dart';
+import 'oauth_session_link.dart';
 import 'recovery_link.dart';
 import 'shell_strings.dart';
 
@@ -66,6 +68,7 @@ class ShellApp extends StatefulWidget {
     this.onJoinInvite,
     this.onRecoveryLink,
     this.showPreferencesSyncedNotice = true,
+    this.restoreSessionsFromLinks = true,
   });
 
   /// The app's home — usually the game's [AppSplash].
@@ -126,6 +129,15 @@ class ShellApp extends StatefulWidget {
   /// that surface the sync differently).
   final bool showPreferencesSyncedNotice;
 
+  /// Restores an OAuth session when an authorize-redirect app link
+  /// (`…#access_token=…`) re-opens the app with no collector waiting —
+  /// a warm return after the sign-in flow gave up, a replayed redirect,
+  /// a cold start mid-flow. The restore signs the player in and runs the
+  /// cross-project preference sync on it (notice included). On by
+  /// default; hosts that own every session delivery themselves may set
+  /// it false.
+  final bool restoreSessionsFromLinks;
+
   @override
   State<ShellApp> createState() => _ShellAppState();
 }
@@ -142,6 +154,7 @@ class _ShellAppState extends State<ShellApp> {
     unawaited(_preload());
     unawaited(_watchJoinLinks());
     unawaited(_watchRecoveryLinks());
+    unawaited(_watchSessionLinks());
   }
 
   Future<void> _preload() async {
@@ -239,6 +252,57 @@ class _ShellAppState extends State<ShellApp> {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  /// OAuth session-fragment detection: an authorize redirect that re-opened
+  /// the app when no collector was waiting (a warm return after the flow
+  /// gave up, a replayed delivery, a cold start mid-flow). Installing the
+  /// session is the controller's job —
+  /// `account.restoreFromSessionFragment(uri.fragment)` — and the restore
+  /// runs the same preference sync as any sign-in, notice included.
+  Uri? _lastSessionDelivered;
+
+  Future<void> _watchSessionLinks() async {
+    if (!widget.restoreSessionsFromLinks) return;
+    try {
+      if (kIsWeb) {
+        _deliverSession(Uri.base);
+        return;
+      }
+      final links = AppLinks();
+      final subscription = links.uriLinkStream.listen(
+        (uri) => _deliverSession(uri),
+        onError: (_) {},
+      );
+      final initial = await links.getInitialLink();
+      if (initial != null) _deliverSession(initial);
+      _sessionSubscription = subscription;
+    } catch (_) {
+      // No link backend here — nothing to restore.
+    }
+  }
+
+  StreamSubscription<Uri>? _sessionSubscription;
+
+  void _deliverSession(Uri uri) {
+    if (uri.toString() == _lastSessionDelivered?.toString()) {
+      return;
+    }
+    if (!oauthSessionLinkFromUri(uri)) return;
+    _lastSessionDelivered = uri;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(() async {
+        try {
+          await account.restoreFromSessionFragment(uri.fragment);
+        } on AuthException {
+          // A live-but-unconfirmable or invalid fragment: the restore
+          // declines quietly — the link payload never promised a session
+          // on THIS server, and nothing on screen promised a sign-in.
+        }
+      }());
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
   final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
@@ -246,6 +310,7 @@ class _ShellAppState extends State<ShellApp> {
   void dispose() {
     unawaited(_joinSubscription?.cancel());
     unawaited(_recoverySubscription?.cancel());
+    unawaited(_sessionSubscription?.cancel());
     super.dispose();
   }
 
