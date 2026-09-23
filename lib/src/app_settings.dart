@@ -357,7 +357,7 @@ class AccountController extends ValueNotifier<Account?> {
             email: _session!.email,
             provider: restored.providerName!);
       }
-
+      _resetPasswordArmed = _session!.mustChangePassword;
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       unawaited(syncPreferencesOnSignIn());
     } on AuthException {
@@ -389,7 +389,7 @@ class AccountController extends ValueNotifier<Account?> {
           s.copyWith(
               providerToken: current.providerToken,
               providerName: current.providerName));
-
+      _resetPasswordArmed = _session!.mustChangePassword;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       return _session!.accessToken;
@@ -798,6 +798,7 @@ class AccountController extends ValueNotifier<Account?> {
       // next sign-in's reconcile) carries these edits up. The local stamps
       // already mark this device the winner.
       _pendingPushes.addAll(pending);
+      _pendingGamePushes.addAll(pendingGames);
     }
   }
 
@@ -865,7 +866,7 @@ class AccountController extends ValueNotifier<Account?> {
     _revokeObservers.add(observer);
   }
 
-  /// Deep-equality over JSON-shaped values  /// Deep-equality over JSON-shaped values (used to avoid re-writing and
+  /// Deep-equality over JSON-shaped values (used to avoid re-writing and
   /// re-pushing maps whose content did not change).
   static bool _jsonEquals(Object? a, Object? b) {
     if (a is Map && b is Map) {
@@ -1221,14 +1222,7 @@ class AccountController extends ValueNotifier<Account?> {
     if (session.userMetadata.isNotEmpty) {
       final meta = Map<String, dynamic>.from(session.userMetadata)
         ..remove('must_change_password');
-      _session = AuthSession(
-        accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
-        expiresAt: session.expiresAt,
-        userId: session.userId,
-        email: session.email,
-        userMetadata: meta,
-      );
+      _session = session.copyWith(userMetadata: meta);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
     }
@@ -1309,8 +1303,8 @@ class AccountController extends ValueNotifier<Account?> {
     // A provider session on a flagged account opens the change-password
     // form too — the temporary password (and its flag) is identity-agnostic.
     _resetPasswordArmed = user.metadata['must_change_password'] == true;
-    // copyWith keeps the fragment's provider fields (the grant and its
-    // name) — later metadata writes must not drop them.
+    // copyWith keeps the fragment's provider grant (provider_token) —
+    // sign-out revokes it where the provider allows.
     _session = session.copyWith(
         userId: user.id, email: user.email, userMetadata: user.metadata);
     _pendingSignupEmail = null;
@@ -1467,6 +1461,7 @@ class AccountController extends ValueNotifier<Account?> {
     _pendingSignupEmail = null;
     _syncPushTimer?.cancel();
     _pendingPushes.clear();
+    _pendingGamePushes.clear();
     value = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_emailKey);
@@ -1512,14 +1507,14 @@ class AccountController extends ValueNotifier<Account?> {
     _oauthFlowInFlight = false;
     _fragmentConsumedByFlow = null;
     oauthRedirectUri = null;
-    _prefOrigins = null;
-    _originsLoadStarted = false;
     serverConnection = readStandardServerConnection;
     _syncPushTimer?.cancel();
     _pendingPushes.clear();
     _pendingGamePushes.clear();
     _localGames = null;
     _gameStamps = null;
+    _prefOrigins = null;
+    _originsLoadStarted = false;
     preferencesPulled.value = 0;
     _syncNoticeAck = 0;
   }

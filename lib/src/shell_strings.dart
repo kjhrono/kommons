@@ -789,14 +789,13 @@ class ShellStrings {
 
   /// Caption under the lobby's invite QR code.
   final String inviteQrHint;
+  final String inviteShare;
 
   /// Confirmation after the invite QR image was shared successfully.
   final String inviteQrSharedPattern;
 
   String inviteQrShared(String code) =>
       inviteQrSharedPattern.replaceAll('{code}', code);
-
-  final String inviteShare;
   final String invitePaste;
   final String invitePastedJoin;
   final String inviteNothingToPaste;

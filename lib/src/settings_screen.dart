@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'app_settings.dart';
 import 'auth_service.dart';
-import 'recovery_link.dart';
 import 'shell_preferences.dart';
+import 'recovery_link.dart';
 import 'shell_strings.dart';
 
 /// A handler an app registers for an OAuth provider button ('google',

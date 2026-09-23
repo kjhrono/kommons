@@ -64,8 +64,8 @@ dependencies:
 | `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state, **cross-project preference sync**), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
 | `shell_preferences.dart` | The cross-project preference sync codec: the `kommons` slice of GoTrue `user_metadata` (theme, locale, player name) with per-key `updatedAt` stamps, the patch builder and the reconcile rules the controller runs on sign-in — plus the per-game settings map (`kommons.games.<gameId>`) hosts can opt into. See **Cross-project preference sync** below. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
-| `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession`, `AuthException`. Per-app configuration: point it at your auth server. |
-| `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons, forgot-password sub-form, forced change-password form after recovery, change-password section on the signed-in card), PLAYER NAME, Language (a real picker over `appLocale`). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
+| `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession` (including the OAuth `provider_token` grant), `AuthException`. Per-app configuration: point it at your auth server. |
+| `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons, forgot-password sub-form, forced change-password form after recovery, change-password section on the signed-in card; the sign-in line names the provider — *Signed in with github · …* — and GitHub sessions carry the grant note, since sign-out cannot revoke that grant client-side), PLAYER NAME, Language (a real picker over `appLocale`). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
 | `app_splash.dart` | `AppSplash` — background art, big title, welcome (reads `account`: anonymous vs signed-in form), flavor scene, action buttons, description footer. Config: `appName`, `description`, `welcomeName`, `background`, `scenes` (defaults to `kDefaultSplashScenes`), `continueEnabled`/`continueLabel` (null = localized default), `actions` (`SplashActions.both` = NEW GAME + Continue, `startOnly` = NEW GAME alone, `direct` = PLAY alone — straight into the app, no lobby, or `directAndNewGame` = PLAY leading with NEW GAME behind), `onDirect`/`directLabel` for the direct variants, `settingsBuilder`, `debugSceneIndex` (test seam), `animateEntrance`. |
 
 **Localization** — the shell carries its own strings in
@@ -145,13 +145,15 @@ an admin job — see OAUTH_SERVER_SETUP.md). The settings card tells the
 player their side of the story too: the sign-in line names the provider
 (`signedInWithProvider`), and GitHub sessions show `githubGrantNote` —
 revoke it at github.com → Settings → Applications. Restores carry the
+provider across restarts, so the story stays right after an app reboot. A
+failed launch is a quiet skip, never a sign-out failure.
 
 **Invites** — a host seats distant friends without dictating a number to
 them. Once a game number is committed (a join, or the host's own table),
 the lobby renders an invite section: the shareable link
 (`https://<page>#join=K7QX2` on web — the page itself, so the copied link
 opens the same app; a portable `#join=…` fragment elsewhere), **Copy
-link**, and **Send by email** (a pre-filled `mailto:` the player
+link**, **Send by email** (a pre-filled `mailto:` the player
 addresses — the shell sees no contacts; where no mail handler exists the
 link lands on the clipboard instead), and a **QR code** for phone players:
 scan-to-join, nothing to copy or type. The QR encodes the same full invite
@@ -273,6 +275,14 @@ namespace keeps provider-written metadata and server flags
   this device's choice (stamped + origin-marked, so a cloud value can never
   silently clobber it at the next sign-in — the offline edit wins and
   propagates up).
+* **Where each value came from** — every shared preference carries a
+  provenance (`ShellPrefOrigin`: `cloud` / `local` / `device`), persisted in
+  `prefs.account.prefOrigins` and updated by every sync path (pulled values
+  → cloud; a device's kept or edited values → local). The settings screen
+  narrates it under the game sections — one line like *"Theme from your
+  account, Language app default, Player name from this device"* — rebuilt
+  live on edits, pulls and sign-ins. Read it in code with
+  `account.preferenceOrigin(key)`.
 * **The sync is visible** — when a sign-in pulls values that *actually
   changed* locally (`account.preferencesPulled`, a change-counting signal;
   same-value re-confirms stay silent), `ShellApp` shows a small floating
@@ -282,14 +292,6 @@ namespace keeps provider-written metadata and server flags
   `ShellApp(showPreferencesSyncedNotice: false)`. Hosts can drive their own
   UI from `preferencesPulled`, acknowledging events with
   `shouldShowSyncNotice` / `markSyncNoticeShown`.
-* **Where each value came from** — every shared preference carries a
-  provenance (`ShellPrefOrigin`: `cloud` / `local` / `device`), persisted in
-  `prefs.account.prefOrigins` and updated by every sync path (pulled values
-  → cloud; a device's kept or edited values → local). The settings screen
-  narrates it under the game sections — one line like *"Theme from your
-  account, Language app default, Player name from this device"* — rebuilt
-  live on edits, pulls and sign-ins. Read it in code with
-  `account.preferenceOrigin(key)`.
 * **Per-game settings opt in too** — a host can ride the same machinery
   with its own namespaced map under `kommons.games.<gameId>` (stamped per
   game in `kommons.games.updatedAt`): `await
