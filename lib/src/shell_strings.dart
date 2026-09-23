@@ -73,6 +73,12 @@ class ShellStrings {
     this.moreLanguagesComing = 'more languages coming',
     this.settingsFooter =
         'Settings are stored on this device. Signing in prepares them for cloud sync.',
+    this.prefTheme = 'Theme',
+    this.prefLanguage = 'Language',
+    this.prefPlayerName = 'Player name',
+    this.prefFromAccount = 'from your account',
+    this.prefFromDevice = 'from this device',
+    this.prefFromDefault = 'app default',
     this.invalidEmail = 'Enter a valid email address',
     this.shortPassword = 'Choose a password of at least 6 characters.',
     this.enterCode = 'Enter the code from the email.',
@@ -192,166 +198,368 @@ class ShellStrings {
 
   /// The Italian catalog. Word order and idiom follow Italian, not the
   /// English source — the {token} patterns below carry their own phrasing.
-  const ShellStrings.italian()
-      : switchThemeTooltip = 'Cambia tema giorno/notte',
-        settingsTooltip = 'Impostazioni',
-        newGame = 'NUOVA PARTITA',
-        continueDefault = 'CONTINUA',
-        noSavedGames = 'NESSUNA PARTITA SALVATA',
-        settingsTitle = 'IMPOSTAZIONI',
-        accountHeader = 'ACCOUNT',
-        guest = 'Ospite',
-        checkYourInbox = 'CONTROLLA LA TUA EMAIL',
-        verificationCodeLabel = 'Codice di verifica',
-        verificationCodeHint = 'le 6 cifre della mail',
-        confirm = 'Conferma',
-        resendEmail = 'Reinvia email',
-        useDifferentAddress = 'Usa un altro indirizzo',
+  const ShellStrings.italian(
+      {String? code,
+      String? nativeName,
+      String? switchThemeTooltip,
+      String? settingsTooltip,
+      String? newGame,
+      String? continueDefault,
+      String? noSavedGames,
+      String? settingsTitle,
+      String? accountHeader,
+      String? guest,
+      String? checkYourInbox,
+      String? verificationCodeLabel,
+      String? verificationCodeHint,
+      String? confirm,
+      String? resendEmail,
+      String? useDifferentAddress,
+      String? signInPitch,
+      String? emailLabel,
+      String? emailHint,
+      String? passwordLabel,
+      String? passwordHint,
+      String? signInWithEmail,
+      String? serverOnboardingHint,
+      String? connectGameServer,
+      String? createOrSignInCloud,
+      String? cloudAccountReady,
+      String? deviceLocalAccount,
+      String? signOut,
+      String? playerNameHeader,
+      String? playerNameLabel,
+      String? saveName,
+      String? language,
+      String? moreLanguagesComing,
+      String? settingsFooter,
+      String? prefTheme,
+      String? prefLanguage,
+      String? prefPlayerName,
+      String? prefFromAccount,
+      String? prefFromDevice,
+      String? prefFromDefault,
+      String? invalidEmail,
+      String? shortPassword,
+      String? enterCode,
+      String? confirmationResent,
+      String? forgotPassword,
+      String? resetTitle,
+      String? resetSentPattern,
+      String? resetCodeLabel,
+      String? resetCodeHint,
+      String? resendReset,
+      String? cancelReset,
+      String? resetEmailSent,
+      String? changePassword,
+      String? changePasswordHint,
+      String? changePasswordSectionHint,
+      String? currentPasswordLabel,
+      String? enterCurrentPassword,
+      String? newPasswordLabel,
+      String? newPasswordHint,
+      String? newPasswordConfirmLabel,
+      String? passwordMismatch,
+      String? passwordChanged,
+      String? passwordChangeFailed,
+      String? cancel,
+      String? notNow,
+      String? preferencesSynced,
+      String? back,
+      String? continueLabel,
+      String? welcomePattern,
+      String? welcomeBackPattern,
+      String? signedInAsPattern,
+      String? confirmationSentPattern,
+      String? stepHeaderPattern,
+      String? hostedHere,
+      String? claimHost,
+      String? roomOptions,
+      String? hostOfThisRoom,
+      String? youSuffix,
+      String? readyLabel,
+      String? notReadyLabel,
+      String? passwordProtected,
+      String? notStartedYet,
+      String? cancelHandover,
+      String? handOverHost,
+      String? promoteSeatHint,
+      String? deleteRoom,
+      String? endsWorldHint,
+      String? leaveRoom,
+      String? seatLeavesHint,
+      String? chooseHostBody,
+      String? keepIt,
+      String? deleteForEveryone,
+      String? stay,
+      String? leave,
+      String? pendingHandovers,
+      String? dialogServerTitle,
+      String? serverUrlLabel,
+      String? serverUrlHint,
+      String? anonKeyLabel,
+      String? anonKeyHint,
+      String? anonKeyHelper,
+      String? connect,
+      String? worldTitlePattern,
+      String? clockStatusPattern,
+      String? hostHandoverPendingPattern,
+      String? acceptPromotionPattern,
+      String? withdrawPromotionPattern,
+      String? handoverPickerTitlePattern,
+      String? deleteRoomTitlePattern,
+      String? deleteRoomBodyPattern,
+      String? leaveRoomTitlePattern,
+      String? leaveRoomBodyAllPattern,
+      String? leaveRoomBodySeatPattern,
+      String? directEntry,
+      String? soloStart,
+      String? addSeat,
+      String? seatsHeader,
+      String? joinSectionHeader,
+      String? gameNumberLabel,
+      String? gameNumberHint,
+      String? joinGame,
+      String? gameNumberMissing,
+      String? gameRoomMissing,
+      String? gameWrongPassword,
+      String? gameJoinFailed,
+      String? joinPasswordLabel,
+      String? hotSeatNote,
+      String? removeSeatTooltip,
+      String? youMarker,
+      String? inviteHeader,
+      String? inviteLinkLabel,
+      String? inviteLinkHint,
+      String? inviteCopy,
+      String? inviteCopied,
+      String? inviteSendEmail,
+      String? inviteShare,
+      String? invitePaste,
+      String? invitePastedJoin,
+      String? inviteNothingToPaste,
+      String? inviteJoinedWith})
+      : switchThemeTooltip = switchThemeTooltip ?? 'Cambia tema giorno/notte',
+        settingsTooltip = settingsTooltip ?? 'Impostazioni',
+        newGame = newGame ?? 'NUOVA PARTITA',
+        continueDefault = continueDefault ?? 'CONTINUA',
+        noSavedGames = noSavedGames ?? 'NESSUNA PARTITA SALVATA',
+        settingsTitle = settingsTitle ?? 'IMPOSTAZIONI',
+        accountHeader = accountHeader ?? 'ACCOUNT',
+        guest = guest ?? 'Ospite',
+        checkYourInbox = checkYourInbox ?? 'CONTROLLA LA TUA EMAIL',
+        verificationCodeLabel = verificationCodeLabel ?? 'Codice di verifica',
+        verificationCodeHint = verificationCodeHint ?? 'le 6 cifre della mail',
+        confirm = confirm ?? 'Conferma',
+        resendEmail = resendEmail ?? 'Reinvia email',
+        useDifferentAddress = useDifferentAddress ?? 'Usa un altro indirizzo',
         signInPitch =
             'Accedi per conservare nome, salvataggi e partite condivise sul cloud. Prima la email; gli altri provider potranno unirsi più avanti.',
-        emailLabel = 'Email',
-        emailHint = 'tu@esempio.com',
-        passwordLabel = 'Password (account cloud)',
-        passwordHint = '6+ caratteri — registra al primo uso',
-        signInWithEmail = 'Accedi con email',
+        emailLabel = emailLabel ?? 'Email',
+        emailHint = emailHint ?? 'tu@esempio.com',
+        passwordLabel = passwordLabel ?? 'Password (account cloud)',
+        passwordHint = passwordHint ?? '6+ caratteri — registra al primo uso',
+        signInWithEmail = signInWithEmail ?? 'Accedi con email',
         serverOnboardingHint =
             'Gli account cloud si registrano sul tuo game server — connettilo una volta qui sotto (la stessa connessione che usa il multiplayer online).',
-        connectGameServer = 'Connetti game server',
-        createOrSignInCloud = 'Crea / accedi all\'account cloud',
+        connectGameServer = connectGameServer ?? 'Connetti game server',
+        createOrSignInCloud =
+            createOrSignInCloud ?? 'Crea / accedi all\'account cloud',
         cloudAccountReady =
             'Account cloud — verificato dal tuo game server, pronto per i salvataggi sul cloud.',
         deviceLocalAccount =
             'Ricordato solo su questo dispositivo. Aggiungi una password qui sopra per un account cloud.',
-        signOut = 'Esci',
-        playerNameHeader = 'NOME GIOCATORE',
-        playerNameLabel = 'Come il reame ti chiama',
-        saveName = 'Salva nome',
-        language = 'Lingua',
-        moreLanguagesComing = 'altre lingue in arrivo',
+        signOut = signOut ?? 'Esci',
+        playerNameHeader = playerNameHeader ?? 'NOME GIOCATORE',
+        playerNameLabel = playerNameLabel ?? 'Come il reame ti chiama',
+        saveName = saveName ?? 'Salva nome',
+        language = language ?? 'Lingua',
+        moreLanguagesComing = moreLanguagesComing ?? 'altre lingue in arrivo',
         settingsFooter =
             'Le impostazioni sono salvate su questo dispositivo. L\'accesso le prepara alla sincronizzazione cloud.',
-        invalidEmail = 'Inserisci un indirizzo email valido',
-        shortPassword = 'Scegli una password di almeno 6 caratteri.',
-        enterCode = 'Inserisci il codice dalla mail.',
-        confirmationResent = 'Email di conferma inviata di nuovo.',
-        forgotPassword = 'Password dimenticata?',
-        resetTitle = 'REIMPOSTA PASSWORD',
+        prefTheme = prefTheme ?? 'Tema',
+        prefLanguage = prefLanguage ?? 'Lingua',
+        prefPlayerName = prefPlayerName ?? 'Nome giocatore',
+        prefFromAccount = prefFromAccount ?? 'dal tuo account',
+        prefFromDevice = prefFromDevice ?? 'da questo dispositivo',
+        prefFromDefault = prefFromDefault ?? 'predefinito dell\'app',
+        invalidEmail = invalidEmail ?? 'Inserisci un indirizzo email valido',
+        shortPassword =
+            shortPassword ?? 'Scegli una password di almeno 6 caratteri.',
+        enterCode = enterCode ?? 'Inserisci il codice dalla mail.',
+        confirmationResent =
+            confirmationResent ?? 'Email di conferma inviata di nuovo.',
+        forgotPassword = forgotPassword ?? 'Password dimenticata?',
+        resetTitle = resetTitle ?? 'REIMPOSTA PASSWORD',
         resetSentPattern =
             'Se esiste un account per {email}, la email di reset è in arrivo. Inserisci il codice che contiene — o apri il suo link — per rientrare.',
-        resetCodeLabel = 'Codice di reset',
-        resetCodeHint = 'il codice dalla email di reset',
-        resendReset = 'Reinvia la email di reset',
-        cancelReset = 'Annulla',
-        resetEmailSent = 'Email di reset inviata.',
-        changePassword = 'Cambia password',
+        resetCodeLabel = resetCodeLabel ?? 'Codice di reset',
+        resetCodeHint = resetCodeHint ?? 'il codice dalla email di reset',
+        resendReset = resendReset ?? 'Reinvia la email di reset',
+        cancelReset = cancelReset ?? 'Annulla',
+        resetEmailSent = resetEmailSent ?? 'Email di reset inviata.',
+        changePassword = changePassword ?? 'Cambia password',
         changePasswordHint =
             'Sei dentro con una password temporanea. Scegline una nuova per completare il recupero dell\'account.',
         changePasswordSectionHint =
             'Scegli una nuova password per il tuo account.',
-        currentPasswordLabel = 'Password attuale',
-        enterCurrentPassword = 'Inserisci prima la password attuale.',
-        newPasswordLabel = 'Nuova password',
-        newPasswordHint = '6+ caratteri',
-        newPasswordConfirmLabel = 'Ripeti la nuova password',
-        passwordMismatch = 'Le due password non coincidono.',
-        passwordChanged = 'Password cambiata.',
-        passwordChangeFailed = 'Impossibile cambiare la password',
-        cancel = 'Annulla',
-        notNow = 'Non ora',
-        preferencesSynced = 'Preferenze caricate dal tuo account',
-        back = 'Indietro',
-        continueLabel = 'Continua',
-        welcomePattern = 'Benvenuto, {name}, in {app}',
-        welcomeBackPattern = 'Bentornato, {name} — {app} ti aspetta',
-        signedInAsPattern = 'Accesso effettuato come {email}',
+        currentPasswordLabel = currentPasswordLabel ?? 'Password attuale',
+        enterCurrentPassword =
+            enterCurrentPassword ?? 'Inserisci prima la password attuale.',
+        newPasswordLabel = newPasswordLabel ?? 'Nuova password',
+        newPasswordHint = newPasswordHint ?? '6+ caratteri',
+        newPasswordConfirmLabel =
+            newPasswordConfirmLabel ?? 'Ripeti la nuova password',
+        passwordMismatch =
+            passwordMismatch ?? 'Le due password non coincidono.',
+        passwordChanged = passwordChanged ?? 'Password cambiata.',
+        passwordChangeFailed =
+            passwordChangeFailed ?? 'Impossibile cambiare la password',
+        cancel = cancel ?? 'Annulla',
+        notNow = notNow ?? 'Non ora',
+        preferencesSynced =
+            preferencesSynced ?? 'Preferenze caricate dal tuo account',
+        back = back ?? 'Indietro',
+        continueLabel = continueLabel ?? 'Continua',
+        welcomePattern = welcomePattern ?? 'Benvenuto, {name}, in {app}',
+        welcomeBackPattern =
+            welcomeBackPattern ?? 'Bentornato, {name} — {app} ti aspetta',
+        signedInAsPattern =
+            signedInAsPattern ?? 'Accesso effettuato come {email}',
         confirmationSentPattern =
             'Ti abbiamo inviato una conferma a {email}. Inserisci il codice dalla mail — o apri il suo link — per completare la registrazione.',
-        stepHeaderPattern = 'Passo {step} di {total} — {title}',
-        hostedHere = ' — host qui',
-        claimHost = 'Diventa host',
-        roomOptions = 'Opzioni stanza',
-        hostOfThisRoom = 'Host di questa stanza',
-        youSuffix = '(tu)',
-        readyLabel = 'è pronto',
-        notReadyLabel = 'non si è ancora preparato',
-        passwordProtected = 'protetta da password',
-        notStartedYet = 'non ancora iniziata',
-        cancelHandover = 'Annulla passaggio di consegne',
-        handOverHost = 'Passa l\'host',
-        promoteSeatHint = 'Promuovi un posto; il mondo continua',
-        deleteRoom = 'Elimina stanza',
-        endsWorldHint = 'Termina il mondo per ogni posto',
-        leaveRoom = 'Lascia la stanza',
-        seatLeavesHint = 'Il tuo posto esce; il mondo continua',
+        stepHeaderPattern =
+            stepHeaderPattern ?? 'Passo {step} di {total} — {title}',
+        hostedHere = hostedHere ?? ' — host qui',
+        claimHost = claimHost ?? 'Diventa host',
+        roomOptions = roomOptions ?? 'Opzioni stanza',
+        hostOfThisRoom = hostOfThisRoom ?? 'Host di questa stanza',
+        youSuffix = youSuffix ?? '(tu)',
+        readyLabel = readyLabel ?? 'è pronto',
+        notReadyLabel = notReadyLabel ?? 'non si è ancora preparato',
+        passwordProtected = passwordProtected ?? 'protetta da password',
+        notStartedYet = notStartedYet ?? 'non ancora iniziata',
+        cancelHandover = cancelHandover ?? 'Annulla passaggio di consegne',
+        handOverHost = handOverHost ?? 'Passa l\'host',
+        promoteSeatHint =
+            promoteSeatHint ?? 'Promuovi un posto; il mondo continua',
+        deleteRoom = deleteRoom ?? 'Elimina stanza',
+        endsWorldHint = endsWorldHint ?? 'Termina il mondo per ogni posto',
+        leaveRoom = leaveRoom ?? 'Lascia la stanza',
+        seatLeavesHint =
+            seatLeavesHint ?? 'Il tuo posto esce; il mondo continua',
         chooseHostBody =
             'Scegli il posto che diventa l\'host. Il mondo continua a girare; il prescelto rivendica i poteri di host dal suo dispositivo.',
-        keepIt = 'Conservala',
-        deleteForEveryone = 'Elimina per tutti',
-        stay = 'Resta',
-        leave = 'Esci',
-        pendingHandovers = 'PASSAGGI DI CONSEGNE IN ATTESA',
-        dialogServerTitle = 'Game server',
-        serverUrlLabel = 'URL del server',
-        serverUrlHint = 'es. https://games.example.org',
-        anonKeyLabel = 'Chiave anon Supabase',
-        anonKeyHint = 'vuota per un PostgREST puro',
-        anonKeyHelper = 'VM: grep ANON_KEY env · Studio → Impostazioni → API',
-        connect = 'Connetti',
-        worldTitlePattern = 'Mondo {code}',
-        clockStatusPattern = 'orologio {n}',
-        hostHandoverPendingPattern = 'passaggio di consegne a {name} in attesa',
+        keepIt = keepIt ?? 'Conservala',
+        deleteForEveryone = deleteForEveryone ?? 'Elimina per tutti',
+        stay = stay ?? 'Resta',
+        leave = leave ?? 'Esci',
+        pendingHandovers = pendingHandovers ?? 'PASSAGGI DI CONSEGNE IN ATTESA',
+        dialogServerTitle = dialogServerTitle ?? 'Game server',
+        serverUrlLabel = serverUrlLabel ?? 'URL del server',
+        serverUrlHint = serverUrlHint ?? 'es. https://games.example.org',
+        anonKeyLabel = anonKeyLabel ?? 'Chiave anon Supabase',
+        anonKeyHint = anonKeyHint ?? 'vuota per un PostgREST puro',
+        anonKeyHelper = anonKeyHelper ??
+            'VM: grep ANON_KEY env · Studio → Impostazioni → API',
+        connect = connect ?? 'Connetti',
+        worldTitlePattern = worldTitlePattern ?? 'Mondo {code}',
+        clockStatusPattern = clockStatusPattern ?? 'orologio {n}',
+        hostHandoverPendingPattern = hostHandoverPendingPattern ??
+            'passaggio di consegne a {name} in attesa',
         acceptPromotionPattern =
             'Accetta la promozione di {name} su questo dispositivo',
-        withdrawPromotionPattern = 'Ritira la promozione in attesa di {name}',
-        handoverPickerTitlePattern = 'Passa il mondo {code}',
-        deleteRoomTitlePattern = 'Eliminare il mondo {code}?',
+        withdrawPromotionPattern = withdrawPromotionPattern ??
+            'Ritira la promozione in attesa di {name}',
+        handoverPickerTitlePattern =
+            handoverPickerTitlePattern ?? 'Passa il mondo {code}',
+        deleteRoomTitlePattern =
+            deleteRoomTitlePattern ?? 'Eliminare il mondo {code}?',
         deleteRoomBodyPattern =
             'La stanza viene rimossa per ogni posto — {seats}. I loro dispositivi non conservano altro che i salvataggi locali. Non si può annullare.',
-        leaveRoomTitlePattern = 'Lasciare il mondo {code}?',
+        leaveRoomTitlePattern =
+            leaveRoomTitlePattern ?? 'Lasciare il mondo {code}?',
         leaveRoomBodyAllPattern =
             'Il tuo posto esce e il mondo continua per {seats} — il tuo salvataggio locale resta su questo dispositivo.',
         leaveRoomBodySeatPattern =
             'Il tuo posto ({name}) è rimosso dall\'elenco. Il mondo continua per {others}.',
-        directEntry = 'GIOCA',
-        soloStart = 'INIZIA DA SOLO',
-        addSeat = 'Aggiungi posto',
-        seatsHeader = 'BANNIERI',
-        joinSectionHeader = 'ENTRA IN UNA PARTITA',
-        gameNumberLabel = 'Numero della partita',
-        gameNumberHint = 'es. K7QX2',
-        joinGame = 'ENTRA NELLA PARTITA',
+        directEntry = directEntry ?? 'GIOCA',
+        soloStart = soloStart ?? 'INIZIA DA SOLO',
+        addSeat = addSeat ?? 'Aggiungi posto',
+        seatsHeader = seatsHeader ?? 'BANNIERI',
+        joinSectionHeader = joinSectionHeader ?? 'ENTRA IN UNA PARTITA',
+        gameNumberLabel = gameNumberLabel ?? 'Numero della partita',
+        gameNumberHint = gameNumberHint ?? 'es. K7QX2',
+        joinGame = joinGame ?? 'ENTRA NELLA PARTITA',
         gameNumberMissing =
             'Inserisci il numero della partita che ti ha condiviso l\'host.',
         gameRoomMissing =
             'Nessuna partita risponde a quel numero — verificalo con l\'host.',
-        gameWrongPassword = 'Password della partita errata.',
-        gameJoinFailed = 'Impossibile raggiungere il game server. Riprova.',
+        gameWrongPassword =
+            gameWrongPassword ?? 'Password della partita errata.',
+        gameJoinFailed = gameJoinFailed ??
+            'Impossibile raggiungere il game server. Riprova.',
         joinPasswordLabel =
             'Password della partita (se l\'host ne ha messa una)',
         hotSeatNote =
             'Posti sullo stesso dispositivo — passa il device tra i bannieri.',
-        removeSeatTooltip = 'Rimuovi questo posto',
-        youMarker = '(tu)',
-        inviteHeader = 'Invita',
-        inviteLinkLabel = 'Link di invito',
+        removeSeatTooltip = removeSeatTooltip ?? 'Rimuovi questo posto',
+        youMarker = youMarker ?? '(tu)',
+        inviteHeader = inviteHeader ?? 'Invita',
+        inviteLinkLabel = inviteLinkLabel ?? 'Link di invito',
         inviteLinkHint =
             'Invialo ai tuoi giocatori: aprirlo apre questa lobby con il numero già inserito.',
-        inviteCopy = 'Copia link',
-        inviteCopied = 'Link copiato — invialo ai tuoi giocatori.',
-        inviteSendEmail = 'Invia per email',
+        inviteCopy = inviteCopy ?? 'Copia link',
+        inviteCopied =
+            inviteCopied ?? 'Link copiato — invialo ai tuoi giocatori.',
+        inviteSendEmail = inviteSendEmail ?? 'Invia per email',
         inviteShare = 'Condividi…',
-        invitePaste = 'Incolla un link che ti è stato inviato',
-        invitePastedJoin = 'Invito trovato — entrare come {name}?',
+        invitePaste = invitePaste ?? 'Incolla un link che ti è stato inviato',
+        invitePastedJoin =
+            invitePastedJoin ?? 'Invito trovato — entrare come {name}?',
         inviteNothingToPaste =
             'Niente da incollare: copia prima un link di invito.',
-        inviteJoinedWith = 'Invitato come {name} — numero già inserito.';
+        inviteJoinedWith =
+            inviteJoinedWith ?? 'Invitato come {name} — numero già inserito.';
 
   /// The catalog for [language] (unknown codes fall back to English, the
-  /// same rule the persisted-locale loader applies).
-  static ShellStrings forLanguage(ShellLanguage language) =>
-      language == ShellLanguage.italiano
-          ? const ShellStrings.italian()
-          : const ShellStrings();
+  /// same rule the persisted-locale loader applies). A host-installed
+  /// override (see [installOverrides]) wins over the built-in catalog.
+  static ShellStrings forLanguage(ShellLanguage language) {
+    final override = _overrides[language];
+    if (override != null) return override;
+    return language == ShellLanguage.italiano
+        ? const ShellStrings.italian()
+        : const ShellStrings();
+  }
+
+  /// Host-installed catalog overrides, keyed by language.
+  static final Map<ShellLanguage, ShellStrings> _overrides = {};
+
+  /// Replaces what the shell says in [language] with [strings] — most
+  /// usefully a *partial* instance. Every field of the constructors has a
+  /// default, so one line overrides one string and keeps the rest of the
+  /// language's wording:
+  ///
+  /// ```dart
+  /// ShellStrings.installOverrides({
+  ///   ShellLanguage.english: const ShellStrings(
+  ///       preferencesSynced: 'Your look, language and name just synced.'),
+  ///   ShellLanguage.italiano: const ShellStrings.italian(
+  ///       preferencesSynced: 'Aspetto, lingua e nome sono arrivati dal cloud.'),
+  /// });
+  /// ```
+  ///
+  /// Reads happen per frame through [AppLocaleNotifier.strings], so calls
+  /// land as soon as they run — but installing before `runApp` is the
+  /// dependable spot. Call [resetOverrides] to go back to the built-in
+  /// catalogs (tests do this in their setup).
+  static void installOverrides(Map<ShellLanguage, ShellStrings> catalogs) {
+    _overrides.addAll(catalogs);
+  }
+
+  /// Forgets every host override (see [installOverrides]).
+  static void resetOverrides() => _overrides.clear();
 
   // -- Top bar ------------------------------------------------------------
   final String switchThemeTooltip;
@@ -390,6 +598,12 @@ class ShellStrings {
   final String language;
   final String moreLanguagesComing;
   final String settingsFooter;
+  final String prefTheme;
+  final String prefLanguage;
+  final String prefPlayerName;
+  final String prefFromAccount;
+  final String prefFromDevice;
+  final String prefFromDefault;
   final String invalidEmail;
   final String shortPassword;
   final String enterCode;
@@ -406,6 +620,7 @@ class ShellStrings {
   final String resetEmailSent;
   final String changePassword;
   final String changePasswordHint;
+
   final String changePasswordSectionHint;
   final String currentPasswordLabel;
   final String enterCurrentPassword;
@@ -537,6 +752,7 @@ class ShellStrings {
   final String inviteCopy;
   final String inviteCopied;
   final String inviteSendEmail;
+
   final String inviteShare;
   final String invitePaste;
   final String invitePastedJoin;

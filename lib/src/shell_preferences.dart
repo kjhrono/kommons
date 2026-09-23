@@ -21,6 +21,10 @@
 // so last-writer-wins holds per key, per device, without a shadowing
 // older cloud state over a fresher local edit.
 
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'shell_strings.dart';
 
 /// The metadata key the shell's preferences live under.
@@ -76,6 +80,76 @@ String? shellPreferenceValue(
     Map<String, dynamic> preferences, ShellPrefKey key) {
   final value = preferences[key.key];
   return value is String ? value : null;
+}
+
+/// Where the current value of a shell preference came from — the provenance
+/// the settings screen shows per key.
+enum ShellPrefOrigin {
+  /// Never chosen anywhere: the shell's default (or an unset language).
+  device,
+
+  /// Chosen on this device (a signed-out edit, or a local edit newer than
+  /// the last cloud state this device saw).
+  local,
+
+  /// Pulled from the account — another device (or another game) decided it.
+  cloud,
+}
+
+/// The persisted-origin key inside SharedPreferences (`prefs.account.prefOrigins`).
+const shellPrefOriginsKey = 'prefs.account.prefOrigins';
+
+/// Reads the persisted origin per key. Missing entries mean [ShellPrefOrigin.device]
+/// — a value with no recorded story is a default by definition. Unknown
+/// spellings (a downgraded app) also read as device, never a crash.
+Map<ShellPrefKey, ShellPrefOrigin> shellPrefOriginsFromPrefs(
+    SharedPreferences prefs) {
+  final raw = prefs.getString(shellPrefOriginsKey);
+  if (raw == null || raw.isEmpty) return const {};
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return const {};
+    final out = <ShellPrefKey, ShellPrefOrigin>{};
+    decoded.forEach((key, value) {
+      final prefKey =
+          ShellPrefKey.values.where((k) => k.key == '$key').firstOrNull;
+      if (prefKey == null) return;
+      out[prefKey] = value == 'cloud'
+          ? ShellPrefOrigin.cloud
+          : value == 'local'
+              ? ShellPrefOrigin.local
+              : ShellPrefOrigin.device;
+    });
+    return out;
+  } catch (_) {
+    return const {};
+  }
+}
+
+/// Persists [origins] (a delta: only the entries to record). Entries mapped
+/// to [ShellPrefOrigin.device] remove their record — the compact form keeps
+/// the file to just the keys with a story. Grows the existing record, so
+/// callers pass only what changed.
+Future<void> writeShellPrefOrigins(
+    SharedPreferences prefs, Map<ShellPrefKey, ShellPrefOrigin> origins) async {
+  final current =
+      Map<ShellPrefKey, ShellPrefOrigin>.from(shellPrefOriginsFromPrefs(prefs));
+  origins.forEach((key, origin) {
+    if (origin == ShellPrefOrigin.device) {
+      current.remove(key);
+    } else {
+      current[key] = origin;
+    }
+  });
+  if (current.isEmpty) {
+    await prefs.remove(shellPrefOriginsKey);
+    return;
+  }
+  await prefs.setString(
+      shellPrefOriginsKey,
+      jsonEncode({
+        for (final entry in current.entries) entry.key.key: entry.value.name,
+      }));
 }
 
 /// Timestamps each current shell preference (epoch seconds). Absent keys
@@ -168,10 +242,12 @@ bool shellPrefShouldApply(
             cloudStamp: cloudStamp,
             localStamp: localStamp)) {
       pull[key] = cloud;
-    } else if (local != null && cloud == null) {
-      // The cloud never saw this key: this device's value is the only
-      // truth there is — seed it up (even without a local stamp, e.g.
-      // the pre-sync playerName).
+    } else if (local != null && (cloud == null || localStamp > cloudStamp)) {
+      // The cloud never saw this key, or this device's local edit is
+      // strictly newer (an offline edit's stamp survives the sign-in):
+      // this device's value is the only truth there is — seed it up (even
+      // without a local stamp, e.g. the pre-sync playerName). An equal
+      // stamp means the flush already delivered it: no PUT.
       push[key] = local;
     }
     // Equal stamps with equal values: nothing to do. A locally-stamped

@@ -71,8 +71,21 @@ dependencies:
 **Localization** — the shell carries its own strings in
 `shell_strings.dart` (`ShellStrings`, English default + Italian today).
 `appLocale` persists the pick; apps on `ShellApp` get the wiring for free
-(`locale` plus Material's delegates on the MaterialApp). Hand-rolled roots
-put it on themselves:
+(`locale` plus Material's delegates on the MaterialApp). Hosts can reword
+any string per language — most usefully a partial override, since every
+field defaults:
+
+```dart
+ShellStrings.installOverrides({
+  ShellLanguage.english: const ShellStrings(
+      preferencesSynced: 'Your look, language and name just synced.'),
+  ShellLanguage.italiano: const ShellStrings.italian(
+      preferencesSynced: 'Aspetto, lingua e nome sono arrivati dal cloud.'),
+});
+```
+
+(`ShellStrings.resetOverrides()` restores the built-ins; install before
+`runApp`.) Hand-rolled roots put the rest on themselves:
 
 ```dart
 MaterialApp(
@@ -227,7 +240,10 @@ namespace keeps provider-written metadata and server flags
   name field stamp the edit locally (`prefs.account.prefStamps`) and flush a
   debounced (3 s) `PUT /auth/v1/user` via `AuthService.updateUserMetadata`;
   rapid edits coalesce into one call, failed flushes re-queue and ride the
-  next sign-in. Not signed in → the edit stays local, exactly as before.
+  next sign-in. Not signed in → the edit stays local and is remembered as
+  this device's choice (stamped + origin-marked, so a cloud value can never
+  silently clobber it at the next sign-in — the offline edit wins and
+  propagates up).
 * **The sync is visible** — when a sign-in pulls values that *actually
   changed* locally (`account.preferencesPulled`, a change-counting signal;
   same-value re-confirms stay silent), `ShellApp` shows a small floating
@@ -237,13 +253,21 @@ namespace keeps provider-written metadata and server flags
   `ShellApp(showPreferencesSyncedNotice: false)`. Hosts can drive their own
   UI from `preferencesPulled`, acknowledging events with
   `shouldShowSyncNotice` / `markSyncNoticeShown`.
+* **Where each value came from** — every shared preference carries a
+  provenance (`ShellPrefOrigin`: `cloud` / `local` / `device`), persisted in
+  `prefs.account.prefOrigins` and updated by every sync path (pulled values
+  → cloud; a device's kept or edited values → local). The settings screen
+  narrates it under the game sections — one line like *"Theme from your
+  account, Language app default, Player name from this device"* — rebuilt
+  live on edits, pulls and sign-ins. Read it in code with
+  `account.preferenceOrigin(key)`.
 * **What never pushes** — unset choices (no language picked, the default
   'Player' name) and everything per-game: `extraSections` state, server
   connections, `gameId`-scoped keys stay host-side by design.
 * **Test seams** — `account.debugFlushPendingPreferencePushes()` (await the
   sign-in sync, run the flush now), `appTheme.applySynced(mode)` /
   `appLocale.applySynced(language)` (apply a synced value without re-firing
-  the push loop), 17 tests in `test/preference_sync_test.dart`.
+  the push loop), 21 tests in `test/preference_sync_test.dart`.
 
 **Splash art ships with the package** — `assets/splash_bg.svg` plus three
 vignettes (`splash_caravan`, `splash_dungeon`, `splash_tame`), referenced as

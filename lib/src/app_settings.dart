@@ -384,6 +384,42 @@ class AccountController extends ValueNotifier<Account?> {
     await prefs.setString(_stampsKey, jsonEncode(stamps));
   }
 
+  /// Cached provenance per synced preference (null until first read; a key
+  /// without a record is [ShellPrefOrigin.device] — the shell's default).
+  Map<ShellPrefKey, ShellPrefOrigin>? _prefOrigins;
+
+  bool _originsLoadStarted = false;
+
+  /// Where the current value of [key] came from — what the settings
+  /// screen's provenance line shows. Device-default keys (never chosen
+  /// anywhere) read [ShellPrefOrigin.device].
+  ShellPrefOrigin preferenceOrigin(ShellPrefKey key) {
+    _ensureOriginsLoaded();
+    return _prefOrigins?[key] ?? ShellPrefOrigin.device;
+  }
+
+  /// Loads the persisted origins once, lazily (a screen can render before
+  /// [load] finishes). A mark that landed first keeps the cache: it is the
+  /// fresher story and the same delta is being persisted anyway.
+  void _ensureOriginsLoaded() {
+    if (_originsLoadStarted) return;
+    _originsLoadStarted = true;
+    unawaited(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final fromDisk = shellPrefOriginsFromPrefs(prefs);
+      _prefOrigins ??= fromDisk;
+    }());
+  }
+
+  /// Merges [origins] into the in-memory cache and persists the delta.
+  Future<void> _markPreferenceOrigins(
+      SharedPreferences prefs, Map<ShellPrefKey, ShellPrefOrigin> origins) {
+    _prefOrigins =
+        Map<ShellPrefKey, ShellPrefOrigin>.from(_prefOrigins ?? const {})
+          ..addAll(origins);
+    return writeShellPrefOrigins(prefs, origins);
+  }
+
   /// Sets the anonymous player's name (settings → player name).
   Future<void> setPlayerName(String name) async {
     playerName = name.trim().isEmpty ? 'Player' : name.trim();
@@ -451,20 +487,33 @@ class AccountController extends ValueNotifier<Account?> {
       await _stampLocalEdits(prefs, reconcile.pull,
           cloudStampFor: (key) =>
               shellPreferenceTimestamps(cloudPreferences)[key] ?? 0);
+      await _markPreferenceOrigins(prefs, {
+        for (final key in reconcile.pull.keys) key: ShellPrefOrigin.cloud,
+      });
       if (changed > 0) _notifyPreferencesPulled(changed);
     }
 
     // Push back so the server carries the union (a fresh account gets this
     // device's defaults; a merge keeps both sides' newest keys). The patch
     // stamps the pushed keys now and carries the cloud stamps forward.
+    // Values this device kept (its edit is fresher than the cloud's) keep
+    // their local origin — the push does not change their story. Untouched
+    // keys are absent from push and stay device-default.
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     if (reconcile.push.isNotEmpty) {
+      await _markPreferenceOrigins(prefs,
+          {for (final key in reconcile.push.keys) key: ShellPrefOrigin.local});
+      // Stamp what we push with the same timestamp the server blob now
+      // carries: a delivered edit is this device's story locally too, and
+      // the next reconcile sees equal stamps and adds no PUT.
+      await _stampLocalEdits(prefs, reconcile.push, cloudStampFor: (_) => now);
       final pushPayload = shellPreferencePatch(
           cloudPreferences,
           {
             for (final entry in reconcile.push.entries)
               entry.key.key: entry.value,
           },
-          DateTime.now().millisecondsSinceEpoch ~/ 1000);
+          now);
       try {
         await service.updateUserMetadata(
           accessToken: session.accessToken,
@@ -578,8 +627,13 @@ class AccountController extends ValueNotifier<Account?> {
   /// not cloud-signed-in. Never throws. Rapid edits coalesce: the flush
   /// drains every key queued since the last successful write in one PUT.
   Future<void> preferenceEdited(ShellPrefKey key, String value) async {
-    if (_session == null) return;
     final prefs = await SharedPreferences.getInstance();
+    // Origin first, guard second: a signed-out edit is still this device's
+    // choice — it must outlive sign-in as both provenance (what settings
+    // shows) and a stamp (so a cloud value cannot silently clobber an
+    // offline choice at the next sign-in).
+    await _markPreferenceOrigins(prefs, {key: ShellPrefOrigin.local});
+    if (_session == null) return;
     await _stampLocalEdits(prefs, {key: value});
     _pendingPushes[key] = value;
     _syncPushTimer?.cancel();
@@ -1118,6 +1172,8 @@ class AccountController extends ValueNotifier<Account?> {
     authService = null; // tests inject their own per case
     collectOAuthFragment = null;
     oauthRedirectUri = null;
+    _prefOrigins = null;
+    _originsLoadStarted = false;
     serverConnection = readStandardServerConnection;
     _syncPushTimer?.cancel();
     _pendingPushes.clear();

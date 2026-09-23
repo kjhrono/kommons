@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'app_settings.dart';
 import 'auth_service.dart';
 import 'recovery_link.dart';
+import 'shell_preferences.dart';
 import 'shell_strings.dart';
 
 /// A handler an app registers for an OAuth provider button ('google',
@@ -672,6 +673,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             // -- Game sections ---------------------------------------------------
             ...widget.extraSections,
+            // Provenance line: where each shared preference currently comes
+            // from (account / this device / default). Rebuilds on any of the
+            // surfaces it reads: the controller (a sign-in's pull lands
+            // mid-visit) and the notifiers (an edit while settings is open).
+            AnimatedBuilder(
+              key: const ValueKey('pref-provenance'),
+              animation: Listenable.merge([account, appTheme, appLocale]),
+              builder: (context, _) => Text(
+                _provenanceLine(),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+              ),
+            ),
             Text(
               strings.settingsFooter,
               textAlign: TextAlign.center,
@@ -679,6 +693,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
     );
+  }
+
+  /// The provenance line: one comma-separated clause per shared
+  /// preference, saying where its current value came from — the account,
+  /// this device, or the app default. Keys on their defaults read
+  /// "app default" so the line stays a stable, complete sentence.
+  String _provenanceLine() {
+    final strings = appLocale.strings;
+    String clause(ShellPrefKey key, String label) {
+      final from = switch (account.preferenceOrigin(key)) {
+        ShellPrefOrigin.cloud => strings.prefFromAccount,
+        ShellPrefOrigin.local => strings.prefFromDevice,
+        ShellPrefOrigin.device => strings.prefFromDefault,
+      };
+      return '$label $from';
+    }
+
+    return [
+      clause(ShellPrefKey.theme, strings.prefTheme),
+      clause(ShellPrefKey.locale, strings.prefLanguage),
+      clause(ShellPrefKey.playerName, strings.prefPlayerName),
+    ].join(', ');
   }
 
   /// The language dialog: one entry per supported language, checked where

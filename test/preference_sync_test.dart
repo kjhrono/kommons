@@ -157,7 +157,7 @@ void main() {
       expect(result.push, isEmpty);
     });
 
-    test('a newer local edit survives the merge (no cloud shadowing)', () {
+    test('a newer local edit pushes at sign-in (offline edits propagate)', () {
       final result = shellPreferencesReconcile(
         cloudPreferences: {
           'locale': 'en',
@@ -170,12 +170,11 @@ void main() {
       );
 
       expect(result.pull, isEmpty);
-      // The local edit is newer but the cloud *has* the key: the push
-      // rule only fires for keys the cloud lacks. The winner was decided
-      // on this device at edit time; the flush (or next sign-in's
-      // union push) carries it up. Reconcile must not pull the older
-      // cloud value over it.
-      expect(result.push, isEmpty);
+      // The local edit is newer (made offline, or its flush failed): the
+      // sign-in's union push carries it up — last-writer-wins holds on
+      // the server too. An equal stamp means the flush already delivered
+      // the value and this adds no PUT.
+      expect(result.push, {ShellPrefKey.locale: 'it'});
     });
 
     test('different keys edited on different devices merge in both directions',
@@ -196,6 +195,54 @@ void main() {
         ShellPrefKey.locale: 'it',
         ShellPrefKey.playerName: 'Marcuz',
       });
+    });
+  });
+
+  group('codec: provenance (ShellPrefOrigin)', () {
+    test('round-trips through prefs; device entries stay unrecorded', () async {
+      final prefs = await SharedPreferences.getInstance();
+      expect(shellPrefOriginsFromPrefs(prefs), isEmpty);
+
+      await writeShellPrefOrigins(prefs, {
+        ShellPrefKey.theme: ShellPrefOrigin.cloud,
+        ShellPrefKey.locale: ShellPrefOrigin.local,
+        ShellPrefKey.playerName: ShellPrefOrigin.device,
+      });
+
+      final origins = shellPrefOriginsFromPrefs(prefs);
+      expect(origins[ShellPrefKey.theme], ShellPrefOrigin.cloud);
+      expect(origins[ShellPrefKey.locale], ShellPrefOrigin.local);
+      // device = no story: removed, not stored.
+      expect(origins.containsKey(ShellPrefKey.playerName), isFalse);
+    });
+
+    test('writes grow the record; clearing back to device removes the file',
+        () async {
+      final prefs = await SharedPreferences.getInstance();
+      await writeShellPrefOrigins(
+          prefs, {ShellPrefKey.theme: ShellPrefOrigin.local});
+      await writeShellPrefOrigins(
+          prefs, {ShellPrefKey.locale: ShellPrefOrigin.cloud});
+      expect(shellPrefOriginsFromPrefs(prefs).length, 2);
+
+      // Back to device for one key; the other survives.
+      await writeShellPrefOrigins(
+          prefs, {ShellPrefKey.theme: ShellPrefOrigin.device});
+      final origins = shellPrefOriginsFromPrefs(prefs);
+      expect(origins.keys, [ShellPrefKey.locale]);
+
+      await writeShellPrefOrigins(
+          prefs, {ShellPrefKey.locale: ShellPrefOrigin.device});
+      expect(prefs.getString(shellPrefOriginsKey), isNull);
+    });
+
+    test('malformed records read as empty, never throw', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(shellPrefOriginsKey, 'not json');
+      expect(shellPrefOriginsFromPrefs(prefs), isEmpty);
+      await prefs.setString(
+          shellPrefOriginsKey, jsonEncode({'dragon': 'cloud'}));
+      expect(shellPrefOriginsFromPrefs(prefs), isEmpty);
     });
   });
 
@@ -319,12 +366,27 @@ void main() {
       expect(stamps['theme'], isPositive);
     });
 
-    test('edits while signed out stay local (no stamp, no push)', () async {
+    test('edits while signed out stay local (no push, but marked + stamped)',
+        () async {
       appTheme.mode = ThemeMode.light;
       await account.debugFlushPendingPreferencePushes();
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('prefs.account.prefStamps'), isNull);
+
+      // The choice is still this device's story: it shows as local now and
+      // carries a stamp so a cloud value can never silently clobber it at
+      // the next sign-in (the reconcile loses, the edit pushes instead).
+      expect(
+          account.preferenceOrigin(ShellPrefKey.theme), ShellPrefOrigin.local);
+      givenServer();
+      await account.signInWithPassword('sync@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+      final stamps = jsonDecode(prefs.getString('prefs.account.prefStamps')!)
+          as Map<String, dynamic>;
+      expect(stamps['theme'], isPositive);
+      final data = jsonDecode(puts.last.body)['data'] as Map<String, dynamic>;
+      expect(data['kommons']['theme'], 'light');
     });
 
     test('sign-out clears the pending push queue', () async {
