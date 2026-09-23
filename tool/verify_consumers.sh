@@ -7,6 +7,7 @@
 #
 #   bash ../kommons/tool/verify_consumers.sh          # all gates
 #   bash ../kommons/tool/verify_consumers.sh --quick  # analyze only
+#   bash ../kommons/tool/verify_consumers.sh --list   # print registered consumers
 #   bash ../kommons/tool/verify_consumers.sh --help
 #
 # Consumers (edit CONSUMERS below as games join):
@@ -21,10 +22,29 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMONS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# name | directory | gates: a=analyze, t=test
+CONSUMERS=(
+  "commons|${COMMONS_DIR}|at"
+  "probe|${COMMONS_DIR}/examples/probe|at"
+)
+
 QUICK=0
 case "${1:-}" in
   --quick) QUICK=1 ;;
-  -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+  --list)
+    # Who is wired into the gate — the same list every run executes.
+    for entry in "${CONSUMERS[@]}"; do
+      IFS='|' read -r name dir gates <<<"$entry"
+      case "$gates" in
+        at|ta) g="analyze + test" ;;
+        a) g="analyze" ;;
+        t) g="test" ;;
+        *) g="$gates" ;;
+      esac
+      echo "$name [$g] $dir"
+    done
+    exit 0 ;;
+  -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
   "") ;;
   *) echo "unknown flag: $1 (try --help)"; exit 2 ;;
 esac
@@ -37,12 +57,6 @@ if ! command -v flutter >/dev/null 2>&1; then
     exit 2
   fi
 fi
-
-# name | directory | gates: a=analyze, t=test
-CONSUMERS=(
-  "commons|${COMMONS_DIR}|at"
-  "probe|${COMMONS_DIR}/examples/probe|at"
-)
 
 declare -a FAILED=()
 declare -a OK=()
