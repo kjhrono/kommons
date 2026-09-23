@@ -255,3 +255,155 @@ bool shellPrefShouldApply(
   }
   return (pull: pull, push: push);
 }
+
+// ---------------------------------------------------------------------------
+// Per-game settings: the `games` map beside the shell keys
+// ---------------------------------------------------------------------------
+//
+// A host game can opt into the sync with its own namespaced map, stored
+// beside the shell's keys so the two scopes never collide:
+//
+// ```json
+// { "kommons": {
+//     "theme": "dark",
+//     "games": {
+//         "kalcio": { "difficulty": "hard", "sound": true },
+//         "updatedAt": { "kalcio": 1758500456 }
+//     }
+// } }
+// ```
+//
+// The shell owns the `games` key itself (and `updatedAt` inside it); the
+// host owns everything under its game id. The same per-key stamp rules as
+// the shell preferences apply, one level down: a game map pulls when the
+// cloud edit is at least as new as the local one, and pushes when this
+// device's map is strictly newer (or the cloud lacks the game entirely).
+
+/// The key inside the `kommons` metadata object holding the per-game maps.
+const kShellGamesSettingsKey = 'games';
+
+/// The stamps key *inside* the `games` map (reserved — hosts must not use
+/// it as a game id). Maps game id → epoch-seconds stamp.
+const kShellGamesStampsKey = 'updatedAt';
+
+/// Reads the per-game slice (`kommons.games`) out of a full user-metadata
+/// map: game id → its settings map. Absent or malformed entries never
+/// throw; entries that are not maps are dropped. The reserved stamps key
+/// is included as-is — readers must skip it (the helpers here do).
+Map<String, dynamic> shellGameSettingsFromMetadata(
+    Map<String, dynamic> metadata) {
+  final blob = metadata[kShellPreferencesKey];
+  if (blob is! Map) return const {};
+  final games = blob[kShellGamesSettingsKey];
+  if (games is! Map) return const {};
+  return games.map((key, value) => MapEntry('$key', value));
+}
+
+/// Reads one game's settings map (empty when the game has none).
+Map<String, dynamic> shellGameSettings(
+        Map<String, dynamic> metadata, String gameId) =>
+    shellGameSettingsFromMetadata(metadata)[gameId] ?? const {};
+
+/// The per-game stamps (`kommons.games.updatedAt`), game id → epoch seconds.
+Map<String, int> shellGameSettingsStamps(Map<String, dynamic> metadata) {
+  final stamps = shellGameSettingsFromMetadata(metadata)[kShellGamesStampsKey];
+  if (stamps is! Map) return const {};
+  final out = <String, int>{};
+  stamps.forEach((key, value) {
+    if (value is int) out['$key'] = value;
+  });
+  return out;
+}
+
+/// Builds a full-metadata payload that merges [gamePatch] — game id → its
+/// complete settings map, or null to remove the game's entry — into the
+/// `kommons.games` map of [metadata], stamping touched games at [now]
+/// (epoch seconds) and carrying untouched ones forward untouched. Other
+/// metadata (shell keys, provider data, …) is preserved. Returns a fresh
+/// map; the input is not mutated.
+Map<String, dynamic> shellGameSettingsToMetadata(Map<String, dynamic> metadata,
+    Map<String, Map<String, dynamic>?> gamePatch, int now) {
+  final blob = metadata[kShellPreferencesKey] is Map
+      ? Map<String, dynamic>.from((metadata[kShellPreferencesKey] as Map)
+          .map((key, value) => MapEntry('$key', value)))
+      : <String, dynamic>{};
+  final games = blob[kShellGamesSettingsKey] is Map
+      ? Map<String, dynamic>.from((blob[kShellGamesSettingsKey] as Map)
+          .map((key, value) => MapEntry('$key', value)))
+      : <String, dynamic>{};
+  final stamps = Map<String, int>.from(shellGameSettingsStamps({
+    kShellPreferencesKey: {kShellGamesSettingsKey: games},
+  }));
+  gamePatch.forEach((gameId, settings) {
+    if (settings == null) {
+      games.remove(gameId);
+      stamps.remove(gameId);
+    } else {
+      games[gameId] = settings;
+      stamps[gameId] = now;
+    }
+  });
+  if (stamps.isNotEmpty) games[kShellGamesStampsKey] = stamps;
+  blob[kShellGamesSettingsKey] = games;
+  return {...metadata, kShellPreferencesKey: blob};
+}
+
+/// The per-game reconcile — the shell reconcile one level down. Compares
+/// the cloud `kommons.games` maps against this device's saved maps:
+///   * pull — the cloud's map for a game is at least as new as the local
+///     edit (a local stamp of 0 always accepts);
+///   * push — this device's map is strictly newer, or the cloud has no
+///     entry for the game at all.
+/// Both may be non-empty when different devices (or different games)
+/// edited different maps. The reserved stamps key never reconciles.
+({
+  Map<String, Map<String, dynamic>> pull,
+  Map<String, Map<String, dynamic>?> push,
+}) shellGameSettingsReconcile({
+  required Map<String, dynamic> cloudMetadata,
+  required Map<String, Map<String, dynamic>> localGames,
+  required Map<String, int> localStamps,
+}) {
+  final cloudGames = shellGameSettingsFromMetadata(cloudMetadata);
+  final cloudStamps = shellGameSettingsStamps(cloudMetadata);
+  final pull = <String, Map<String, dynamic>>{};
+  final push = <String, Map<String, dynamic>?>{};
+  final gameIds = {...cloudGames.keys, ...localGames.keys}
+      .where((id) => id != kShellGamesStampsKey)
+      .toSet();
+  for (final gameId in gameIds) {
+    final cloud = cloudGames[gameId];
+    final local = localGames[gameId];
+    final cloudStamp = cloudStamps[gameId] ?? 0;
+    final localStamp = localStamps[gameId] ?? 0;
+    // A pull whose map already matches local storage is a no-op: equal
+    // stamps after a delivered push re-confirm, they do not re-write.
+    if (cloud != null &&
+        (localStamp == 0 || cloudStamp >= localStamp) &&
+        !_jsonEquals(cloud, local)) {
+      pull[gameId] = cloud;
+    } else if (local != null && (cloud == null || localStamp > cloudStamp)) {
+      push[gameId] = local;
+    }
+  }
+  return (pull: pull, push: push);
+}
+
+/// Deep equality over JSON-shaped values (maps, lists, scalars).
+bool _jsonEquals(Object? a, Object? b) {
+  if (a is Map && b is Map) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || !_jsonEquals(a[key], b[key])) return false;
+    }
+    return true;
+  }
+  if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_jsonEquals(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  return a == b;
+}

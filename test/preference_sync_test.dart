@@ -445,4 +445,378 @@ void main() {
       expect(appTheme.value, ThemeMode.dark);
     });
   });
+
+  group('codec: per-game settings map', () {
+    test('reads the games slice, one game, and its stamps', () {
+      final metadata = {
+        'provider_id': 'x',
+        'kommons': {
+          'theme': 'dark',
+          'games': {
+            'kalcio': {'difficulty': 'hard', 'sound': true},
+            'scacchi': {'board': 'walnut'},
+            'updatedAt': {'kalcio': 500, 'scacchi': 400},
+          },
+        },
+      };
+
+      expect(shellGameSettingsFromMetadata(metadata).keys.toSet(),
+          {'kalcio', 'scacchi', 'updatedAt'});
+      expect(shellGameSettings(metadata, 'kalcio'),
+          {'difficulty': 'hard', 'sound': true});
+      expect(shellGameSettings(metadata, 'scacchi'), {'board': 'walnut'});
+      expect(shellGameSettings(metadata, 'missing'), isEmpty);
+      expect(
+          shellGameSettingsStamps(metadata), {'kalcio': 500, 'scacchi': 400});
+    });
+
+    test('absent or malformed games read as empty, never throw', () {
+      expect(shellGameSettingsFromMetadata({}), isEmpty);
+      expect(shellGameSettingsFromMetadata({'kommons': 'oops'}), isEmpty);
+      expect(
+          shellGameSettingsFromMetadata({
+            'kommons': {'games': 'oops'},
+          }),
+          isEmpty);
+      // A non-map game entry is dropped by the reader.
+      expect(
+          shellGameSettingsFromMetadata({
+            'kommons': {
+              'games': {'bad': 'not-a-map'}
+            },
+          }),
+          {'bad': 'not-a-map'});
+      expect(shellGameSettingsStamps({'kommons': 42}), isEmpty);
+    });
+
+    test(
+        'writing merges the game patch, preserving shell keys and provider data',
+        () {
+      final metadata = {
+        'must_change_password': true,
+        'kommons': {
+          'theme': 'dark',
+          'games': {
+            'kalcio': {'sound': false},
+            'updatedAt': {'kalcio': 100},
+          },
+        },
+      };
+
+      final written = shellGameSettingsToMetadata(
+          metadata,
+          {
+            'scacchi': {'board': 'walnut'}
+          },
+          999);
+
+      final kommons = written['kommons'] as Map<String, dynamic>;
+      expect(kommons['theme'], 'dark');
+      final games = kommons['games'] as Map<String, dynamic>;
+      expect(games['kalcio'], {'sound': false});
+      expect(games['scacchi'], {'board': 'walnut'});
+      expect(games['updatedAt'], {'kalcio': 100, 'scacchi': 999});
+      expect(written['must_change_password'], true);
+      // The input was not mutated.
+      expect((metadata['kommons'] as Map)['games'], isNot(equals(games)));
+    });
+
+    test('a null patch removes the game and its stamp', () {
+      final metadata = {
+        'kommons': {
+          'games': {
+            'kalcio': {'sound': false},
+            'scacchi': {'board': 'walnut'},
+            'updatedAt': {'kalcio': 100, 'scacchi': 200},
+          },
+        },
+      };
+
+      final written =
+          shellGameSettingsToMetadata(metadata, {'kalcio': null}, 0);
+
+      final games =
+          (written['kommons'] as Map)['games'] as Map<String, dynamic>;
+      expect(games.containsKey('kalcio'), isFalse);
+      expect(games['scacchi'], {'board': 'walnut'});
+      expect(games['updatedAt'], {'scacchi': 200});
+    });
+
+    test('reconcile: a cloud map pulls onto a device that never had the game',
+        () {
+      final result = shellGameSettingsReconcile(
+        cloudMetadata: {
+          'kommons': {
+            'games': {
+              'kalcio': {'difficulty': 'hard'},
+              'updatedAt': {'kalcio': 500},
+            },
+          },
+        },
+        localGames: const {},
+        localStamps: const {},
+      );
+
+      expect(result.pull.keys, ['kalcio']);
+      expect(result.pull['kalcio'], {'difficulty': 'hard'});
+      expect(result.push, isEmpty);
+    });
+
+    test('reconcile: a strictly-newer local map pushes, an older one pulls',
+        () {
+      final newer = shellGameSettingsReconcile(
+        cloudMetadata: {
+          'kommons': {
+            'games': {
+              'kalcio': {'difficulty': 'easy'},
+              'updatedAt': {'kalcio': 500},
+            },
+          },
+        },
+        localGames: {
+          'kalcio': {'difficulty': 'hard'},
+        },
+        localStamps: const {'kalcio': 900},
+      );
+      expect(newer.pull, isEmpty);
+      expect(newer.push.keys, ['kalcio']);
+
+      final older = shellGameSettingsReconcile(
+        cloudMetadata: {
+          'kommons': {
+            'games': {
+              'kalcio': {'difficulty': 'easy'},
+              'updatedAt': {'kalcio': 1200},
+            },
+          },
+        },
+        localGames: {
+          'kalcio': {'difficulty': 'hard'},
+        },
+        localStamps: const {'kalcio': 900},
+      );
+      expect(older.pull.keys, ['kalcio']);
+      expect(older.push, isEmpty);
+    });
+
+    test('reconcile: equal stamps are a no-op; different games merge both ways',
+        () {
+      final same = shellGameSettingsReconcile(
+        cloudMetadata: {
+          'kommons': {
+            'games': {
+              'kalcio': {'sound': true},
+              'updatedAt': {'kalcio': 500},
+            },
+          },
+        },
+        localGames: {
+          'kalcio': {'sound': true},
+        },
+        localStamps: const {'kalcio': 500},
+      );
+      expect(same.pull, isEmpty);
+      expect(same.push, isEmpty);
+
+      final both = shellGameSettingsReconcile(
+        cloudMetadata: {
+          'kommons': {
+            'games': {
+              'kalcio': {'cloud': true},
+              'updatedAt': {'kalcio': 500},
+            },
+          },
+        },
+        localGames: {
+          'scacchi': {'local': true},
+        },
+        localStamps: const {'scacchi': 700},
+      );
+      expect(both.pull.keys, ['kalcio']);
+      expect(both.push.keys, ['scacchi']);
+    });
+  });
+
+  group('AccountController per-game settings sync', () {
+    late List<http.Request> puts;
+
+    void givenGameServer({
+      Map<String, dynamic> metadata = const {},
+    }) {
+      puts = [];
+      account.serverConnection = () async =>
+          const ServerConnection(url: 'https://shell.test', apiKey: 'k');
+      account.authService = AuthService(
+        serverUrl: 'https://shell.test',
+        apiKey: 'k',
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/v1/signup')) {
+            return http.Response(
+                jsonEncode({
+                  'error_code': 'user_already_registered',
+                  'msg': 'User already registered',
+                }),
+                422);
+          }
+          if (request.url.path.endsWith('/auth/v1/token')) {
+            return http.Response(
+                jsonEncode({
+                  'access_token': 'at-game',
+                  'refresh_token': 'rt-game',
+                  'expires_at': 1900000000,
+                  'user': {
+                    'id': 'u9',
+                    'email': 'game@shell.test',
+                    'user_metadata': metadata,
+                  },
+                }),
+                200);
+          }
+          if (request.url.path.endsWith('/auth/v1/user')) {
+            if (request.method == 'PUT') {
+              puts.add(request);
+              return http.Response('{}', 200);
+            }
+            return http.Response(
+                jsonEncode({
+                  'id': 'u9',
+                  'email': 'game@shell.test',
+                  'user_metadata': metadata,
+                }),
+                200);
+          }
+          return http.Response('unexpected', 404);
+        }),
+      );
+    }
+
+    test('sign-in pulls a cloud game map and fires the pull signal', () async {
+      givenGameServer(metadata: {
+        'kommons': {
+          'games': {
+            'kalcio': {'difficulty': 'hard', 'crowd': 'roaring'},
+            'updatedAt': {'kalcio': 1900000000},
+          },
+        },
+      });
+
+      await account.signInWithPassword('game@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+
+      expect(await account.gameSettings('kalcio'),
+          {'difficulty': 'hard', 'crowd': 'roaring'});
+      expect(account.preferencesPulled.value, greaterThan(0));
+    });
+
+    test('setGameSettings saves locally and pushes through the debounced flush',
+        () async {
+      givenGameServer();
+      await account.signInWithPassword('game@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+      final putsAfterSignIn = puts.length;
+
+      await account.setGameSettings('kalcio', {'difficulty': 'hard'});
+      await account.debugFlushPendingPreferencePushes();
+
+      expect(await account.gameSettings('kalcio'), {'difficulty': 'hard'});
+      expect(puts.length, greaterThan(putsAfterSignIn));
+      final data = jsonDecode(puts.last.body)['data'] as Map<String, dynamic>;
+      final games = (data['kommons'] as Map)['games'] as Map<String, dynamic>;
+      expect(games['kalcio'], {'difficulty': 'hard'});
+      expect((games['updatedAt'] as Map)['kalcio'], isPositive);
+      final prefs = await SharedPreferences.getInstance();
+      final stamps =
+          jsonDecode(prefs.getString('prefs.account.gameSettings.stamps')!)
+              as Map<String, dynamic>;
+      expect(stamps['kalcio'], isPositive);
+    });
+
+    test('an identical save is a no-op (no stamp, no push)', () async {
+      givenGameServer();
+      await account.signInWithPassword('game@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+      final putsAfterSignIn = puts.length;
+
+      await account.setGameSettings('kalcio', {'difficulty': 'hard'});
+      await account.debugFlushPendingPreferencePushes();
+      final putsAfterEdit = puts.length;
+
+      await account.setGameSettings('kalcio', {'difficulty': 'hard'});
+      await account.debugFlushPendingPreferencePushes();
+
+      expect(puts.length, putsAfterEdit);
+      final prefs = await SharedPreferences.getInstance();
+      final stamps =
+          jsonDecode(prefs.getString('prefs.account.gameSettings.stamps')!)
+              as Map<String, dynamic>;
+      expect(stamps['kalcio'], isPositive); // from the first edit only
+      expect(putsAfterEdit, greaterThan(putsAfterSignIn));
+    });
+
+    test('an offline edit survives sign-in and pushes onto a fresh account',
+        () async {
+      // Signed out: the edit persists locally with a stamp, no push.
+      await account.setGameSettings('kalcio', {'difficulty': 'hard'});
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('prefs.account.gameSettings.stamps'), isNotNull);
+      final saved = jsonDecode(prefs.getString('prefs.account.gameSettings')!)
+          as Map<String, dynamic>;
+      expect(saved['kalcio'], {'difficulty': 'hard'});
+
+      givenGameServer();
+      await account.signInWithPassword('game@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+
+      final data = jsonDecode(puts.last.body)['data'] as Map<String, dynamic>;
+      expect(((data['kommons'] as Map)['games'] as Map)['kalcio'],
+          {'difficulty': 'hard'});
+    });
+
+    test('a newer local map survives an older cloud blob and pushes', () async {
+      await account.setGameSettings('kalcio', {'difficulty': 'hard'});
+      givenGameServer(metadata: {
+        'kommons': {
+          'games': {
+            'kalcio': {'difficulty': 'easy'},
+            'updatedAt': {'kalcio': 100},
+          },
+        },
+      });
+
+      await account.signInWithPassword('game@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+
+      // The local choice won: nothing pulled over it, it went up instead.
+      expect(await account.gameSettings('kalcio'), {'difficulty': 'hard'});
+      expect(account.preferencesPulled.value, 0);
+      final data = jsonDecode(puts.last.body)['data'] as Map<String, dynamic>;
+      expect(((data['kommons'] as Map)['games'] as Map)['kalcio'],
+          {'difficulty': 'hard'});
+    });
+
+    test('a game edit leaves the shell keys and other games untouched',
+        () async {
+      givenGameServer(metadata: {
+        'kommons': {
+          'theme': 'dark',
+          'games': {
+            'scacchi': {'board': 'walnut'},
+            'updatedAt': {'scacchi': 100},
+          },
+        },
+      });
+      await account.signInWithPassword('game@shell.test', 'whatever-1');
+      await account.debugFlushPendingPreferencePushes();
+
+      await account.setGameSettings('kalcio', {'difficulty': 'hard'});
+      await account.debugFlushPendingPreferencePushes();
+
+      final data = jsonDecode(puts.last.body)['data'] as Map<String, dynamic>;
+      final kommons = data['kommons'] as Map<String, dynamic>;
+      expect(kommons['theme'], 'dark');
+      final games = kommons['games'] as Map<String, dynamic>;
+      expect(games['scacchi'], {'board': 'walnut'});
+      expect(games['kalcio'], {'difficulty': 'hard'});
+    });
+  });
 }

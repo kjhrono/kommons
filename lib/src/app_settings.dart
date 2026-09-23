@@ -497,9 +497,11 @@ class AccountController extends ValueNotifier<Account?> {
     final prefs = await SharedPreferences.getInstance();
 
     Map<String, dynamic> cloudPreferences;
+    Map<String, dynamic> cloudMetadata;
     try {
       final user = await service.fetchUser(session.accessToken);
-      cloudPreferences = shellPreferencesFromMetadata(user.metadata);
+      cloudMetadata = user.metadata;
+      cloudPreferences = shellPreferencesFromMetadata(cloudMetadata);
     } catch (_) {
       // Unreachable server, revoked token, malformed answer: quiet no-op —
       // the local experience is already correct and the next sign-in
@@ -523,6 +525,17 @@ class AccountController extends ValueNotifier<Account?> {
       localStamps: localStamps,
     );
 
+    // Per-game maps ride the same session fetch: reconcile them against
+    // this device's saved maps — the same last-writer-wins rules, one
+    // level down (see shell_preferences.dart).
+    final localGames = _localGames ?? await readLocalGameSettings(prefs);
+    final localGameStamps = _gameStamps ?? await readLocalGameStamps(prefs);
+    final gameReconcile = shellGameSettingsReconcile(
+      cloudMetadata: cloudMetadata,
+      localGames: localGames,
+      localStamps: localGameStamps,
+    );
+
     if (reconcile.pull.isNotEmpty) {
       var changed = 0;
       for (final entry in reconcile.pull.entries) {
@@ -537,13 +550,45 @@ class AccountController extends ValueNotifier<Account?> {
       if (changed > 0) _notifyPreferencesPulled(changed);
     }
 
+    if (gameReconcile.pull.isNotEmpty) {
+      var changed = 0;
+      final games =
+          Map<String, Map<String, dynamic>>.from(_localGames ?? localGames);
+      gameReconcile.pull.forEach((gameId, cloudMap) {
+        if (!_jsonEquals(games[gameId], cloudMap)) changed++;
+        games[gameId] = cloudMap;
+      });
+      _localGames = games;
+      await writeLocalGameSettings(prefs, games);
+      // Stamp with the cloud's own stamps: this device has seen the merge.
+      final cloudGameStamps = shellGameSettingsStamps(cloudMetadata);
+      final stamps = Map<String, int>.from(localGameStamps);
+      for (final gameId in gameReconcile.pull.keys) {
+        stamps[gameId] = cloudGameStamps[gameId] ?? 0;
+      }
+      _gameStamps = stamps;
+      await writeLocalGameStamps(prefs, stamps);
+      // The same pull signal drives the "preferences loaded" notice: a
+      // game's map arriving from the account is the account bringing
+      // preferences in, just for the game's own scope.
+      if (changed > 0) {
+        _notifyPreferencesPulled(changed);
+        notifyListeners();
+      }
+    }
+
     // Push back so the server carries the union (a fresh account gets this
     // device's defaults; a merge keeps both sides' newest keys). The patch
     // stamps the pushed keys now and carries the cloud stamps forward.
     // Values this device kept (its edit is fresher than the cloud's) keep
     // their local origin — the push does not change their story. Untouched
     // keys are absent from push and stay device-default.
+    // Push back so the server carries the union (shell keys and per-game
+    // maps composed into one PUT when both sides have something). Values
+    // this device kept (its edit is fresher than the cloud's) keep their
+    // local origin — the push does not change their story.
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    var pushMetadata = session.userMetadata;
     if (reconcile.push.isNotEmpty) {
       await _markPreferenceOrigins(prefs,
           {for (final key in reconcile.push.keys) key: ShellPrefOrigin.local});
@@ -551,29 +596,40 @@ class AccountController extends ValueNotifier<Account?> {
       // carries: a delivered edit is this device's story locally too, and
       // the next reconcile sees equal stamps and adds no PUT.
       await _stampLocalEdits(prefs, reconcile.push, cloudStampFor: (_) => now);
-      final pushPayload = shellPreferencePatch(
-          cloudPreferences,
+      pushMetadata = shellPreferencesToMetadata(
+          pushMetadata,
+          shellPreferencePatch(
+              cloudPreferences,
+              {
+                for (final entry in reconcile.push.entries)
+                  entry.key.key: entry.value,
+              },
+              now));
+    }
+    if (gameReconcile.push.isNotEmpty) {
+      final stamps = Map<String, int>.from(localGameStamps);
+      for (final gameId in gameReconcile.push.keys) {
+        stamps[gameId] = now;
+      }
+      _gameStamps = stamps;
+      await writeLocalGameStamps(prefs, stamps);
+      pushMetadata = shellGameSettingsToMetadata(
+          pushMetadata,
           {
-            for (final entry in reconcile.push.entries)
-              entry.key.key: entry.value,
+            for (final entry in gameReconcile.push.entries)
+              entry.key: entry.value,
           },
           now);
+    }
+    if (!identical(pushMetadata, session.userMetadata)) {
       try {
         await service.updateUserMetadata(
           accessToken: session.accessToken,
-          data: shellPreferencesToMetadata(session.userMetadata, pushPayload),
+          data: pushMetadata,
         );
         // Refresh the local session's metadata copy so a later push (e.g.
         // a settings edit without a new fetch) sees the union.
-        _session = AuthSession(
-          accessToken: session.accessToken,
-          refreshToken: session.refreshToken,
-          expiresAt: session.expiresAt,
-          userId: session.userId,
-          email: session.email,
-          userMetadata:
-              shellPreferencesToMetadata(session.userMetadata, pushPayload),
-        );
+        _session = session.copyWith(userMetadata: pushMetadata);
         await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       } on AuthException {
         // The pull already applied; the push retries on the next sign-in.
@@ -693,29 +749,47 @@ class AccountController extends ValueNotifier<Account?> {
 
   Future<void> _flushPendingPushes() async {
     final session = _session;
-    if (session == null || _pendingPushes.isEmpty) return;
+    if (session == null ||
+        (_pendingPushes.isEmpty && _pendingGamePushes.isEmpty)) {
+      return;
+    }
     final service = await _ensureService();
     if (service == null) return;
     final pending = Map<ShellPrefKey, String>.from(_pendingPushes);
     _pendingPushes.clear();
-    final current = shellPreferencesFromMetadata(session.userMetadata);
-    final payload = shellPreferencePatch(
-        current,
-        {for (final entry in pending.entries) entry.key.key: entry.value},
-        DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    final pendingGames =
+        Map<String, Map<String, dynamic>>.from(_pendingGamePushes);
+    _pendingGamePushes.clear();
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    var metadata = session.userMetadata;
+    if (pending.isNotEmpty) {
+      final current = shellPreferencesFromMetadata(session.userMetadata);
+      metadata = shellPreferencesToMetadata(
+          metadata,
+          shellPreferencePatch(
+              current,
+              {for (final entry in pending.entries) entry.key.key: entry.value},
+              now));
+    }
+    if (pendingGames.isNotEmpty) {
+      final stamps = Map<String, int>.from(_gameStamps ??
+          await readLocalGameStamps(await SharedPreferences.getInstance()));
+      for (final gameId in pendingGames.keys) {
+        stamps[gameId] = now;
+      }
+      _gameStamps = stamps;
+      metadata = shellGameSettingsToMetadata(metadata, pendingGames, now);
+    }
     try {
       await service.updateUserMetadata(
         accessToken: session.accessToken,
-        data: shellPreferencesToMetadata(session.userMetadata, payload),
+        data: metadata,
       );
-      _session = AuthSession(
-        accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
-        expiresAt: session.expiresAt,
-        userId: session.userId,
-        email: session.email,
-        userMetadata: shellPreferencesToMetadata(session.userMetadata, payload),
-      );
+      _session = session.copyWith(userMetadata: metadata);
+      if (pendingGames.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await writeLocalGameStamps(prefs, _gameStamps!);
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
     } on AuthException {
@@ -724,6 +798,140 @@ class AccountController extends ValueNotifier<Account?> {
       // already mark this device the winner.
       _pendingPushes.addAll(pending);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Per-game settings: local persistence + the host-facing sync API
+  // ------------------------------------------------------------------
+
+  /// This device's per-game settings maps, and their edit stamps — cached
+  /// after the first read so reads never re-decode the file.
+  Map<String, Map<String, dynamic>>? _localGames;
+  Map<String, int>? _gameStamps;
+
+  /// Loads a game's settings map from this device's store (empty when the
+  /// game has none here). Cheap after the first call.
+  Future<Map<String, dynamic>> gameSettings(String gameId) async {
+    final games = _localGames;
+    if (games != null) {
+      return games[gameId] ?? const {};
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final loaded = await readLocalGameSettings(prefs);
+    _localGames = loaded;
+    return loaded[gameId] ?? const {};
+  }
+
+  /// Saves [settings] as [gameId]'s local map, and — when signed in —
+  /// queues the debounced push exactly like the shell preferences do.
+  /// Never throws; offline edits keep the newer stamp and ride the next
+  /// sign-in's reconcile. The reserved stamps key inside [settings] is
+  /// stripped (hosts must not set it).
+  Future<void> setGameSettings(
+      String gameId, Map<String, dynamic> settings) async {
+    final clean = Map<String, dynamic>.from(settings)
+      ..remove(kShellGamesStampsKey);
+    final prefs = await SharedPreferences.getInstance();
+    final games =
+        Map<String, Map<String, dynamic>>.from(_localGames ?? const {});
+    if (_jsonEquals(games[gameId], clean)) return;
+    games[gameId] = clean;
+    _localGames = games;
+    await writeLocalGameSettings(prefs, games);
+    final stamps =
+        Map<String, int>.from(_gameStamps ?? await readLocalGameStamps(prefs));
+    stamps[gameId] = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    _gameStamps = stamps;
+    await writeLocalGameStamps(prefs, stamps);
+    if (_session == null) return;
+    _pendingGamePushes[gameId] = clean;
+    _syncPushTimer?.cancel();
+    _syncPushTimer = Timer(_syncPushDebounce, _flushPendingPushes);
+  }
+
+  /// Per-game maps queued by [setGameSettings] awaiting the flush.
+  final Map<String, Map<String, dynamic>> _pendingGamePushes = {};
+
+  /// Observers for provider-grant revocations attempted at sign-out (a
+  /// test seam — production code has no reason to spy on this). Each
+  /// callback receives whether the revoke URL was handed off to the
+  /// platform launcher.
+  final List<void Function(bool handedOff)> _revokeObservers = [];
+
+  /// Registers a revocation observer (see [_revokeObservers]).
+  @visibleForTesting
+  void debugObserveProviderRevocation(void Function(bool) observer) {
+    _revokeObservers.add(observer);
+  }
+
+  /// Deep-equality over JSON-shaped values (used to avoid re-writing and
+  /// re-pushing maps whose content did not change).
+  static bool _jsonEquals(Object? a, Object? b) {
+    if (a is Map && b is Map) {
+      if (a.length != b.length) return false;
+      for (final key in a.keys) {
+        if (!b.containsKey(key) || !_jsonEquals(a[key], b[key])) return false;
+      }
+      return true;
+    }
+    if (a is List && b is List) {
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (!_jsonEquals(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    return a == b;
+  }
+
+  static const _gamesKey = 'prefs.account.gameSettings';
+  static const _gameStampsKey = 'prefs.account.gameSettings.stamps';
+
+  /// Reads the persisted per-game maps. Malformed records read empty —
+  /// never a crash; entries that are not maps are dropped.
+  static Future<Map<String, Map<String, dynamic>>> readLocalGameSettings(
+      SharedPreferences prefs) async {
+    final raw = prefs.getString(_gamesKey);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      final out = <String, Map<String, dynamic>>{};
+      decoded.forEach((gameId, value) {
+        if (value is Map) {
+          out['$gameId'] = value.map((key, v) => MapEntry('$key', v));
+        }
+      });
+      return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Persists the per-game maps.
+  static Future<void> writeLocalGameSettings(
+      SharedPreferences prefs, Map<String, Map<String, dynamic>> games) async {
+    await prefs.setString(_gamesKey, jsonEncode(games));
+  }
+
+  /// Reads the persisted per-game stamps.
+  static Future<Map<String, int>> readLocalGameStamps(
+      SharedPreferences prefs) async {
+    final raw = prefs.getString(_gameStampsKey);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return decoded.map((k, v) => MapEntry('$k', v is int ? v : 0));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Persists the per-game stamps.
+  static Future<void> writeLocalGameStamps(
+      SharedPreferences prefs, Map<String, int> stamps) async {
+    await prefs.setString(_gameStampsKey, jsonEncode(stamps));
   }
 
   static const _syncPushDebounce = Duration(seconds: 3);
@@ -1291,6 +1499,9 @@ class AccountController extends ValueNotifier<Account?> {
     serverConnection = readStandardServerConnection;
     _syncPushTimer?.cancel();
     _pendingPushes.clear();
+    _pendingGamePushes.clear();
+    _localGames = null;
+    _gameStamps = null;
     preferencesPulled.value = 0;
     _syncNoticeAck = 0;
   }

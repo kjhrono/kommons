@@ -62,7 +62,7 @@ dependencies:
 | --- | --- |
 | `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. `onJoinInvite` receives a parsed invite when the app is opened through a join link (see **Invites** below); `onRecoveryLink` receives a reset-email link the same way. When an authorize-redirect link (`…#access_token=…`) re-opens the app with no OAuth flow waiting, the shell restores the session it carries (`restoreSessionsFromLinks: false` opts out). |
 | `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state, **cross-project preference sync**), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
-| `shell_preferences.dart` | The cross-project preference sync codec: the `kommons` slice of GoTrue `user_metadata` (theme, locale, player name) with per-key `updatedAt` stamps, the patch builder and the reconcile rules the controller runs on sign-in. See **Cross-project preference sync** below. |
+| `shell_preferences.dart` | The cross-project preference sync codec: the `kommons` slice of GoTrue `user_metadata` (theme, locale, player name) with per-key `updatedAt` stamps, the patch builder and the reconcile rules the controller runs on sign-in — plus the per-game settings map (`kommons.games.<gameId>`) hosts can opt into. See **Cross-project preference sync** below. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
 | `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession`, `AuthException`. Per-app configuration: point it at your auth server. |
 | `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons, forgot-password sub-form, forced change-password form after recovery, change-password section on the signed-in card), PLAYER NAME, Language (a real picker over `appLocale`). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
@@ -264,13 +264,25 @@ namespace keeps provider-written metadata and server flags
   account, Language app default, Player name from this device"* — rebuilt
   live on edits, pulls and sign-ins. Read it in code with
   `account.preferenceOrigin(key)`.
+* **Per-game settings opt in too** — a host can ride the same machinery
+  with its own namespaced map under `kommons.games.<gameId>` (stamped per
+  game in `kommons.games.updatedAt`): `await
+  account.setGameSettings(gameId, {…})` saves locally and pushes through
+  the same debounced flush; `await account.gameSettings(gameId)` reads the
+  merged map. The reconcile is the shell rules one level down — a newer
+  cloud map pulls on sign-in (and fires the same pull signal), a strictly
+  newer local map (e.g. an offline edit) pushes, equal stamps are no-ops.
+  Values are JSON-shaped (maps, lists, strings, numbers, bools); the
+  reserved `updatedAt` key inside a game map is stripped on save. Games
+  that never call the API are never synced and never stored.
 * **What never pushes** — unset choices (no language picked, the default
-  'Player' name) and everything per-game: `extraSections` state, server
-  connections, `gameId`-scoped keys stay host-side by design.
+  'Player' name) and everything else host-side by design: `extraSections`
+  widget state, server connections, `gameId`-scoped keys. (The per-game
+  *sync* above only carries what the host explicitly saves through it.)
 * **Test seams** — `account.debugFlushPendingPreferencePushes()` (await the
   sign-in sync, run the flush now), `appTheme.applySynced(mode)` /
   `appLocale.applySynced(language)` (apply a synced value without re-firing
-  the push loop), 21 tests in `test/preference_sync_test.dart`.
+  the push loop), 33 tests in `test/preference_sync_test.dart`.
 
 **Splash art ships with the package** — `assets/splash_bg.svg` plus three
 vignettes (`splash_caravan`, `splash_dungeon`, `splash_tame`), referenced as
