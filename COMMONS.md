@@ -9,9 +9,11 @@ each widget exposes.
 **Consumers today:** [`examples/probe`](examples/probe) — **HERALD**, a complete minimal game on the
 shared shell that ships *with this package* as both the new-game starting
 template and a consumer its tests exercise on every change.
-**Status:** this folder is its own git repo (first commit in place) with no
-remote yet — consumer games use a `path:` dependency from this machine, and
-their pubspecs document the `git:` flip for when a remote exists.
+**Status:** this folder is its own git repo, hosted at
+`github.com/kjhrono/kommons` (the CI badge in the README tracks the consumer
+gate). Consumer games use a `path:` dependency from beside this checkout,
+and their pubspecs document the `git:` flip for when a published ref makes
+sense.
 
 ```yaml
 dependencies:
@@ -225,8 +227,10 @@ in-app (email templates stay server-side):
   construction (`type=recovery` vs `join=`) — 18 tests in
   `test/recovery_link_test.dart`.
 * **Change password** — the signed-in card carries a section
-  (`change-password-section`, fields `current/current-password-field`,
-  `new/new-password-field`, `confirm/confirm-password-field`) that verifies
+  (`open-change-password` reveals it on the signed-in card; the fields are
+  `current-password-field`, `new-password-field`,
+  `confirm-password-field`, with `save-new-password` and, in the
+  temp-password flow, `not-now-password`) that verifies
   the current password and PUTs the new one (`PUT /auth/v1/user`). It doubles
   as the "first connect with the mailed temporary password, then set your
   own" path: sign in with the temp password, change it here.
@@ -370,15 +374,58 @@ The multiplayer UI speaks the shell's languages: every player-facing string in t
 ## Development
 
 ```bash
-bash tool/verify_consumers.sh   # ONE command: analyze + test for the
-                                # package and examples/probe
+bash tool/verify_consumers.sh          # ONE command: analyze + test for
+                                       # the package and examples/probe
+bash tool/verify_consumers.sh --list   # who is registered in the gate
 ```
 
 `--quick` runs analyze only. The same script is the CI gate
 (`.github/workflows/consumers.yml` calls it on every push/PR), so local and
 remote verification can never drift apart. Consumer failures are collected,
-not short-circuited — one broken game never hides another's result. Add a
-new game by appending a line to `CONSUMERS` in `tool/verify_consumers.sh`.
+not short-circuited — one broken game never hides another's result.
 
 When you change the package, the consumers' gates are the proof the seams
 hold — the probe's suite exercises them on every run.
+
+### Bringing a game into the consumer gate
+
+A game joins CI verification with two edits in *this* repo — the game
+itself needs no workflow of its own, because kommons runs the gates:
+
+1. **Check it out beside kommons in CI** — add a step to
+   `.github/workflows/consumers.yml`, next to the commons checkout:
+
+   ```yaml
+   - name: Checkout <game> (consumer)
+     uses: actions/checkout@v4
+     with:
+       repository: <org>/<game>
+       ref: master
+       path: <game>
+   ```
+
+2. **Append it to `CONSUMERS`** in `tool/verify_consumers.sh`:
+
+   ```bash
+   CONSUMERS=(
+     "commons|${COMMONS_DIR}|at"
+     "probe|${COMMONS_DIR}/examples/probe|at"
+     "<game>|${COMMONS_DIR}/../<game>|at"
+   )
+   ```
+
+   Each entry is `name|directory|gates`; gates is `a` (analyze), `t`
+   (test) or `at` (both). `bash tool/verify_consumers.sh --list` prints
+   the registered consumers with their gates — the same list every run
+   executes.
+
+The layout contract behind both edits: the game lives in a `<game>/`
+folder *beside* `kommons/` — in CI (the checkout paths above) and
+locally (your projects folder) alike — and its pubspec consumes the
+package with a `path:` dependency (`../kommons`; flip to `git:` when a
+published ref exists). One layout serves development and the gate
+identically, so `bash tool/verify_consumers.sh` locally is exactly what
+CI runs. The gate runs the game's whole `flutter test` suite (analyze
+runs even under `--quick`), tolerates a locally missing game directory
+only by failing it, and exits non-zero on any failure — a shell change
+that breaks a joined game can never land.
