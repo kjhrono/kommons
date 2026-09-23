@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kommons/kommons.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The shared lobby step: seats by game number, solo start, and the single
@@ -116,5 +117,63 @@ void main() {
     await tester.pump();
 
     expect(handoff!.self.name, 'Mara');
+  });
+
+  group('invite QR', () {
+    testWidgets(
+        'a committed code with a base URL shows a QR encoding the invite link',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SharedLobbyStep(
+            onHandoff: (_) {},
+            initialCode: 'K7QX2',
+            inviteBaseUrl: Uri.parse('https://game.example/play'),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(
+          find.byKey(const ValueKey('shared-lobby-invite-qr')), findsOneWidget);
+      // The QR encodes exactly the invite link — same contract the copy
+      // and email buttons share (asserted via the semantics label, the
+      // widget's public echo of its payload).
+      final qr = tester.widget<QrImageView>(find.byType(QrImageView));
+      expect(qr.semanticsLabel, 'https://game.example/play#join=K7QX2');
+      expect(find.text(appLocale.strings.inviteQrHint), findsOneWidget);
+    });
+
+    testWidgets(
+        'no base URL means no QR — a fragment-only invite is nothing to scan',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SharedLobbyStep(onHandoff: (_) {}, initialCode: 'K7QX2'),
+        ),
+      ));
+      await tester.pump();
+
+      // The invite section itself is still there (copy, email…).
+      expect(find.byKey(const ValueKey('shared-lobby-invite-link')),
+          findsOneWidget);
+      expect(
+          find.byKey(const ValueKey('shared-lobby-invite-qr')), findsNothing);
+    });
+
+    testWidgets('the QR hides until the code is committed', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SharedLobbyStep(
+            onHandoff: (_) {},
+            inviteBaseUrl: Uri.parse('https://game.example/play'),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(
+          find.byKey(const ValueKey('shared-lobby-invite-qr')), findsNothing);
+    });
   });
 }

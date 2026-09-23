@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import '../app_settings.dart' show account, appLocale;
@@ -88,7 +89,12 @@ class _SeatRow extends StatelessWidget {
 /// colors come from the shared [nextFreeBannerColorHex] picker so the seats'
 /// banners stay distinct.
 class SharedLobbyStep extends StatefulWidget {
-  const SharedLobbyStep({super.key, required this.onHandoff, this.initialCode});
+  const SharedLobbyStep({
+    super.key,
+    required this.onHandoff,
+    this.initialCode,
+    this.inviteBaseUrl,
+  });
 
   /// Fired exactly once, when the player starts the game (solo, hot-seat,
   /// or online). The game's NEW-GAME section receives the handoff and
@@ -100,6 +106,14 @@ class SharedLobbyStep extends StatefulWidget {
   /// pasted link). Non-empty commits the number immediately, locking it
   /// like any join: an invited player never types the code by hand.
   final String? initialCode;
+
+  /// The page the invite link — and the QR code beside it — builds on, for
+  /// hosts on platforms without a natural base URL (mobile builds: the
+  /// game's landing page so a scan opens somewhere meaningful). Null (the
+  /// default) means the link builds on `Uri.base` on web and the QR stays
+  /// hidden where no base exists — a fragment-only invite is nothing to
+  /// scan.
+  final Uri? inviteBaseUrl;
 
   @override
   State<SharedLobbyStep> createState() => _SharedLobbyStepState();
@@ -161,7 +175,21 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
 
   /// The invite string for the committed code, as the host shares it.
   String get _inviteLink =>
-      JoinInvite(code: _joinedCode ?? '').link(base: _linkBase);
+      JoinInvite(code: _joinedCode ?? '').link(base: _effectiveLinkBase);
+
+  /// The URL the QR encodes — null when there is nothing worth scanning:
+  /// no committed code, or no base to build a full URL on (a bare
+  /// `#join=…` fragment is meaningless to a phone's camera). Web provides
+  /// its own page; hosts on other platforms opt in via [SharedLobbyStep.inviteBaseUrl].
+  Uri? get _qrUrl {
+    final base = _effectiveLinkBase;
+    final code = _joinedCode;
+    if (base == null || code == null || code.isEmpty) return null;
+    return Uri.tryParse(JoinInvite(code: code).link(base: base));
+  }
+
+  /// The host's explicit base wins; web falls back to the page itself.
+  Uri? get _effectiveLinkBase => widget.inviteBaseUrl ?? _linkBase;
 
   /// This device's seat: the persisted player's name (falling back to the
   /// localized default) carrying the next free banner color.
@@ -310,106 +338,140 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
   @override
   Widget build(BuildContext context) {
     final strings = appLocale.strings;
-    return Column(
-      key: const ValueKey('shared-lobby-step'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(strings.seatsHeader,
-            style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 12),
-        _SeatRow(seat: _self, isSelf: true),
-        for (final guest in _guests)
-          _SeatRow(seat: guest, onRemove: () => _removeSeat(guest)),
-        const SizedBox(height: 16),
-        TextField(
-          key: const ValueKey('shared-lobby-game-number'),
-          controller: _codeController,
-          focusNode: _codeFocus,
-          enabled: _guests.isEmpty && !_joining && !_codeLocked,
-          decoration: InputDecoration(
-            labelText: strings.gameNumberLabel,
-            hintText: strings.gameNumberHint,
-            errorText: _codeError,
-            prefixIcon: const Icon(Icons.numbers),
-          ),
-          onSubmitted: (_) => _addSeat(),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: FilledButton.tonalIcon(
-            key: const ValueKey('shared-lobby-add-seat'),
-            onPressed: (!_joining && (_inviteOnly || _guests.isEmpty))
-                ? _addSeat
-                : null,
-            icon: _joining
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.group_add),
-            label: Text(strings.addSeat),
-          ),
-        ),
-        if (_codeLocked) ...[
-          const SizedBox(height: 20),
-          Text(strings.inviteHeader,
+    // Scrollable: the step grows with every seat, the invite link, and
+    // the QR — small viewports must reach the start buttons.
+    return SingleChildScrollView(
+      child: Column(
+        key: const ValueKey('shared-lobby-step'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(strings.seatsHeader,
               style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          _SeatRow(seat: _self, isSelf: true),
+          for (final guest in _guests)
+            _SeatRow(seat: guest, onRemove: () => _removeSeat(guest)),
+          const SizedBox(height: 16),
           TextField(
-            key: const ValueKey('shared-lobby-invite-link'),
-            controller: TextEditingController(text: _inviteLink),
-            readOnly: true,
+            key: const ValueKey('shared-lobby-game-number'),
+            controller: _codeController,
+            focusNode: _codeFocus,
+            enabled: _guests.isEmpty && !_joining && !_codeLocked,
             decoration: InputDecoration(
-              labelText: strings.inviteLinkLabel,
-              hintText: strings.inviteLinkHint,
-              prefixIcon: const Icon(Icons.link),
+              labelText: strings.gameNumberLabel,
+              hintText: strings.gameNumberHint,
+              errorText: _codeError,
+              prefixIcon: const Icon(Icons.numbers),
             ),
+            onSubmitted: (_) => _addSeat(),
           ),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            OutlinedButton.icon(
-              key: const ValueKey('shared-lobby-invite-copy'),
-              onPressed: _copyInviteLink,
-              icon: const Icon(Icons.copy),
-              label: Text(strings.inviteCopy),
-            ),
-            OutlinedButton.icon(
-              key: const ValueKey('shared-lobby-invite-email'),
-              onPressed: _emailInviteLink,
-              icon: const Icon(Icons.mail_outline),
-              label: Text(strings.inviteSendEmail),
-            ),
-          ]),
-        ] else ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              key: const ValueKey('shared-lobby-invite-paste'),
-              onPressed: _pasteInvite,
-              icon: const Icon(Icons.content_paste),
-              label: Text(strings.invitePaste),
+            child: FilledButton.tonalIcon(
+              key: const ValueKey('shared-lobby-add-seat'),
+              onPressed: (!_joining && (_inviteOnly || _guests.isEmpty))
+                  ? _addSeat
+                  : null,
+              icon: _joining
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.group_add),
+              label: Text(strings.addSeat),
             ),
           ),
+          if (_codeLocked) ...[
+            const SizedBox(height: 20),
+            Text(strings.inviteHeader,
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('shared-lobby-invite-link'),
+              controller: TextEditingController(text: _inviteLink),
+              readOnly: true,
+              decoration: InputDecoration(
+                labelText: strings.inviteLinkLabel,
+                hintText: strings.inviteLinkHint,
+                prefixIcon: const Icon(Icons.link),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              OutlinedButton.icon(
+                key: const ValueKey('shared-lobby-invite-copy'),
+                onPressed: _copyInviteLink,
+                icon: const Icon(Icons.copy),
+                label: Text(strings.inviteCopy),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('shared-lobby-invite-email'),
+                onPressed: _emailInviteLink,
+                icon: const Icon(Icons.mail_outline),
+                label: Text(strings.inviteSendEmail),
+              ),
+            ]),
+            if (_qrUrl != null) ...[
+              const SizedBox(height: 12),
+              Center(
+                key: const ValueKey('shared-lobby-invite-qr'),
+                child: Column(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    // A white mat keeps the code scannable in dark mode (the
+                    // shell's default): QR readers want a quiet zone, not the
+                    // app's theme.
+                    child: QrImageView(
+                      data: _qrUrl!.toString(),
+                      size: 148,
+                      backgroundColor: Colors.white,
+                      // Screen readers announce the invite itself.
+                      semanticsLabel: _qrUrl!.toString(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(strings.inviteQrHint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center),
+                ]),
+              ),
+            ],
+          ] else ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: const ValueKey('shared-lobby-invite-paste'),
+                onPressed: _pasteInvite,
+                icon: const Icon(Icons.content_paste),
+                label: Text(strings.invitePaste),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text(strings.hotSeatNote,
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            key: const ValueKey('shared-lobby-start-online'),
+            onPressed: _guests.isEmpty ? null : _startOnline,
+            icon: const Icon(Icons.sensors),
+            label: Text(strings.joinGame),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('shared-lobby-start-solo'),
+            onPressed: _startSolo,
+            icon: const Icon(Icons.person),
+            label: Text(strings.soloStart),
+          ),
         ],
-        const SizedBox(height: 16),
-        Text(strings.hotSeatNote, style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          key: const ValueKey('shared-lobby-start-online'),
-          onPressed: _guests.isEmpty ? null : _startOnline,
-          icon: const Icon(Icons.sensors),
-          label: Text(strings.joinGame),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          key: const ValueKey('shared-lobby-start-solo'),
-          onPressed: _startSolo,
-          icon: const Icon(Icons.person),
-          label: Text(strings.soloStart),
-        ),
-      ],
+      ),
     );
   }
 }

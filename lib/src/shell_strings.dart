@@ -191,6 +191,8 @@ class ShellStrings {
     this.inviteCopy = 'Copy link',
     this.inviteCopied = 'Link copied — send it to your players.',
     this.inviteSendEmail = 'Send by email',
+    this.inviteQrHint =
+        'Phone players can scan this to join — no copying, no typing.',
     this.inviteShare = 'Share…',
     this.invitePaste = 'Paste a link you were sent',
     this.invitePastedJoin = 'Invite found — join as {name}?',
@@ -337,6 +339,7 @@ class ShellStrings {
       String? inviteCopy,
       String? inviteCopied,
       String? inviteSendEmail,
+      String? inviteQrHint,
       String? inviteShare,
       String? invitePaste,
       String? invitePastedJoin,
@@ -518,6 +521,8 @@ class ShellStrings {
         inviteCopied =
             inviteCopied ?? 'Link copiato — invialo ai tuoi giocatori.',
         inviteSendEmail = inviteSendEmail ?? 'Invia per email',
+        inviteQrHint =
+            'Chi gioca da telefono può scansionarlo per entrare: niente copia, niente digitazione.',
         inviteShare = 'Condividi…',
         invitePaste = invitePaste ?? 'Incolla un link che ti è stato inviato',
         invitePastedJoin =
@@ -761,6 +766,8 @@ class ShellStrings {
   final String inviteCopied;
   final String inviteSendEmail;
 
+  /// Caption under the lobby's invite QR code.
+  final String inviteQrHint;
   final String inviteShare;
   final String invitePaste;
   final String invitePastedJoin;

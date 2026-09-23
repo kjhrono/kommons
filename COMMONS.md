@@ -153,7 +153,13 @@ the lobby renders an invite section: the shareable link
 opens the same app; a portable `#join=…` fragment elsewhere), **Copy
 link**, and **Send by email** (a pre-filled `mailto:` the player
 addresses — the shell sees no contacts; where no mail handler exists the
-link lands on the clipboard instead).
+link lands on the clipboard instead), and a **QR code** for phone players:
+scan-to-join, nothing to copy or type. The QR encodes the same full invite
+URL the link field shows and appears only where that URL is meaningful —
+on web (the page's own origin) or wherever the host passes
+`SharedLobbyStep(inviteBaseUrl: …)` (e.g. the game's landing page on
+mobile builds); with no base URL it stays hidden, because a bare
+`#join=…` fragment is nothing a phone's camera can open.
 
 On the other end the link carries the table to the friend:
 
@@ -324,7 +330,7 @@ flavor line (660–860 ms) → foreground vignette rises into place last
 | `game_server_dialog.dart` | `showGameServerConnectionDialog` + `saveGameServerConnection`/`storedGameServerUrl` — the shared connect-to-game-server onboarding. |
 | `banner_color_picker.dart` | `bannerPalette`, `showBannerColorPicker`, and the `bannerColor`/`bannerColorHex` codecs every banner tint flows through. |
 | `lobby_wizard.dart` | `LobbyWizard` — the new-game wizard frame: progress rail (tappable nodes, done-checks), "Step X of Y — Title" header, Back/Continue nav (hidden on first/last step). Host supplies `steps: List<LobbyStepDescriptor>` (title, icon, optional `subtitle`), `current`, `onGoto`, `body`, optional `title`, `appBarActions`, and `canContinue(stepIndex)` — the per-step gate that disables Continue until the host says the step is complete (the rail stays free navigation). |
-| `lobby_step.dart` | `SharedLobbyStep` — the shared one-screen lobby for games that don't need a wizard: the local seat (persisted `account` name + next free banner color), extra seats joined by entering the game number (field locks while seats are attached, unlocks when all are removed), an **invite section** once a number is committed (see below), and START SOLO. Exactly one callback — `onHandoff(SharedLobbyHandoff)` — carries `self`, the guest `seats`, the `roomCode` (null offline) and the `online` flag into the game's NEW-GAME section, where the shell's work ends. Pass `initialCode:` to seat a player who arrived through an invite link. Fully localized, keys prefixed `shared-lobby-*`. |
+| `lobby_step.dart` | `SharedLobbyStep` — the shared one-screen lobby for games that don't need a wizard: the local seat (persisted `account` name + next free banner color), extra seats joined by entering the game number (field locks while seats are attached, unlocks when all are removed), an **invite section** (link, copy, email, QR — see below) once a number is committed, and START SOLO. Exactly one callback — `onHandoff(SharedLobbyHandoff)` — carries `self`, the guest `seats`, the `roomCode` (null offline) and the `online` flag into the game's NEW-GAME section, where the shell's work ends. Pass `initialCode:` to seat a player who arrived through an invite link, `inviteBaseUrl:` to make the QR scannable on non-web builds. Fully localized, keys prefixed `shared-lobby-*`. |
 | `join_link.dart` | `JoinInvite` + `joinInviteFromUri` / `joinInviteFromClipboardText` — the invite codec: `…#join=K7QX2` (fragment, or `?join=` for hosted shorteners, optional `&server=`) parses in, `link(base:)` builds the shareable string; `copyJoinLink` / `readJoinLinkClipboard` wrap the system clipboard (null-safe where none exists). |
 
 The multiplayer UI speaks the shell's languages: every player-facing string in the room card, handover section and server dialog comes from `ShellStrings`, following the same `appLocale` pick as the rest of the shell.
