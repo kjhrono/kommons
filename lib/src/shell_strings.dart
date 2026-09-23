@@ -193,7 +193,8 @@ class ShellStrings {
     this.inviteSendEmail = 'Send by email',
     this.inviteQrHint =
         'Phone players can scan this to join — no copying, no typing.',
-    this.inviteShare = 'Share…',
+    this.inviteShare = 'Share the QR',
+    this.inviteQrSharedPattern = 'QR shared — players scan it to join {code}.',
     this.invitePaste = 'Paste a link you were sent',
     this.invitePastedJoin = 'Invite found — join as {name}?',
     this.inviteNothingToPaste = 'Nothing to paste — copy an invite link first.',
@@ -341,6 +342,7 @@ class ShellStrings {
       String? inviteSendEmail,
       String? inviteQrHint,
       String? inviteShare,
+      String? inviteQrSharedPattern,
       String? invitePaste,
       String? invitePastedJoin,
       String? inviteNothingToPaste,
@@ -523,7 +525,9 @@ class ShellStrings {
         inviteSendEmail = inviteSendEmail ?? 'Invia per email',
         inviteQrHint =
             'Chi gioca da telefono può scansionarlo per entrare: niente copia, niente digitazione.',
-        inviteShare = 'Condividi…',
+        inviteShare = inviteShare ?? 'Condividi il QR',
+        inviteQrSharedPattern = inviteQrSharedPattern ??
+            'QR condiviso — i giocatori lo scansionano per entrare ({code}).',
         invitePaste = invitePaste ?? 'Incolla un link che ti è stato inviato',
         invitePastedJoin =
             invitePastedJoin ?? 'Invito trovato — entrare come {name}?',
@@ -768,6 +772,13 @@ class ShellStrings {
 
   /// Caption under the lobby's invite QR code.
   final String inviteQrHint;
+
+  /// Confirmation after the invite QR image was shared successfully.
+  final String inviteQrSharedPattern;
+
+  String inviteQrShared(String code) =>
+      inviteQrSharedPattern.replaceAll('{code}', code);
+
   final String inviteShare;
   final String invitePaste;
   final String invitePastedJoin;

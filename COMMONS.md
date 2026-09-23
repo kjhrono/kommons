@@ -159,7 +159,11 @@ URL the link field shows and appears only where that URL is meaningful —
 on web (the page's own origin) or wherever the host passes
 `SharedLobbyStep(inviteBaseUrl: …)` (e.g. the game's landing page on
 mobile builds); with no base URL it stays hidden, because a bare
-`#join=…` fragment is nothing a phone's camera can open.
+`#join=…` fragment is nothing a phone's camera can open. **Share the QR**
+renders that QR as a PNG (white mat, testable via `qrShareExecutor`) and
+hands it to the platform share sheet (`share_plus`) with the invite link
+riding along as text — straight into a chat app. Where no share handler
+exists it falls back to copying the link, exactly like the email button.
 
 On the other end the link carries the table to the friend:
 

@@ -7,6 +7,7 @@ import '../app_settings.dart' show account, appLocale;
 import 'banner_color_picker.dart';
 import 'join_link.dart';
 import 'lobby_seat.dart';
+import 'qr_share.dart' as qr_share;
 
 /// Everything the host app needs to take over: this device's seat, the rest
 /// of the table, the shared room code ([GameSyncService.roomCode] reads it
@@ -190,6 +191,33 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
 
   /// The host's explicit base wins; web falls back to the page itself.
   Uri? get _effectiveLinkBase => widget.inviteBaseUrl ?? _linkBase;
+
+  /// Opens the platform share sheet with the QR rendered as an image (the
+  /// invite link rides along as text) so a phone host can push the code
+  /// straight into a chat app. Where no share handler exists, the invite
+  /// link lands on the clipboard instead — same fallback as the email
+  /// button.
+  Future<void> _shareInviteQr() async {
+    final code = _joinedCode ?? '';
+    final outcome = await qr_share.qrShareExecutor(
+      data: _inviteLink,
+      inviteLink: _inviteLink,
+    );
+    if (!mounted) return;
+    if (outcome == qr_share.QrShareOutcome.fallback) {
+      await copyJoinLink(_inviteLink);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(appLocale.strings.inviteCopied)));
+      }
+      return;
+    }
+    if (outcome == qr_share.QrShareOutcome.shared) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(appLocale.strings.inviteQrShared(code))));
+    }
+    // dismissed: the player backed out — nothing to say.
+  }
 
   /// This device's seat: the persisted player's name (falling back to the
   /// localized default) carrying the next free banner color.
@@ -410,6 +438,12 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
                 onPressed: _emailInviteLink,
                 icon: const Icon(Icons.mail_outline),
                 label: Text(strings.inviteSendEmail),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('shared-lobby-invite-share-qr'),
+                onPressed: _shareInviteQr,
+                icon: const Icon(Icons.ios_share),
+                label: Text(strings.inviteShare),
               ),
             ]),
             if (_qrUrl != null) ...[
