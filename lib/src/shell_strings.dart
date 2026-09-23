@@ -199,9 +199,24 @@ class ShellStrings {
     this.inviteShare = 'Share the QR',
     this.inviteQrSharedPattern = 'QR shared — players scan it to join {code}.',
     this.invitePaste = 'Paste a link you were sent',
+    this.inviteScan = 'Scan a friend’s QR',
+    this.inviteScanCameraUnavailable =
+        'Camera unavailable — enter the number instead.',
     this.invitePastedJoin = 'Invite found — join as {name}?',
     this.inviteNothingToPaste = 'Nothing to paste — copy an invite link first.',
     this.inviteJoinedWith = 'Invited as {name} — number locked in.',
+    // Lobby entry: the proposed persona and the two front doors.
+    this.lobbyNameLabel = 'Your name',
+    this.lobbyNameHint = 'how other players will see you',
+    this.lobbySingle = 'SINGLE-PLAYER',
+    this.lobbyMulti = 'MULTI-PLAYER',
+    // Open seats: unclaimed roster slots another player takes by tap.
+    this.openSeatPattern = 'SEAT {n} — open',
+    this.claimSeatTooltip = 'Take this seat',
+    this.claimSeatTitle = 'Take a seat',
+    this.claimSeatHint = 'The name the table will see for this seat.',
+    this.claimSeat = 'Take the seat',
+    this.claimedSeatToast = 'Seat taken — welcome, {name}!',
   });
 
   /// The Italian catalog. Word order and idiom follow Italian, not the
@@ -349,9 +364,21 @@ class ShellStrings {
       String? inviteShare,
       String? inviteQrSharedPattern,
       String? invitePaste,
+      String? inviteScan,
+      String? inviteScanCameraUnavailable,
       String? invitePastedJoin,
       String? inviteNothingToPaste,
-      String? inviteJoinedWith})
+      String? inviteJoinedWith,
+      String? lobbyNameLabel,
+      String? lobbyNameHint,
+      String? lobbySingle,
+      String? lobbyMulti,
+      String? openSeatPattern,
+      String? claimSeatTooltip,
+      String? claimSeatTitle,
+      String? claimSeatHint,
+      String? claimSeat,
+      String? claimedSeatToast})
       : switchThemeTooltip = switchThemeTooltip ?? 'Cambia tema giorno/notte',
         settingsTooltip = settingsTooltip ?? 'Impostazioni',
         newGame = newGame ?? 'NUOVA PARTITA',
@@ -538,12 +565,27 @@ class ShellStrings {
         inviteQrSharedPattern = inviteQrSharedPattern ??
             'QR condiviso — i giocatori lo scansionano per entrare ({code}).',
         invitePaste = invitePaste ?? 'Incolla un link che ti è stato inviato',
+        inviteScan = inviteScan ?? 'Scansiona il QR di un amico',
+        inviteScanCameraUnavailable = inviteScanCameraUnavailable ??
+            'Fotocamera non disponibile: inserisci il numero.',
         invitePastedJoin =
             invitePastedJoin ?? 'Invito trovato — entrare come {name}?',
         inviteNothingToPaste =
             'Niente da incollare: copia prima un link di invito.',
         inviteJoinedWith =
-            inviteJoinedWith ?? 'Invitato come {name} — numero già inserito.';
+            inviteJoinedWith ?? 'Invitato come {name} — numero già inserito.',
+        lobbyNameLabel = lobbyNameLabel ?? 'Il tuo nome',
+        lobbyNameHint = lobbyNameHint ?? 'come ti vedranno gli altri giocatori',
+        lobbySingle = lobbySingle ?? 'GIOCO SINGOLO',
+        lobbyMulti = lobbyMulti ?? 'MULTIGIOCATORE',
+        openSeatPattern = openSeatPattern ?? 'POSTO {n} — libero',
+        claimSeatTooltip = claimSeatTooltip ?? 'Prendi questo posto',
+        claimSeatTitle = claimSeatTitle ?? 'Prendi un posto',
+        claimSeatHint =
+            claimSeatHint ?? 'Il nome che vedrà il tavolo per questo posto.',
+        claimSeat = claimSeat ?? 'Prendi il posto',
+        claimedSeatToast =
+            claimedSeatToast ?? 'Posto preso — benvenuto, {name}!';
 
   /// The catalog for [language] (unknown codes fall back to English, the
   /// same rule the persisted-locale loader applies). A host-installed
@@ -799,7 +841,29 @@ class ShellStrings {
   final String invitePaste;
   final String invitePastedJoin;
   final String inviteNothingToPaste;
+  final String inviteScan;
+  final String inviteScanCameraUnavailable;
   final String inviteJoinedWith;
+
+  // -- Lobby entry + open seats -------------------------------------------
+  final String lobbyNameLabel;
+  final String lobbyNameHint;
+  final String lobbySingle;
+  final String lobbyMulti;
+  final String openSeatPattern;
+  final String claimSeatTooltip;
+  final String claimSeatTitle;
+  final String claimSeatHint;
+  final String claimSeat;
+  final String claimedSeatToast;
+
+  /// The open-seat label: 'SEAT 2 — open' — an unclaimed roster slot
+  /// waiting for the friend who will sit there.
+  String openSeat(int n) => openSeatPattern.replaceAll('{n}', '$n');
+
+  /// The welcome after a seat is claimed: 'Seat taken — welcome, Rook!'.
+  String claimedSeatWelcome(String name) =>
+      claimedSeatToast.replaceAll('{name}', name);
 
   /// The confirm dialog asking the pasted/received invite's player to
   /// take the seat as their persisted persona: 'Invito trovato — entrare

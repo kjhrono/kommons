@@ -218,10 +218,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(
-          find.byKey(const ValueKey('shared-lobby-remove-Guest 2')));
+          find.byKey(const ValueKey('shared-lobby-remove-open-2')));
       await tester.pumpAndSettle();
       await tester
-          .tap(find.byKey(const ValueKey('shared-lobby-remove-Guest 2')));
+          .tap(find.byKey(const ValueKey('shared-lobby-remove-open-2')));
       await tester.pumpAndSettle();
 
       // The invite section is gone and the number unlocks for a fresh join.

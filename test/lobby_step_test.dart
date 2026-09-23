@@ -53,12 +53,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
 
-    // The guest chip appeared and the number locked (no second join).
-    expect(find.byKey(const ValueKey('shared-lobby-seat-Guest 2')),
-        findsOneWidget);
-    final add = tester.widget<FilledButton>(
-        find.byKey(const ValueKey('shared-lobby-add-seat')));
-    expect(add.onPressed, isNull);
+    // An open slot appeared — no name asked — and the number committed.
+    expect(
+        find.byKey(const ValueKey('shared-lobby-seat-open-2')), findsOneWidget);
+
+    // Claim it, then JOIN GAME carries the claimed seat online.
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-claim-2')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('shared-lobby-claim-name')), 'Ines');
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-claim-confirm')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('shared-lobby-start-online')));
     await tester.pump();
@@ -66,11 +71,12 @@ void main() {
     expect(handoff, isNotNull);
     expect(handoff!.online, isTrue);
     expect(handoff!.roomCode, 'K7QX2');
-    expect(handoff!.seats.single.name, 'Guest 2');
+    expect(handoff!.seats.single.name, 'Ines');
     expect(handoff!.self.name, 'Player');
   });
 
-  testWidgets('removing a guest unlocks the game number again', (tester) async {
+  testWidgets('removing an open slot unlocks the game number again',
+      (tester) async {
     SharedLobbyHandoff? handoff;
     await tester.pumpWidget(host(onHandoff: (h) => handoff = h));
     await tester.pump();
@@ -79,15 +85,17 @@ void main() {
         find.byKey(const ValueKey('shared-lobby-game-number')), 'K7QX2');
     await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('shared-lobby-remove-Guest 2')));
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-remove-open-2')));
     await tester.pumpAndSettle();
 
     expect(
-        find.byKey(const ValueKey('shared-lobby-seat-Guest 2')), findsNothing);
-    final add = tester.widget<FilledButton>(
-        find.byKey(const ValueKey('shared-lobby-add-seat')));
-    expect(add.onPressed, isNotNull,
-        reason: 'the number unlocked for a new join');
+        find.byKey(const ValueKey('shared-lobby-seat-open-2')), findsNothing);
+    // The committed number is nobody's join any more — the field reads
+    // empty and unlocked for a fresh join.
+    final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('shared-lobby-game-number')));
+    expect(field.enabled, isTrue);
+    expect(field.controller!.text, isEmpty);
     expect(handoff, isNull, reason: 'removing a seat never fires the handoff');
   });
 

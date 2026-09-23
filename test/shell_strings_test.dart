@@ -141,6 +141,12 @@ void main() {
       expect(find.byKey(const ValueKey('language-it')), findsOneWidget);
       expect(find.text('English'), findsOneWidget);
       expect(find.text('Italiano'), findsOneWidget);
+
+      // Unset still shows a selection: the shell runs in English until a
+      // choice exists, so the radio reflects that instead of blank.
+      final group = tester.widget<RadioGroup<ShellLanguage>>(
+          find.byType(RadioGroup<ShellLanguage>));
+      expect(group.groupValue, ShellLanguage.english);
     });
 
     testWidgets('picking Italian persists and repaints the screen',

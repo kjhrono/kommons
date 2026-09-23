@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart' as launcher;
 import '../app_settings.dart' show account, appLocale;
 import 'banner_color_picker.dart';
 import 'join_link.dart';
+import 'join_scan.dart' as join_scan;
 import 'lobby_seat.dart';
 import 'qr_share.dart' as qr_share;
 
@@ -33,13 +34,27 @@ class SharedLobbyHandoff {
   final bool online;
 }
 
-/// One entry of the roster editor: a [LobbySeat] chip plus its remove button.
+/// One entry of the roster editor: a [LobbySeat] chip plus its remove
+/// button. An *open* seat (empty name) renders as "SEAT X — open" with a
+/// claim button instead of a name.
 class _SeatRow extends StatelessWidget {
-  const _SeatRow({required this.seat, this.isSelf = false, this.onRemove});
+  const _SeatRow({
+    required this.seat,
+    this.isSelf = false,
+    this.seatNumber,
+    this.onRemove,
+    this.onClaim,
+  });
 
   final LobbySeat seat;
   final bool isSelf;
+
+  /// The roster number an open seat advertises (self is seat 1).
+  final int? seatNumber;
   final VoidCallback? onRemove;
+  final VoidCallback? onClaim;
+
+  bool get _isOpen => !isSelf && seat.name.isEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -48,21 +63,39 @@ class _SeatRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(children: [
         Expanded(
-          child: Chip(
-            key: ValueKey('shared-lobby-seat-${seat.name}'),
-            avatar: CircleAvatar(
-              backgroundColor: seat.color,
-              child: Text(
-                seat.name.isNotEmpty ? seat.name[0].toUpperCase() : '?',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-            label: Text(seat.name),
-          ),
+          child: _isOpen
+              ? Chip(
+                  key: ValueKey('shared-lobby-seat-open-$seatNumber'),
+                  avatar: CircleAvatar(
+                    backgroundColor: seat.color,
+                    child: const Icon(Icons.person_add_alt, size: 16),
+                  ),
+                  label: Text(strings.openSeat(seatNumber ?? 0)),
+                )
+              : Chip(
+                  key: ValueKey('shared-lobby-seat-${seat.name}'),
+                  avatar: CircleAvatar(
+                    backgroundColor: seat.color,
+                    child: Text(
+                      seat.name.isNotEmpty ? seat.name[0].toUpperCase() : '?',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  label: Text(seat.name),
+                ),
         ),
+        if (_isOpen && onClaim != null)
+          IconButton(
+            key: ValueKey('shared-lobby-claim-$seatNumber'),
+            tooltip: strings.claimSeatTooltip,
+            onPressed: onClaim,
+            icon: const Icon(Icons.how_to_reg_outlined),
+          ),
         if (!isSelf && onRemove != null)
           IconButton(
-            key: ValueKey('shared-lobby-remove-${seat.name}'),
+            key: ValueKey(_isOpen
+                ? 'shared-lobby-remove-open-$seatNumber'
+                : 'shared-lobby-remove-${seat.name}'),
             tooltip: strings.removeSeatTooltip,
             onPressed: onRemove,
             icon: const Icon(Icons.person_remove_outlined),
@@ -123,6 +156,10 @@ class SharedLobbyStep extends StatefulWidget {
 class _SharedLobbyStepState extends State<SharedLobbyStep> {
   final _codeController = TextEditingController();
   final _codeFocus = FocusNode();
+
+  /// The seats beside the local player. An *open* seat is a roster slot
+  /// offered to the next player: it carries an empty name until someone
+  /// claims it (tap → name dialog → the name replaces the open label).
   final _guests = <LobbySeat>[];
   String? _codeError;
   bool _joining = false;
@@ -136,11 +173,6 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
   /// the code joins the handoff. Removing every seat releases it.
   bool _codeLocked = false;
 
-  /// True when the committed number arrived from an invite (initial link
-  /// or paste) rather than a hand-typed join: the invited player keeps
-  /// adding friends' seats to the same table without re-entering it.
-  bool _inviteOnly = false;
-
   @override
   void initState() {
     super.initState();
@@ -151,7 +183,6 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
     if (initial != null && initial.isNotEmpty) {
       _joinedCode = initial;
       _codeLocked = true;
-      _inviteOnly = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -228,10 +259,18 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
 
   List<LobbySeat> get _everyone => [_self, ..._guests];
 
+  /// The roster's size limit: the local player plus up to seven seats —
+  /// the largest table the shell's banner palette stays readable for.
+  static const _maxSeats = 8;
+
+  /// ADD SEAT opens a roster slot for the next player rather than asking
+  /// a name up front: the new seat appears as "SEAT X — open" and stays
+  /// open until someone claims it. A number typed into the field commits
+  /// with the first seat (the game's real invite flow talks to the server
+  /// when the game starts); an invited lobby's code is already locked.
   Future<void> _addSeat() async {
     final strings = appLocale.strings;
-    // An invited lobby commits its code up front: extra seats join the
-    // same table without re-typing it. A hand-typed lobby reads the field.
+    if (_everyone.length >= _maxSeats) return;
     final code = _joinedCode ?? _codeController.text.trim();
     if (code.isEmpty) {
       setState(() => _codeError = strings.gameNumberMissing);
@@ -242,36 +281,97 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
       _codeError = null;
       _joining = true;
     });
-    final taken = _everyone.map((s) => s.colorHex).toSet();
-    final guest = LobbySeat(
-      name: '${strings.guest} ${_guests.length + 2}',
-      colorHex: nextFreeBannerColorHex(taken: taken),
-    );
     // The join keeps its own focus on the form: either the seat is added
-    // and the number locks (the game's actual invite flow talks to the
-    // server when the game starts), or the error explains what to fix.
+    // and the number locks, or the error explains what to fix.
     await Future<void>.delayed(const Duration(milliseconds: 250));
     if (!mounted) return;
     setState(() {
       _joining = false;
       _joinedCode = code;
       _codeLocked = true;
-      _guests.add(guest);
+      _guests.add(LobbySeat(
+        name: '', // open — claimed by whoever sits down
+        colorHex: nextFreeBannerColorHex(
+            taken: _everyone.map((s) => s.colorHex).toSet()),
+      ));
       _codeController.clear();
     });
   }
 
-  void _removeSeat(LobbySeat seat) {
+  /// Claims an open seat for another player: a small dialog asks the name
+  /// the table will see, and the open label is replaced by it. An empty
+  /// submission keeps the seat open — nothing else changes.
+  Future<void> _claimSeat(int index) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => const _ClaimSeatDialog(),
+    );
+    if (!mounted) return;
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) return;
+    setState(() => _guests[index] =
+        LobbySeat(name: trimmed, colorHex: _guests[index].colorHex));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(appLocale.strings.claimedSeatWelcome(trimmed))));
+  }
+
+  void _removeSeat(int index) {
     setState(() {
-      _guests.remove(seat);
+      _guests.removeAt(index);
       if (_guests.isEmpty) {
         // The last seat gone: the committed number is nobody's join any
         // more — release it (field unlocks, invite section goes).
         _codeLocked = false;
-        _inviteOnly = false;
         _joinedCode = null;
       }
     });
+  }
+
+  /// Opens the camera scanner and, on a read, sits the player at that
+  /// table after a confirm: the code commits and locks exactly like a
+  /// hand-typed join. No usable result (camera unavailable, or the read
+  /// carried no invite) — the same inline error the manual form shows.
+  Future<void> _scanInvite() async {
+    final strings = appLocale.strings;
+    final result = await join_scan.joinScanExecutor(
+      context: context,
+      scanLabel: strings.inviteScan,
+    );
+    if (!mounted) return;
+    switch (result.outcome) {
+      case join_scan.JoinScanOutcome.dismissed:
+        return; // The player closed the scanner — nothing to say.
+      case join_scan.JoinScanOutcome.failed:
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(strings.inviteScanCameraUnavailable)));
+        return;
+      case join_scan.JoinScanOutcome.joined:
+        final accepted = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(strings.inviteHeader),
+            content: Text(strings.invitePastedJoinAs(account.playerName)),
+            actions: [
+              TextButton(
+                key: const ValueKey('shared-lobby-invite-cancel'),
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(strings.cancel),
+              ),
+              FilledButton(
+                key: const ValueKey('shared-lobby-invite-accept'),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(strings.confirm),
+              ),
+            ],
+          ),
+        );
+        if (accepted != true || !mounted) return;
+        setState(() {
+          _joinedCode = result.code;
+          _codeLocked = true;
+          _codeError = null;
+        });
+    }
   }
 
   /// Reads a received invite off the clipboard and, after a confirm, sits
@@ -310,7 +410,6 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
     setState(() {
       _joinedCode = invite.code;
       _codeLocked = true;
-      _inviteOnly = true;
       _codeError = null;
     });
   }
@@ -354,7 +453,10 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
       ));
 
   void _startOnline() {
+    // The table starts only when every promised seat has been claimed:
+    // an open slot is a promise not yet kept.
     if (_guests.isEmpty || !_codeLocked) return;
+    if (_guests.any((seat) => seat.name.isEmpty)) return;
     widget.onHandoff(SharedLobbyHandoff(
       self: _self,
       seats: List.unmodifiable(_guests),
@@ -376,9 +478,15 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
           Text(strings.seatsHeader,
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          _SeatRow(seat: _self, isSelf: true),
-          for (final guest in _guests)
-            _SeatRow(seat: guest, onRemove: () => _removeSeat(guest)),
+          _SeatRow(seat: _self, isSelf: true, seatNumber: 1),
+          for (final entry in _guests.asMap().entries)
+            _SeatRow(
+              seat: entry.value,
+              seatNumber: entry.key + 2,
+              onRemove: () => _removeSeat(entry.key),
+              onClaim:
+                  entry.value.name.isEmpty ? () => _claimSeat(entry.key) : null,
+            ),
           const SizedBox(height: 16),
           TextField(
             key: const ValueKey('shared-lobby-game-number'),
@@ -398,9 +506,10 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
             alignment: Alignment.centerRight,
             child: FilledButton.tonalIcon(
               key: const ValueKey('shared-lobby-add-seat'),
-              onPressed: (!_joining && (_inviteOnly || _guests.isEmpty))
-                  ? _addSeat
-                  : null,
+              // Stays open while the table grows: the number commits with
+              // the first seat, further ADD SEAT presses just open slots.
+              onPressed:
+                  (!_joining && _everyone.length < _maxSeats) ? _addSeat : null,
               icon: _joining
                   ? const SizedBox(
                       width: 16,
@@ -479,11 +588,22 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                key: const ValueKey('shared-lobby-invite-paste'),
-                onPressed: _pasteInvite,
-                icon: const Icon(Icons.content_paste),
-                label: Text(strings.invitePaste),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    key: const ValueKey('shared-lobby-invite-scan'),
+                    onPressed: _scanInvite,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: Text(strings.inviteScan),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('shared-lobby-invite-paste'),
+                    onPressed: _pasteInvite,
+                    icon: const Icon(Icons.content_paste),
+                    label: Text(strings.invitePaste),
+                  ),
+                ],
               ),
             ),
           ],
@@ -493,7 +613,11 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
           const SizedBox(height: 16),
           FilledButton.icon(
             key: const ValueKey('shared-lobby-start-online'),
-            onPressed: _guests.isEmpty ? null : _startOnline,
+            // Disabled until every promised seat is claimed: an open slot
+            // is a player who has not sat down yet.
+            onPressed: (_guests.isEmpty || _guests.any((s) => s.name.isEmpty))
+                ? null
+                : _startOnline,
             icon: const Icon(Icons.sensors),
             label: Text(strings.joinGame),
           ),
@@ -506,6 +630,56 @@ class _SharedLobbyStepState extends State<SharedLobbyStep> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The claim-a-seat dialog: asks the name the table will see for an open
+/// seat. Owns its text controller (popped during the exit animation is
+/// fine — the dialog state lives until the route is gone). Pops the typed
+/// name; cancel or a blank submission pops null, keeping the seat open.
+class _ClaimSeatDialog extends StatefulWidget {
+  const _ClaimSeatDialog();
+
+  @override
+  State<_ClaimSeatDialog> createState() => _ClaimSeatDialogState();
+}
+
+class _ClaimSeatDialogState extends State<_ClaimSeatDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = appLocale.strings;
+    return AlertDialog(
+      title: Text(strings.claimSeatTitle),
+      content: TextField(
+        key: const ValueKey('shared-lobby-claim-name'),
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: strings.lobbyNameLabel,
+          helperText: strings.claimSeatHint,
+        ),
+        onSubmitted: (text) => Navigator.pop(context, text),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(strings.cancel),
+        ),
+        FilledButton(
+          key: const ValueKey('shared-lobby-claim-confirm'),
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: Text(strings.claimSeat),
+        ),
+      ],
     );
   }
 }
