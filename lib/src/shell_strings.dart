@@ -116,6 +116,9 @@ class ShellStrings {
     this.welcomePattern = 'Welcome, {name}, to {app}',
     this.welcomeBackPattern = 'Welcome back, {name} — {app} awaits',
     this.signedInAsPattern = 'Signed in as {email}',
+    this.signedInWithProviderPattern = 'Signed in with {provider} · {email}',
+    this.githubGrantNote =
+        'GitHub access must also be revoked on github.com (Settings → Applications) — signing out here cannot reach it.',
     this.confirmationSentPattern =
         'We sent a confirmation to {email}. Enter the code from the email — or open its link — to finish registering.',
     this.stepHeaderPattern = 'Step {step} of {total} — {title}',
@@ -276,6 +279,8 @@ class ShellStrings {
       String? welcomePattern,
       String? welcomeBackPattern,
       String? signedInAsPattern,
+      String? signedInWithProviderPattern,
+      String? githubGrantNote,
       String? confirmationSentPattern,
       String? stepHeaderPattern,
       String? hostedHere,
@@ -436,6 +441,10 @@ class ShellStrings {
             welcomeBackPattern ?? 'Bentornato, {name} — {app} ti aspetta',
         signedInAsPattern =
             signedInAsPattern ?? 'Accesso effettuato come {email}',
+        signedInWithProviderPattern = signedInWithProviderPattern ??
+            'Accesso effettuato con {provider} · {email}',
+        githubGrantNote = githubGrantNote ??
+            'L\'accesso GitHub va revocato anche su github.com (Impostazioni → Applicazioni): il disconnessione qui non può arrivarci.',
         confirmationSentPattern =
             'Ti abbiamo inviato una conferma a {email}. Inserisci il codice dalla mail — o apri il suo link — per completare la registrazione.',
         stepHeaderPattern =
@@ -672,6 +681,14 @@ class ShellStrings {
   /// 'Signed in as {email}'
   final String signedInAsPattern;
 
+  /// The signed-in line when the session came from an OAuth provider.
+  final String signedInWithProviderPattern;
+
+  /// Shown under a GitHub session: the provider grant cannot be revoked
+  /// client-side (see `oauth_revoke.dart`) — the player does it themselves
+  /// on github.com.
+  final String githubGrantNote;
+
   /// The signup confirmation line with the {email} spelled out.
   final String confirmationSentPattern;
 
@@ -810,6 +827,11 @@ class ShellStrings {
   /// The settings line under a signed-in address.
   String signedInAs(String email) =>
       signedInAsPattern.replaceAll('{email}', email);
+
+  String signedInWithProvider(String provider, String email) =>
+      signedInWithProviderPattern
+          .replaceAll('{provider}', provider)
+          .replaceAll('{email}', email);
 
   /// The signup confirmation line with the address spelled out.
   String confirmationSent(String email) =>

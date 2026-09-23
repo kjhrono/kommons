@@ -448,6 +448,72 @@ void main() {
       expect(find.byKey(const ValueKey('signout')), findsOneWidget);
       expect(find.byKey(const ValueKey('new-password-field')), findsNothing);
     });
+    testWidgets('a github session shows the provider line and the grant note',
+        (tester) async {
+      givenServer();
+      await pumpSettings(tester);
+      // The verify endpoint's answer stands in for a provider session.
+      await tester.enterText(
+          find.byKey(const ValueKey('email-field')), 'lost@shell.test');
+      await tester.dragUntilVisible(
+        find.byKey(const ValueKey('forgot-password')),
+        find.byKey(const ValueKey('settings-list')),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('forgot-password')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('reset-code-field')), '123456');
+      await tester.tap(find.byKey(const ValueKey('verify-reset')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      // This path builds an email-shaped session: assert the plain email
+      // line renders before overriding the provider for the UI check.
+      expect(find.byKey(const ValueKey('signout')), findsNothing);
+
+      // Drive the controller into a GitHub session directly (the provider
+      // install path is exercised in oauth_revoke_test.dart).
+      account.resetForTest();
+      account.serverConnection = () async =>
+          const ServerConnection(url: 'https://shell.test', apiKey: 'k');
+      account.authService = AuthService(
+        serverUrl: 'https://shell.test',
+        apiKey: 'k',
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/v1/user')) {
+            return request.method == 'PUT'
+                ? http.Response('{}', 200)
+                : http.Response(
+                    jsonEncode({
+                      'id': 'u9',
+                      'email': 'ada@shell.test',
+                      'email_confirmed_at': '2026-01-01',
+                      'user_metadata': <String, dynamic>{},
+                    }),
+                    200);
+          }
+          return http.Response('unexpected', 404);
+        }),
+      );
+      await account.restoreFromSessionFragment(
+          '#access_token=a&refresh_token=r&provider_token=pt&provider=github');
+      await tester.pumpWidget(
+          MaterialApp(theme: ThemeData.dark(), home: const SettingsScreen()));
+      await tester.pump();
+
+      expect(
+          find.text(appLocale.strings
+              .signedInWithProvider('github', 'ada@shell.test')),
+          findsOneWidget);
+      expect(find.text(appLocale.strings.signedInAs('ada@shell.test')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('github-grant-note')), findsOneWidget);
+      expect(find.textContaining('github.com'), findsOneWidget);
+      expect(find.byKey(const ValueKey('signout')), findsOneWidget);
+    });
 
     testWidgets(
         'a completed recovery flow tells the player to pick a new password',

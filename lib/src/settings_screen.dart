@@ -605,9 +605,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                               ],
                             ] else ...[
-                              Text(strings.signedInAs(account.value!.email),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600)),
+                              if (account.value!.provider == 'email')
+                                Text(strings.signedInAs(account.value!.email),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600))
+                              else
+                                Text(
+                                    strings.signedInWithProvider(
+                                        account.value!.provider,
+                                        account.value!.email),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600)),
                               Text(
                                 account.isCloudSignedIn
                                     ? strings.cloudAccountReady
@@ -615,6 +623,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 style: TextStyle(
                                     color: Colors.grey.shade500, fontSize: 12),
                               ),
+                              if (account.value!.provider == 'github') ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  strings.githubGrantNote,
+                                  key: const ValueKey('github-grant-note'),
+                                  style: TextStyle(
+                                      color: Colors.amber.shade300,
+                                      fontSize: 12),
+                                ),
+                              ],
                               const SizedBox(height: 8),
                               OutlinedButton.icon(
                                 key: const ValueKey('signout'),
