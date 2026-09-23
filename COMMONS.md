@@ -189,7 +189,11 @@ scans the code straight off the screen: the lobby's camera **scan button**
 (`scanInviteWithCamera`) reads a QR from the seat-side camera and commits
 the number exactly like a typed join. Where the camera is unavailable
 (desktop, web without camera permission) it explains itself with a
-localized message instead of dying silently.
+localized message instead of dying silently. Mobile hosts must declare
+the camera: Android needs `<uses-permission android:name="android.permission.CAMERA"/>`
+(plus a `uses-feature` with `required="false"` so camera-less devices can
+still install) and iOS needs an `NSCameraUsageDescription` that says *why*
+— the probe's manifests are the reference wording.
 
 * **ShellApp.onJoinInvite** — the shell watches for opened links (the
   browser URL on web; app links on mobile, cold start *and* warm returns,
