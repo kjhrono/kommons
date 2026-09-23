@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'auth_service.dart';
+import 'confirmation_link.dart';
 import 'oauth_popup_launcher.dart' as oauth_launcher;
 import 'oauth_revoke.dart';
 import 'recovery_link.dart';
@@ -1036,12 +1037,21 @@ class AccountController extends ValueNotifier<Account?> {
     }
     final session =
         await service.verifySignup(email: email, token: code.trim());
+    await _landConfirmedSignup(session, fallbackEmail: email);
+  }
+
+  /// The shared landing for a confirmed signup — code or emailed link
+  /// alike: the session is kept, the parked state retired, the account
+  /// recorded, preferences synced (a fresh account pulls nothing but
+  /// pushes this device's shell preferences, provenance stamped).
+  Future<void> _landConfirmedSignup(AuthSession session,
+      {required String fallbackEmail}) async {
     _session = session;
     _pendingSignupEmail = null;
     _resetPasswordArmed = session.mustChangePassword;
     value = Account(
         displayName: playerName,
-        email: session.email.isNotEmpty ? session.email : email,
+        email: session.email.isNotEmpty ? session.email : fallbackEmail,
         provider: 'email');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_emailKey, value!.email);
@@ -1050,6 +1060,38 @@ class AccountController extends ValueNotifier<Account?> {
     notifyListeners();
     _signInSync = syncPreferencesOnSignIn();
     unawaited(_signInSync!);
+  }
+
+  /// Completes a signup confirmation that arrived as a whole link — the
+  /// `{{ .ConfirmationURL }}` template's email opened the app (cold start,
+  /// or a paste). Both link generations verify: token-hash links
+  /// (`?token_hash=…`) are self-addressing; plain-token links (`#token=…`)
+  /// need the account's email, which the parked signup on the registering
+  /// device supplies (a cold start without one throws
+  /// `confirmation_email_unknown` — the fix is the 6-digit code, or a
+  /// server template on the token_hash generation).
+  ///
+  /// Success lands exactly where [confirmSignupCode] lands: signed in,
+  /// preferences synced, the check-your-inbox state retired.
+  Future<void> completeSignupConfirmationLink(ConfirmationLink link) async {
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    if (!link.isTokenHash &&
+        (_pendingSignupEmail == null || _pendingSignupEmail!.isEmpty)) {
+      throw const AuthException(
+          'confirmation_email_unknown',
+          'This confirmation link must be opened on the device that '
+              'registered (or the server should mail token-hash links).');
+    }
+    final session = link.isTokenHash
+        ? await service.verifySignupTokenHash(link.tokenHash!)
+        : await service.verifySignup(
+            email: _pendingSignupEmail ?? '', token: link.token!);
+    await _landConfirmedSignup(session,
+        fallbackEmail: _pendingSignupEmail ?? '');
   }
 
   /// Sends the "forgot password" email: the game server mails the

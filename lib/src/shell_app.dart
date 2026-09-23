@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_settings.dart';
 import 'auth_service.dart' show AuthException;
+import 'confirmation_link.dart';
 import 'multiplayer/join_link.dart';
 import 'oauth_session_link.dart';
 import 'recovery_link.dart';
@@ -155,6 +156,7 @@ class _ShellAppState extends State<ShellApp> {
     unawaited(_watchJoinLinks());
     unawaited(_watchRecoveryLinks());
     unawaited(_watchSessionLinks());
+    unawaited(_watchConfirmationLinks());
   }
 
   Future<void> _preload() async {
@@ -252,6 +254,57 @@ class _ShellAppState extends State<ShellApp> {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  /// Signup-confirmation detection: the emailed `{{ .ConfirmationURL }}`
+  /// link (`type=signup`) confirming a fresh registration. Unlike the
+  /// recovery link this one needs no host handler — when it arrives with
+  /// a parked signup to confirm (this device registered and is waiting),
+  /// the shell completes it directly, landing the player signed in where
+  /// the 6-digit code would. A link of a different kind, a stale or
+  /// already-used token, or a cold start with nothing parked all decline
+  /// quietly: nothing on screen ever promised a confirmation.
+  Uri? _lastConfirmationDelivered;
+
+  Future<void> _watchConfirmationLinks() async {
+    try {
+      if (kIsWeb) {
+        _deliverConfirmation(Uri.base);
+        return;
+      }
+      final links = AppLinks();
+      final subscription = links.uriLinkStream.listen(
+        (uri) => _deliverConfirmation(uri),
+        onError: (_) {},
+      );
+      final initial = await links.getInitialLink();
+      if (initial != null) _deliverConfirmation(initial);
+      _confirmationSubscription = subscription;
+    } catch (_) {
+      // No link backend here — nothing to confirm.
+    }
+  }
+
+  StreamSubscription<Uri>? _confirmationSubscription;
+
+  void _deliverConfirmation(Uri uri) {
+    if (uri.toString() == _lastConfirmationDelivered?.toString()) return;
+    final link = confirmationLinkFromUri(uri);
+    if (link == null) return;
+    _lastConfirmationDelivered = uri;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(() async {
+        try {
+          await account.completeSignupConfirmationLink(link);
+        } on AuthException {
+          // Expired, already used, or no parked signup on this device:
+          // the inbox state (or the sign-in form) stays as it is — the
+          // typed code remains the fix.
+        }
+      }());
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
   /// OAuth session-fragment detection: an authorize redirect that re-opened
   /// the app when no collector was waiting (a warm return after the flow
   /// gave up, a replayed delivery, a cold start mid-flow). Installing the
@@ -311,6 +364,7 @@ class _ShellAppState extends State<ShellApp> {
     unawaited(_joinSubscription?.cancel());
     unawaited(_recoverySubscription?.cancel());
     unawaited(_sessionSubscription?.cancel());
+    unawaited(_confirmationSubscription?.cancel());
     super.dispose();
   }
 

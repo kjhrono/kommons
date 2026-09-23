@@ -341,6 +341,19 @@ class AuthService {
     );
   }
 
+  /// Verifies the *hashed* confirmation token a `{{ .ConfirmationURL }}`
+  /// signup link carries in its query string (`?token_hash=…&type=signup`)
+  /// — the newer GoTrue/Supabase generation, where the server mails a link
+  /// whose value is already the secret. No email accompanies it: the hash
+  /// itself addresses the account. A failure (expired, already used, wrong
+  /// generation) surfaces as a typed [AuthException].
+  Future<AuthSession> verifySignupTokenHash(String tokenHash) {
+    return _sessionCall(
+      _base.replace(path: '${_base.path}/verify'),
+      jsonEncode({'type': 'signup', 'token_hash': tokenHash}),
+    );
+  }
+
   /// Re-sends the signup confirmation email. A no-op server-side when the
   /// address is already confirmed (GoTrue answers 200 without mailing).
   Future<void> resendConfirmation({required String email}) async {

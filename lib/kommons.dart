@@ -20,6 +20,7 @@ export 'src/app_splash.dart';
 export 'src/oauth_popup_launcher.dart';
 export 'src/oauth_session_link.dart';
 export 'src/oauth_revoke.dart';
+export 'src/confirmation_link.dart';
 export 'src/recovery_link.dart';
 export 'src/shell_app.dart';
 
