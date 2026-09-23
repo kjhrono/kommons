@@ -148,6 +148,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // metadata — an admin-issued temporary password): open the
     // change-password form before the first frame.
     _showChangePassword = account.mustChangePassword;
+    // Seed from the current state so the snackbar fires on a completion
+    // that happens *while this screen is open* — not on a screen opened
+    // after the fact (that player gets the amber hint instead).
+    _wasResetPending = account.passwordResetPending;
+    account.addListener(_onAccountChanged);
     widget.serverSetup?.isConfigured().then((configured) {
       if (mounted) setState(() => _serverConfigured = configured);
     });
@@ -185,7 +190,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     _currentPasswordController.dispose();
+    account.removeListener(_onAccountChanged);
     super.dispose();
+  }
+
+  /// The change-password form should be open (and stay reachable) while a
+  /// recovery session is being completed.
+  bool _wasResetPending = false;
+
+  /// Every completion path for a recovery flow — the typed 6-digit code,
+  /// a pasted whole link, a shell-delivered cold-start link — lands in the
+  /// same place: [AccountController.passwordResetPending] flipping false →
+  /// true. Watching the transition (not the individual calls) gives every
+  /// path the same localized "pick a new password" snackbar, once per
+  /// completion, without the calls knowing about the UI. The forced
+  /// change-password form opens itself through the card's
+  /// `passwordResetPending` condition — this only announces it.
+  void _onAccountChanged() {
+    final pending = account.passwordResetPending;
+    final completed = pending && !_wasResetPending;
+    _wasResetPending = pending;
+    if (!completed || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(appLocale.strings.recoveryLinkCompleted),
+      duration: const Duration(seconds: 4),
+    ));
   }
 
   bool _providerEnabled(String id) => widget.oauthProviders.containsKey(id);

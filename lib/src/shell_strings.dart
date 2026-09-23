@@ -95,6 +95,8 @@ class ShellStrings {
     this.changePassword = 'Change password',
     this.changePasswordHint =
         'You are signed in with a temporary password. Choose a new one to finish recovering your account.',
+    this.recoveryLinkCompleted =
+        'Signed back in. Pick a new password to finish recovering your account.',
     this.changePasswordSectionHint = 'Pick a new password for your account.',
     this.currentPasswordLabel = 'Current password',
     this.enterCurrentPassword = 'Enter your current password first.',
@@ -253,6 +255,7 @@ class ShellStrings {
       String? resetEmailSent,
       String? changePassword,
       String? changePasswordHint,
+      String? recoveryLinkCompleted,
       String? changePasswordSectionHint,
       String? currentPasswordLabel,
       String? enterCurrentPassword,
@@ -401,6 +404,8 @@ class ShellStrings {
         changePassword = changePassword ?? 'Cambia password',
         changePasswordHint =
             'Sei dentro con una password temporanea. Scegline una nuova per completare il recupero dell\'account.',
+        recoveryLinkCompleted =
+            'Accesso riuscito. Scegli una nuova password per completare il recupero dell\'account.',
         changePasswordSectionHint =
             'Scegli una nuova password per il tuo account.',
         currentPasswordLabel = currentPasswordLabel ?? 'Password attuale',
@@ -621,6 +626,9 @@ class ShellStrings {
   final String changePassword;
   final String changePasswordHint;
 
+  /// Shown when a recovery link (or code) completes: the player is back
+  /// in, but must pick a new password to finish.
+  final String recoveryLinkCompleted;
   final String changePasswordSectionHint;
   final String currentPasswordLabel;
   final String enterCurrentPassword;

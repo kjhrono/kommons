@@ -411,6 +411,11 @@ void main() {
       expect(account.isCloudSignedIn, isTrue);
       expect(account.passwordResetPending, isTrue);
 
+      // The completion notice fired: retire it before the next snackbar
+      // step (snackbars queue one at a time).
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
       // Mismatched passwords are rejected inline.
       await tester.enterText(
           find.byKey(const ValueKey('new-password-field')), 'brand-new-7');
@@ -442,6 +447,46 @@ void main() {
       expect(account.passwordResetPending, isFalse);
       expect(find.byKey(const ValueKey('signout')), findsOneWidget);
       expect(find.byKey(const ValueKey('new-password-field')), findsNothing);
+    });
+
+    testWidgets(
+        'a completed recovery flow tells the player to pick a new password',
+        (tester) async {
+      givenServer();
+      await pumpSettings(tester);
+
+      await tester.enterText(
+          find.byKey(const ValueKey('email-field')), 'lost@shell.test');
+      await tester.dragUntilVisible(
+        find.byKey(const ValueKey('forgot-password')),
+        find.byKey(const ValueKey('settings-list')),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('forgot-password')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('reset-code-field')), '123456');
+      await tester.tap(find.byKey(const ValueKey('verify-reset')));
+      await tester.pumpAndSettle();
+
+      // The completion announces the next step, localized, and the form
+      // is open right away.
+      expect(
+          find.text(appLocale.strings.recoveryLinkCompleted), findsOneWidget);
+      expect(find.byKey(const ValueKey('new-password-field')), findsOneWidget);
+      expect(account.passwordResetPending, isTrue);
+
+      // Retire the notice (an in-flight snackbar outlives a tree swap in
+      // the test binding) so the next screen starts from a clean sheet.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      // A screen opened *after* the completion does not announce again —
+      // that player gets the card's standing hint instead.
+      await pumpSettings(tester);
+      expect(find.text(appLocale.strings.recoveryLinkCompleted), findsNothing);
+      expect(find.byKey(const ValueKey('new-password-field')), findsOneWidget);
     });
 
     testWidgets('cancel returns from the reset sub-form to sign-in',
@@ -479,6 +524,13 @@ void main() {
       await account.parkPasswordReset('lost@shell.test');
       await account.verifyRecoveryCode('123456');
       await pumpSettings(tester);
+
+      // The completion notice fires when the state lands (the screen listens
+      // to the controller): let its show animation run, then retire it
+      // before driving the form.
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('new-password-field')), findsOneWidget);
       await tester.enterText(
@@ -681,5 +733,42 @@ void main() {
     expect(italian.forgotPassword, 'Password dimenticata?');
     expect(italian.changePassword, 'Cambia password');
     expect(italian.resetSent('a@b.co'), contains('a@b.co'));
+  });
+
+  group('settings provenance line', () {
+    testWidgets('reflects origins live', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData.dark(),
+        home: const SettingsScreen(),
+      ));
+      await tester.pumpAndSettle();
+      // The line sits below the game sections: bring it into the lazily
+      // built list's viewport.
+      await tester.dragUntilVisible(
+        find.byKey(const ValueKey('pref-provenance')),
+        find.byKey(const ValueKey('settings-list')),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+
+      // All defaults: every clause reads "app default".
+      expect(find.byKey(const ValueKey('pref-provenance')), findsOneWidget);
+      final strings = appLocale.strings;
+      expect(find.textContaining(strings.prefFromDefault), findsOneWidget);
+
+      // A local edit while the screen is open appears immediately.
+      await appTheme.applySynced(ThemeMode.light); // local value, no push loop
+      await account.preferenceEdited(ShellPrefKey.theme, 'light');
+      await tester.pump();
+
+      expect(
+          find.textContaining('${strings.prefTheme} ${strings.prefFromDevice}'),
+          findsOneWidget);
+      // The other two keys are untouched: still defaults.
+      expect(
+          find.textContaining(
+              '${strings.prefPlayerName} ${strings.prefFromDefault}'),
+          findsOneWidget);
+    });
   });
 }
