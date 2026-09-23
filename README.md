@@ -4,7 +4,7 @@
 ![Flutter](https://img.shields.io/badge/Flutter-%E2%89%A53.0-02569B?logo=flutter&logoColor=white)
 ![Dart](https://img.shields.io/badge/Dart-%E2%89%A53.0-0175C2?logo=dart&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-web%20%7C%20Android%20%7C%20iOS-lightgrey)
-[![AI Collaborator](https://img.shields.io/badge/Co--Developed%20With-Freebuff.com-8E44AD?style=for-the-badge&logo=google&logoColor=white)](https://gemini.google.com/)
+[![AI Collaborator](https://img.shields.io/badge/Co--Developed%20With-Freebuff.com-8E44AD?style=for-the-badge&logo=google&logoColor=white)](https://www.freebuff.com/)
 
 The shared shell for every kjhrono game. One Flutter package holds the
 splash, the account/auth + settings, the new-game lobby wizard, and the
