@@ -67,7 +67,7 @@ dependencies:
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
 | `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession` (including the OAuth `provider_token` grant), `AuthException`. Per-app configuration: point it at your auth server. |
 | `settings_screen.dart` | `SettingsScreen` — the shared ACCOUNT card (email flow + OAuth buttons, forgot-password sub-form, forced change-password form after recovery, change-password section on the signed-in card; the sign-in line names the provider — *Signed in with github · …* — and GitHub sessions carry the grant note, since sign-out cannot revoke that grant client-side), PLAYER NAME, Language (a real picker over `appLocale`; the current choice is always pre-selected — an unset language shows English, the effective one, and re-tapping it persists the pick). Seams: `gameId` tags the route, `extraSections` appends game cards below the shared ones, `oauthProviders: {'google': handler}` turns a provider button live (no handler = disabled — pass `oauthPopupHandlers()` for the reference flow), `serverSetup` is your onboarding dialog while no game server is configured. |
-| `app_splash.dart` | `AppSplash` — background art, big title, welcome (reads `account`: anonymous vs signed-in form), flavor scene, action buttons, description footer. Config: `appName`, `description`, `welcomeName`, `background`, `scenes` (defaults to `kDefaultSplashScenes`), `continueEnabled`/`continueLabel` (null = localized default), `actions` (`SplashActions.both` = NEW GAME + Continue, `startOnly` = NEW GAME alone, `direct` = PLAY alone — straight into the app, no lobby, or `directAndNewGame` = PLAY leading with NEW GAME behind), `onDirect`/`directLabel` for the direct variants, `settingsBuilder`, `debugSceneIndex` (test seam), `animateEntrance`. |
+| `app_splash.dart` | `AppSplash` — background art, big title, welcome (reads `account`: anonymous vs signed-in form), flavor scene, action buttons, description footer. Config: `appName`, `description`, `welcomeName`, `background`, `scenes` (defaults to `kDefaultSplashScenes`), `continueEnabled`/`continueLabel` (null = localized default), `actions` (`SplashActions.both` = NEW GAME + Continue, `startOnly` = NEW GAME alone, `direct` = PLAY alone — straight into the app, no lobby, or `directAndNewGame` = PLAY leading with NEW GAME behind), `onDirect`/`directLabel` for the direct variants, `onScanInvite` (adds a scan button that opens the camera QR scanner — same seam as the lobby's — and hands the parsed game number to the host; jump straight into the lobby with `SharedLobbyStep(initialCode: …)`, null hides the button), `settingsBuilder`, `debugSceneIndex` (test seam), `animateEntrance`. |
 
 **Localization** — the shell carries its own strings in
 `shell_strings.dart` (`ShellStrings`, English default + Italian today).
@@ -223,6 +223,13 @@ package, just the player's own mail client. Mobile hosts should register
 their app-link target the same way as the OAuth redirect (see
 [docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md)).
 
+* **From the splash** — pass `AppSplash.onScanInvite` and the splash
+carries a scan button of its own: a friend shows their QR at the door,
+the phone reads it, and the host callback receives the parsed game
+number — HERALD's own splash jumps straight into the seat lobby with the
+number pre-seated, skipping the chooser. The button reuses the lobby's
+scanner seam (`joinScanExecutor`), so tests stub it identically, and the
+splash hides it entirely when no callback is supplied.
 **Signup confirmation** — an email registration proves the address before
 signing the player in. With the server's confirmation mail enabled
 (`GOTRUE_MAILER_AUTOCONFIRM=false` — see

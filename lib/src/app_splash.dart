@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'app_settings.dart';
 import 'app_top_bar.dart';
+import 'multiplayer/join_scan.dart' as join_scan;
 
 /// What the splash offers below the flavor text.
 ///
@@ -83,6 +84,7 @@ class AppSplash extends StatefulWidget {
     this.scenes = kDefaultSplashScenes,
     this.onNewGame,
     this.onContinue,
+    this.onScanInvite,
     this.continueEnabled = false,
     this.continueLabel,
     this.actions = SplashActions.both,
@@ -104,6 +106,15 @@ class AppSplash extends StatefulWidget {
   final List<SplashScene> scenes;
   final VoidCallback? onNewGame;
   final VoidCallback? onContinue;
+
+  /// Fired when the player scans an invite QR right on the splash and it
+  /// reads as an invite: [code] is the parsed game number, and the host
+  /// routes it straight into the lobby (`SharedLobbyStep(initialCode: …)`
+  /// seats and locks it before the first frame). Null (the default) hides
+  /// the splash's scan button — the lobby keeps its own. The camera work
+  /// rides the same swappable [join_scan.joinScanExecutor] seam as the
+  /// lobby's scanner, so tests and hosts can stub it.
+  final ValueChanged<String>? onScanInvite;
 
   /// The direct-entry PLAY button's callback — fired by the
   /// [SplashActions.direct] and [directAndNewGame] variants.
@@ -316,6 +327,29 @@ class _AppSplashState extends State<AppSplash>
   String get _directCaption =>
       widget.directLabel ?? appLocale.strings.directEntry;
 
+  /// The splash's scan door: opens the camera scanner and, on a read,
+  /// hands the parsed invite code to [AppSplash.onScanInvite]. Cancellation
+  /// is silent; a failed scan (no camera, or the read is not an invite)
+  /// says so with the same localized message the lobby's scanner uses.
+  Future<void> _scanInvite() async {
+    final strings = appLocale.strings;
+    final result = await join_scan.joinScanExecutor(
+      context: context,
+      scanLabel: strings.inviteScan,
+    );
+    if (!mounted) return;
+    switch (result.outcome) {
+      case join_scan.JoinScanOutcome.dismissed:
+        return; // The player closed the scanner — nothing to say.
+      case join_scan.JoinScanOutcome.failed:
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(strings.inviteScanCameraUnavailable)));
+        return;
+      case join_scan.JoinScanOutcome.joined:
+        widget.onScanInvite!(result.code);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _RevisitDetector(
@@ -472,6 +506,25 @@ class _AppSplashState extends State<AppSplash>
                                           padding: const EdgeInsets.all(14),
                                           child: Text(widget.startLabel ??
                                               appLocale.strings.newGame)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              if (widget.onScanInvite != null) ...[
+                                _Entrance(
+                                  fade: _continueFade,
+                                  rise: _continueRise,
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      key: const ValueKey('splash-scan-invite'),
+                                      onPressed: _scanInvite,
+                                      icon: const Icon(Icons.qr_code_scanner),
+                                      label: Padding(
+                                          padding: const EdgeInsets.all(14),
+                                          child: Text(
+                                              appLocale.strings.inviteScan)),
                                     ),
                                   ),
                                 ),

@@ -49,6 +49,12 @@ class _ProbeLobbyState extends State<ProbeLobby> {
 
   @override
   Widget build(BuildContext context) {
+    // An arriving code (scanned on the splash, or an invite link) skips
+    // the chooser: the invited player lands directly in the seat lobby,
+    // the number already seated and locked.
+    if (widget.initialCode != null) {
+      return _ProbeSeatLobby(initialCode: widget.initialCode);
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('HERALD')),
       body: Center(

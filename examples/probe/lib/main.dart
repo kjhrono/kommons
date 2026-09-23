@@ -106,6 +106,13 @@ class ProbeHome extends StatelessWidget {
         context,
         MaterialPageRoute(builder: (_) => const ProbeLobby()),
       ),
+      // Scan-to-join from the splash itself: a friend shows their QR, the
+      // phone reads it, and the seat lobby opens with the number already
+      // seated and locked — the chooser is skipped for invited players.
+      onScanInvite: (code) => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ProbeLobby(initialCode: code)),
+      ),
       // The reference OAuth wiring: the Google/GitHub buttons go live
       // through the game server's hosted web flow.
       settingsBuilder: () => SettingsScreen(
