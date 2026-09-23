@@ -17,7 +17,7 @@
 #   ssh_user          SSH user on the VM, default ubuntu
 #   ssh_key           path to the SSH identity (never commit it); falls back to
 #                     <repo>/ssh-private-key.key when present
-#   target_dir        remote directory under $HOME, default kapax
+#   target_dir        remote directory under $HOME, default the app name
 #   web_root          remote nginx webroot for the build, default /var/www/<name>
 #   db_container      Supabase Postgres container for migrations, default <name>-db-1
 #   web_dirs          extra local dirs synced verbatim into target_dir, default "server scripts"
@@ -66,7 +66,7 @@ GIT_REMOTE="${git_remote:-origin}"
 GIT_PATHS="${git_paths:-lib test server scripts pubspec.yaml pubspec.lock}"
 SSH_USER="${ssh_user:-ubuntu}"
 SSH_KEY="${ssh_key:-}"
-TARGET_DIR="${target_dir:-kapax}"
+TARGET_DIR="${target_dir:-${APP_NAME}}"
 WEB_DIRS="${web_dirs:-server scripts}"
 WEB_PUBLISH="${web_publish:-true}"
 DB_CONTAINER="${db_container:-${APP_NAME}-db-1}"

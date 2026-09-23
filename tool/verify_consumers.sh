@@ -12,7 +12,6 @@
 # Consumers (edit CONSUMERS below as games join):
 #   - the package itself (analyze + test)
 #   - examples/probe    (analyze + test, path dep on ../..)
-#   - ../kapaxinfiniti   (analyze + test, path dep on ../kommons)
 #
 # Every project runs even if an earlier one fails; the summary at the end
 # lists failures and the exit code is non-zero if anything failed. CI: run
@@ -43,7 +42,6 @@ fi
 CONSUMERS=(
   "commons|${COMMONS_DIR}|at"
   "probe|${COMMONS_DIR}/examples/probe|at"
-  "kapax|${COMMONS_DIR}/../kapaxinfiniti|at"
 )
 
 declare -a FAILED=()

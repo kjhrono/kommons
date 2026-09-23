@@ -9,7 +9,7 @@
 # committed template.
 
 # Where the app lives online (required for anything beyond commit+push).
-host=kapaxinfiniti.kjhrono.duckdns.org
+host=yourgame.example.com
 
 # SSH access to that VM.
 ssh_user=ubuntu
@@ -17,9 +17,9 @@ ssh_user=ubuntu
 # (when unset, <repo>/ssh-private-key.key is used if present, else the agent)
 
 # Remote layout.
-target_dir=kapax
-web_root=/var/www/kapaxinfiniti
-db_container=kapaxinfiniti-db-1
+target_dir=yourgame
+web_root=/var/www/yourgame
+db_container=yourgame-db-1
 
 # Git.
 git_remote=origin
@@ -29,4 +29,4 @@ git_paths="lib test server scripts pubspec.yaml pubspec.lock"
 web_publish=true
 
 # Display name for logs and defaults (defaults to the repo folder name).
-app_name=kapax
+app_name=yourgame

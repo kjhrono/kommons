@@ -11,7 +11,6 @@ new-game adoption recipe.
 
 | Game | Notes |
 | --- | --- |
-| [kapaxinfiniti](https://github.com/kjhrono/kapaxinfiniti) | The flagship — settlement building, taming, spell cards, challenges. |
 | [`examples/probe`](examples/probe) | **HERALD** — the reuse probe, shipped with the package: a complete minimal game on the shared shell (~200 lines), with the herald who walks the road ahead of the banners as its face and `probe` as its package name. The starting template for a new game and a canary consumer in CI. |
 
 ## What's inside
@@ -36,7 +35,7 @@ new-game adoption recipe.
 - **Tooling** — `tool/deploy.sh` (config-driven commit → push → sync →
   migrate → build → publish, per-user via a git-ignored `deploy.config`,
   template in `deploy.config.example`) and `tool/verify_consumers.sh`
-  (the one-command gate over package + probe + kapax, also the CI step).
+  (the one-command gate over package + probe, also the CI step).
 
 Server operators: enabling Google/GitHub and allow-listing redirect
 origins on the game server is documented in
@@ -45,13 +44,13 @@ origins on the game server is documented in
 ## Development
 
 ```bash
-bash tool/verify_consumers.sh   # analyze + test: package, probe, kapax
+bash tool/verify_consumers.sh   # analyze + test: package, probe
 ```
 
 Same script in CI (`.github/workflows/consumers.yml`) — push and local
 verify identically.
 
-Changes here must keep the consumers green too — kapax runs 781 tests
-against these seams, the probe 3. The package's `COMMONS.md` documents the
+Changes here must keep the consumers green too — the probe's suite
+exercises these seams. The package's `COMMONS.md` documents the
 convention that widget keys are API: renaming a key in this repo is a
 breaking change for every game.

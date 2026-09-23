@@ -11,8 +11,8 @@ between them. There is no authoritative server-side game state.
                       ┌──────────────────────────── each device ───────────────────────────┐
                       │                                                                    │
    UI (game screen)   │   ┌───────────────────────────┐        ┌────────────────────────┐  │
- ─────────────────────┼──▶│ GameSession (kapax or     │◀──────▶│ GameSyncService (Iface)│  │
-   session.advance…() │   │ any game's session model) │ encode │  ┌──────────────────┐  │  │
+ ─────────────────────┼──▶│ GameSession (any game's   │◀──────▶│ GameSyncService (Iface)│  │
+   session.advance…() │   │ session model)            │ encode │  ┌──────────────────┐  │  │
                       │   │ · roster, clock, log      │ decode │  │ InMemorySync     │  │  │
                       │   │ · actions, economy        │ (JSON) │  │ (hot-seat)       │  │  │
                       │   └───────────────────────────┘        │  ├──────────────────┤  │  │
@@ -66,7 +66,7 @@ between them. There is no authoritative server-side game state.
   fresh secret stored locally → re-announce with host rights. Returns the
   live sync service *and* the world snapshot, so the caller decodes and
   enters the game in one round-trip. Both saved-games cards and the lobby's
-  handover list run this same protocol (`claimHostAndEnter` in kapax adds
+  handover list run this same protocol (a game's `claimHostAndEnter` adds
   only session decode + navigation).
 - **`CloudRoomCard`** renders a room row (chips, flash, menu, Claim host);
   every behavior is an `on*` callback the host app wires.
@@ -98,8 +98,6 @@ between them. There is no authoritative server-side game state.
 ## Where the tests live
 
 Package: `test/lobby_wizard_test.dart` (seat roundtrip), `test/cloud_room_card_test.dart`
-(card + dialogs + credential detection). App-side: kapax's
-`test/postgrest_sync_service_test.dart` (transport), `test/cloud_room_service_test.dart`
-(rooms, handover, claims, saved-games journeys), `test/lobby_handover_test.dart`,
-`test/multiplayer_roster_test.dart`. Run them all with
+(card + dialogs + credential detection), plus the probe's suites (transport,
+rooms, handover, journeys) under `examples/probe/test/`. Run them all with
 `bash tool/verify_consumers.sh`.

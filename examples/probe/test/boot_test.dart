@@ -24,7 +24,7 @@ void main() {
   testWidgets('boots the shared splash as its own game', (tester) async {
     await pumpApp(tester);
 
-    // The splash renders with HERALD's identity, not kapax's. The flavor
+    // The splash renders with HERALD's own identity. The flavor
     // deck has three scenes and the splash rolls one at random — assert
     // that one of them is on stage, not a specific one.
     expect(find.text('HERALD'), findsOneWidget);
@@ -61,14 +61,14 @@ void main() {
     // The shared lobby step: the local seat with the persisted name, the
     // game-number field for joinable seats, and the two starts.
     expect(find.byKey(const ValueKey('probe-lobby-step')), findsOneWidget);
-    expect(find.byKey(const ValueKey('shared-lobby-seat-Player')),
-        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('shared-lobby-seat-Player')), findsOneWidget);
 
     // A join by game number adds the seat and locks the field.
     await tester.enterText(
         find.byKey(const ValueKey('shared-lobby-game-number')), '7');
-    await tester.ensureVisible(
-        find.byKey(const ValueKey('shared-lobby-add-seat')));
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
@@ -76,15 +76,15 @@ void main() {
         findsOneWidget);
 
     // One callback: the shared handoff lands in HERALD's game screen.
-    await tester.ensureVisible(
-        find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('shared-lobby-start-online')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('shared-lobby-start-online')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('herald-game-screen')), findsOneWidget);
     expect(find.text('Playing as: Player'), findsOneWidget);
-    expect(find.text('Online room 7 — 2 heralds at the table.'),
-        findsOneWidget);
+    expect(
+        find.text('Online room 7 — 2 heralds at the table.'), findsOneWidget);
     expect(find.byKey(const ValueKey('herald-seat-Guest 2')), findsOneWidget);
   });
 
@@ -104,8 +104,8 @@ void main() {
       const Offset(0, -200),
     );
     await tester.pumpAndSettle();
-    final google = tester.widget<OutlinedButton>(
-        find.byKey(const ValueKey('oauth-google')));
+    final google = tester
+        .widget<OutlinedButton>(find.byKey(const ValueKey('oauth-google')));
     expect(google.onPressed, isNotNull);
   });
 }

@@ -6,13 +6,12 @@ through, and the multiplayer transport itself. One copy of the code, consumed
 by each game as a dependency — games supply their identity through the seams
 each widget exposes.
 
-**Consumers today:** `kapaxinfiniti` (the flagship) and
-[`examples/probe`](examples/probe) — **HERALD**, a complete minimal game on the
+**Consumers today:** [`examples/probe`](examples/probe) — **HERALD**, a complete minimal game on the
 shared shell that ships *with this package* as both the new-game starting
-template and a second consumer its tests exercise on every change.
+template and a consumer its tests exercise on every change.
 **Status:** this folder is its own git repo (first commit in place) with no
-remote yet — kapax uses a `path:` dependency from this machine, and its
-pubspec documents the `git:` flip for when a remote exists.
+remote yet — consumer games use a `path:` dependency from this machine, and
+their pubspecs document the `git:` flip for when a remote exists.
 
 ```yaml
 dependencies:
@@ -372,7 +371,7 @@ The multiplayer UI speaks the shell's languages: every player-facing string in t
 
 ```bash
 bash tool/verify_consumers.sh   # ONE command: analyze + test for the
-                                # package, examples/probe, and kapax
+                                # package and examples/probe
 ```
 
 `--quick` runs analyze only. The same script is the CI gate
@@ -382,4 +381,4 @@ not short-circuited — one broken game never hides another's result. Add a
 new game by appending a line to `CONSUMERS` in `tool/verify_consumers.sh`.
 
 When you change the package, the consumers' gates are the proof the seams
-hold — kapax alone carries 778 tests against them.
+hold — the probe's suite exercises them on every run.

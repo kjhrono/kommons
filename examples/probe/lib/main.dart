@@ -22,7 +22,7 @@ void main() {
 class ProbeApp extends StatelessWidget {
   const ProbeApp({super.key});
 
-  static const _seed = Color(0xff7a5c2e); // amber-brown: visibly not kapax
+  static const _seed = Color(0xff7a5c2e); // amber-brown: HERALD's own color
 
   @override
   Widget build(BuildContext context) {
