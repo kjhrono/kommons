@@ -774,8 +774,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: Text(appLocale.strings.language),
         content: SingleChildScrollView(
           child: RadioGroup<ShellLanguage>(
-            groupValue: appLocale.value,
-            onChanged: (value) => Navigator.pop(dialogContext, value),
+            // Unset resolves to the shell's effective language (English),
+            // so the dialog always shows something selected — the game
+            // the player is looking at is running in that language.
+            groupValue: appLocale.value ?? ShellLanguage.english,
+            // A tap on the already-selected entry arrives as null (the
+            // radio group's deselect convention, via toggleable below);
+            // translate it into confirming the effective language, so
+            // every radio tap picks something and only Cancel cancels.
+            onChanged: (value) => Navigator.pop(dialogContext,
+                value ?? appLocale.value ?? ShellLanguage.english),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -784,6 +792,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: ValueKey('language-${language.code}'),
                     value: language,
                     title: Text(language.nativeName),
+                    // Lets an already-selected entry be tapped again —
+                    // the tap lands as null in the group's onChanged,
+                    // which the dialog reads as "confirm this language".
+                    toggleable: true,
                   ),
               ],
             ),

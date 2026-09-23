@@ -121,6 +121,42 @@ Recovery requests are rate-limited per address by GoTrue; the app
 surfaces the `over_email_send_rate_limit` message verbatim, so a spammy
 tester sees the server's own complaint — not a bug.
 
+## The signup confirmation email — why registrations "sign in asap"
+
+Email registration only proves the address when the server mails a
+confirmation. Whether it does is one GoTrue setting:
+
+```
+GOTRUE_MAILER_AUTOCONFIRM=false   # mail the confirmation, withhold the session
+GOTRUE_MAILER_AUTOCONFIRM=true    # sign the player in immediately, mail nothing
+```
+
+**If a fresh registration lands the player straight in the game with no
+email involved, your stack has `AUTOCONFIRM=true`** (often set as the
+default workaround for a not-yet-configured SMTP). With no working SMTP
+that was the honest choice — GoTrue would otherwise try to mail a link
+and fail. Once mail works, set it to `false`: the shell then parks every
+fresh signup in its check-your-inbox state until the emailed proof
+arrives, and an unconfirmed sign-in attempt answers `email_not_confirmed`
+instead of a session.
+
+The template (Authentication → Emails → Templates → **Confirm Signup**;
+GoTrue's `mailer.templates.confirmation`) picks the shape the proof
+takes — the shell handles both:
+
+| Template token | What the player receives | In the shell |
+| --- | --- | --- |
+| `{{ .Token }}` | a 6-digit code | type the digits into the shell's confirmation form — the smooth path, **recommended** |
+| `{{ .ConfirmationURL }}` | a verify link — **supported**: a `?token_hash=…&type=signup` link confirms wherever it opens (any device); a `#token=…&type=signup` fragment link confirms on the device that registered | the app opens, completes the confirmation itself, and lands the player signed in |
+
+As with recovery links, the generations differ (query `token_hash` is
+self-addressing; fragment `token` verifies against the registering
+device's parked email) and there is **no cross-talk**: confirmation
+detection keys on `type=signup`, disjoint from recovery (`type=recovery`),
+joins (`join=`) and OAuth fragments (`access_token=`). Re-sending the
+email is built in (`POST /auth/v1/resend`, also rate-limited per
+address).
+
 ## What the server must NOT do
 
 - **No provider logic app-side.** The client never exchanges codes or
@@ -150,6 +186,12 @@ tester sees the server's own complaint — not a bug.
       build (warm return *and* a force-killed cold start)
 - [ ] Recovery email template set to `{{ .Token }}` — the 6-digit code
       is the path the shell's reset form is built around
+- [ ] `GOTRUE_MAILER_AUTOCONFIRM=false` with a working SMTP — otherwise
+      email registrations skip verification entirely (see the signup
+      confirmation section above; this is the #1 cause of "it signed me
+      in without any email")
+- [ ] Confirm-signup template chosen: `{{ .Token }}` (recommended) or
+      `{{ .ConfirmationURL }}` — both complete in-app
 - [ ] Know the grant story: signing out of the app revokes the GoTrue
       session server-side, and Google's grant client-side (Google
       exposes a public revoke endpoint). **GitHub grants are NOT revoked**
