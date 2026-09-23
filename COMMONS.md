@@ -130,6 +130,22 @@ dashboard and allow-listing every redirect target — is documented in
 [docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md), alongside the
 schema notes.
 
+**Provider grants at sign-out** — a provider sign-in's redirect fragment
+carries the provider's own `provider_token` (the grant, distinct from
+GoTrue's session pair); the shell captures it onto the session, keeps it
+across metadata writes and refreshes, and `signOut` uses it to revoke the
+grant through the same launch plumbing the authorize link uses
+(`oauth_revoke.dart`). The honest per-provider split: **Google** exposes a
+client-side revoke endpoint, so its grant is revoked for real (next sign-in
+shows the consent screen again); **GitHub's** grant can only be removed
+with the server-held client secret, so the shell does not pretend —
+`canRevokeProviderGrant` reports false and sign-out stops the GoTrue
+session only (operators who want GitHub grants gone use the dashboard or
+an admin job — see OAUTH_SERVER_SETUP.md). The settings card tells the
+player their side of the story too: the sign-in line names the provider
+(`signedInWithProvider`), and GitHub sessions show `githubGrantNote` —
+revoke it at github.com → Settings → Applications. Restores carry the
+
 **Invites** — a host seats distant friends without dictating a number to
 them. Once a game number is committed (a join, or the host's own table),
 the lobby renders an invite section: the shareable link

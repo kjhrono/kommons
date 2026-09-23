@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'auth_service.dart';
 import 'oauth_popup_launcher.dart' as oauth_launcher;
+import 'oauth_revoke.dart';
 import 'recovery_link.dart';
 import 'shell_preferences.dart';
 import 'shell_strings.dart';
@@ -864,7 +865,7 @@ class AccountController extends ValueNotifier<Account?> {
     _revokeObservers.add(observer);
   }
 
-  /// Deep-equality over JSON-shaped values (used to avoid re-writing and
+  /// Deep-equality over JSON-shaped values  /// Deep-equality over JSON-shaped values (used to avoid re-writing and
   /// re-pushing maps whose content did not change).
   static bool _jsonEquals(Object? a, Object? b) {
     if (a is Map && b is Map) {
@@ -1474,6 +1475,23 @@ class AccountController extends ValueNotifier<Account?> {
     if (session != null) {
       final service = await _ensureService();
       await service?.signOutRemote(session.accessToken);
+      // A provider session also revokes the grant itself, best effort —
+      // so the next provider sign-in shows the consent screen again
+      // instead of silently re-approving. Only providers with a
+      // client-side revocation endpoint are touched (Google); for the
+      // rest this is a quiet no-op (GitHub's grant needs the server-held
+      // secret — see OAUTH_SERVER_SETUP.md).
+      final providerToken = session.providerToken;
+      final providerName = session.providerName;
+      if (providerToken != null && canRevokeProviderGrant(providerName)) {
+        unawaited(revokeProviderGrant(
+                providerName: providerName!, providerToken: providerToken)
+            .then((handedOff) {
+          for (final o in _revokeObservers) {
+            o(handedOff);
+          }
+        }));
+      }
     }
   }
 

@@ -150,3 +150,15 @@ tester sees the server's own complaint — not a bug.
       build (warm return *and* a force-killed cold start)
 - [ ] Recovery email template set to `{{ .Token }}` — the 6-digit code
       is the path the shell's reset form is built around
+- [ ] Know the grant story: signing out of the app revokes the GoTrue
+      session server-side, and Google's grant client-side (Google
+      exposes a public revoke endpoint). **GitHub grants are NOT revoked**
+      by the app — GitHub's API requires the OAuth app's client secret,
+      which only the server holds. Players who want a GitHub grant gone
+      revoke it at github.com → Settings → Applications, or the operator
+      runs an admin job (e.g. `DELETE /applications/{id}/grant` with the
+      server's credentials). Surface this honestly if your game promises
+      "sign out everywhere".
+- [ ] (Optional) A periodic job revoking stale GoTrue sessions
+      (`POST /auth/v1/logout` with each user's tokens) keeps inactive
+      sessions from piling up
