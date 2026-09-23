@@ -1,10 +1,9 @@
 # kommons
 
-[![Consumers gate](https://github.com/kjhrono/kommons/actions/workflows/consumers.yml/badge.svg)](https://github.com/kjhrono/kommons/actions/workflows/consumers.yml)
-![Flutter](https://img.shields.io/badge/Flutter-%E2%89%A53.0-02569B?logo=flutter&logoColor=white)
-![Dart](https://img.shields.io/badge/Dart-%E2%89%A53.0-0175C2?logo=dart&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-web%20%7C%20Android%20%7C%20iOS-lightgrey)
-[![AI Collaborator](https://img.shields.io/badge/Co--Developed%20With-Freebuff.com-8E44AD?style=for-the-badge&logo=google&logoColor=white)](https://www.freebuff.com/)
+![Language](https://img.shields.io/badge/language-Dart%20%2F%20Flutter-0175C2?logo=dart&logoColor=white)
+![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20iOS%20%7C%20Web%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-4CAF50)
+![Coding agent](https://img.shields.io/badge/coding%20agent-Freebuff-7C4DFF)
+![AI model](https://img.shields.io/badge/AI%20model-GLM%205.3%20Flash-1C3C3C)
 
 The shared shell for every kjhrono game. One Flutter package holds the
 splash, the account/auth + settings, the new-game lobby wizard, and the
