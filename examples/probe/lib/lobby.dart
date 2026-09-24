@@ -94,6 +94,10 @@ class _ProbeSeatLobby extends StatelessWidget {
             children: [
               SharedLobbyStep(
                 key: const ValueKey('probe-lobby-step'),
+                // The roster (open + claimed seats, committed number)
+                // persists under this key: the host can prepare the
+                // table, close the app, and find it waiting on return.
+                gameId: 'probe',
                 onHandoff: (handoff) {
                   Navigator.of(context, rootNavigator: true)
                       .pushReplacement(MaterialPageRoute(

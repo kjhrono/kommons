@@ -127,6 +127,88 @@ void main() {
     expect(handoff!.self.name, 'Mara');
   });
 
+  testWidgets('starting the table announces it: Starting table {code}',
+      (tester) async {
+    SharedLobbyHandoff? handoff;
+    await tester.pumpWidget(host(onHandoff: (h) => handoff = h));
+    await tester.pump();
+
+    // Build a startable table: commit the number, open a seat, claim it.
+    await tester.enterText(
+        find.byKey(const ValueKey('shared-lobby-game-number')), '7');
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('shared-lobby-add-seat')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-claim-2')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('shared-lobby-claim-name')), 'Ines');
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-claim-confirm')));
+    await tester.pumpAndSettle();
+    // The welcome snackbar queues ahead — let it pass.
+    await tester.pump(const Duration(seconds: 4));
+
+    // The exit is as visible as the arrival: the confirmation shows as
+    // the handoff fires, and the code rides into the game.
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester.pump();
+
+    expect(find.text(appLocale.strings.startingTableAs('7')), findsOneWidget);
+    expect(handoff, isNotNull);
+    expect(handoff!.online, isTrue);
+    expect(handoff!.roomCode, '7');
+  });
+
+  testWidgets(
+      'a locked code with no seats arms JOIN GAME for the invited guest',
+      (tester) async {
+    SharedLobbyHandoff? handoff;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SharedLobbyStep(
+          onHandoff: (h) => handoff = h,
+          initialCode: 'K7QX2',
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    // Armed with zero seats: the guest is joining the host's table.
+    final join = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('shared-lobby-start-online')));
+    expect(join.onPressed, isNotNull);
+
+    // The arrival snackbar holds the messenger for its full window(s) in
+    // fake time — pump until it is really gone before starting, so the
+    // exit confirmation is the one on stage.
+    for (var i = 0;
+        i < 12 && find.byType(SnackBar).evaluate().isNotEmpty;
+        i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    await tester.pumpAndSettle();
+
+    // The exit fires the online handoff — the code travels, the exit
+    // confirmation announces the table.
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester.pumpAndSettle();
+
+    expect(handoff, isNotNull);
+    expect(handoff!.online, isTrue);
+    expect(handoff!.roomCode, 'K7QX2');
+    expect(handoff!.seats, isEmpty);
+    expect(
+        find.text(appLocale.strings.startingTableAs('K7QX2')), findsOneWidget);
+  });
+
   group('invite QR', () {
     testWidgets(
         'a committed code with a base URL shows a QR encoding the invite link',

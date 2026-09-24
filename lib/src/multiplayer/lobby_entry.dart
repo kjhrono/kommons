@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_settings.dart' show account, appLocale;
+import 'banner_color_picker.dart';
 import 'lobby_step.dart';
 
 /// The shared NEW-GAME entry, the first screen of the shell's lobby flow.
@@ -37,6 +38,13 @@ class SharedLobbyEntry extends StatefulWidget {
 class _SharedLobbyEntryState extends State<SharedLobbyEntry> {
   late final TextEditingController _name =
       TextEditingController(text: account.playerName);
+
+  /// The banner color the lobby's seat 1 will carry: the first free
+  /// palette color with nothing taken — the exact call
+  /// `SharedLobbyStep._self` makes, so the preview cannot drift from
+  /// what the lobby assigns. Kept as a getter (not a field) so a hot
+  /// reload or palette change re-resolves.
+  String get _bannerHex => nextFreeBannerColorHex();
 
   @override
   void dispose() {
@@ -80,6 +88,30 @@ class _SharedLobbyEntryState extends State<SharedLobbyEntry> {
             // Enter deliberately does nothing: a mode button is the only
             // way through, so a stray keypress never picks a door.
             textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 12),
+          // The seat preview: the same banner color (and initial) the
+          // lobby's seat 1 will carry — assigned with the same rule the
+          // lobby uses, so the player sees their color before entering.
+          Row(
+            key: const ValueKey('shared-lobby-entry-preview'),
+            children: [
+              CircleAvatar(
+                key: const ValueKey('shared-lobby-entry-banner'),
+                backgroundColor: bannerColor(_bannerHex),
+                child: Text(
+                  _name.text.trim().isNotEmpty
+                      ? _name.text.trim()[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(strings.lobbyBannerHint,
+                    style: Theme.of(context).textTheme.bodySmall),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           FilledButton.icon(

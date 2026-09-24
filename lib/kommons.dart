@@ -35,6 +35,7 @@ export 'src/multiplayer/banner_color_picker.dart';
 export 'src/multiplayer/lobby_wizard.dart';
 export 'src/multiplayer/lobby_step.dart';
 export 'src/multiplayer/lobby_entry.dart';
+export 'src/multiplayer/lobby_roster.dart';
 export 'src/multiplayer/qr_share.dart';
 export 'src/multiplayer/join_link.dart';
 export 'src/multiplayer/join_scan.dart';

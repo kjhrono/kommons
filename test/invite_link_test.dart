@@ -98,8 +98,8 @@ void main() {
           host(onHandoff: (h) => handoff = h, initialCode: 'K7QX2'));
       await tester.pump();
 
-      // The player is told which persona the invite seats.
-      expect(find.text(appLocale.strings.inviteJoinedAs('Player')),
+      // The player is told which table they join, and as whom.
+      expect(find.text(appLocale.strings.inviteJoinedAs('Player', 'K7QX2')),
           findsOneWidget);
 
       // The number field is locked without a hand-typed join.
@@ -119,8 +119,8 @@ void main() {
 
       final join = tester.widget<FilledButton>(
           find.byKey(const ValueKey('shared-lobby-start-online')));
-      expect(join.onPressed, isNull,
-          reason: 'no guests yet: solo is the only exit');
+      expect(join.onPressed, isNotNull,
+          reason: 'an invited guest joins the host table without seats');
     });
     testWidgets('copy puts the link on the clipboard and says so',
         (tester) async {
@@ -179,10 +179,11 @@ void main() {
       expect(find.byKey(const ValueKey('shared-lobby-invite-link')),
           findsOneWidget);
 
-      // No guests yet: JOIN GAME stays disabled (solo is the only exit).
+      // No guests yet, but the invite is committed: JOIN GAME arms for
+      // the invited guest — solo is no longer the only exit.
       final join = tester.widget<FilledButton>(
           find.byKey(const ValueKey('shared-lobby-start-online')));
-      expect(join.onPressed, isNull);
+      expect(join.onPressed, isNotNull);
       expect(handoff, isNull);
     });
 

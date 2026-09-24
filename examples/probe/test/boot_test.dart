@@ -52,19 +52,27 @@ void main() {
     expect(find.text('Solo walk: one herald on the road.'), findsOneWidget);
   });
 
-  testWidgets('NEW GAME opens the shared lobby step and hands off to the game',
+  testWidgets(
+      'NEW GAME opens the entry chooser, then the seat lobby, and hands off',
       (tester) async {
     await pumpApp(tester);
     await tester.tap(find.byKey(const ValueKey('splash-new-game')));
     await tester.pumpAndSettle();
 
-    // The shared lobby step: the local seat with the persisted name, the
-    // game-number field for joinable seats, and the two starts.
+    // The shared entry chooser: the proposed persona and the two doors —
+    // the seat lobby does not exist yet.
+    expect(find.byKey(const ValueKey('probe-lobby-entry')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('probe-lobby-step')), findsNothing);
+
+    // MULTI-PLAYER opens the shared seat lobby.
+    await tester.tap(find.byIcon(Icons.groups));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('probe-lobby-step')), findsOneWidget);
     expect(
         find.byKey(const ValueKey('shared-lobby-seat-Player')), findsOneWidget);
 
-    // A join by game number adds the seat and locks the field.
+    // A join by game number opens a seat slot; the claimer names it.
     await tester.enterText(
         find.byKey(const ValueKey('shared-lobby-game-number')), '7');
     await tester
@@ -72,12 +80,24 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('shared-lobby-add-seat')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('shared-lobby-seat-Guest 2')),
+    expect(find.byKey(const ValueKey('shared-lobby-seat-open-2')),
         findsOneWidget);
 
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-claim-2')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('shared-lobby-claim-name')), 'Ines');
+    await tester.tap(find.byKey(const ValueKey('shared-lobby-claim-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shared-lobby-seat-Ines')),
+        findsOneWidget);
+
+    // The welcome snackbar overlays the start buttons — let it pass.
+    await tester.pump(const Duration(seconds: 4));
+
     // One callback: the shared handoff lands in HERALD's game screen.
-    await tester
-        .ensureVisible(find.byKey(const ValueKey('shared-lobby-start-online')));
+    await tester.ensureVisible(
+        find.byKey(const ValueKey('shared-lobby-start-online')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('shared-lobby-start-online')));
     await tester.pumpAndSettle();
@@ -85,7 +105,7 @@ void main() {
     expect(find.text('Playing as: Player'), findsOneWidget);
     expect(
         find.text('Online room 7 — 2 heralds at the table.'), findsOneWidget);
-    expect(find.byKey(const ValueKey('herald-seat-Guest 2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('herald-seat-Ines')), findsOneWidget);
   });
 
   testWidgets('the gear opens the shared settings screen', (tester) async {
