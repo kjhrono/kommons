@@ -1,6 +1,6 @@
 name: kommons
 description: Shared app shell for kjhrono games — top bar, account/auth, settings and theme.
-version: 0.2.0
+version: 0.3.0
 publish_to: "none"
 
 environment:

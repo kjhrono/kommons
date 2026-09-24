@@ -18,10 +18,58 @@ sense.
 ```yaml
 dependencies:
   kommons:
-    path: ../kommons   # or git:, once published
+    path: ../kommons   # development, beside a checkout
+    # or, adopting a release tag (v0.2.0 verified adoptable from a
+    # fresh checkout via both path: and git:):
+    # git:
+    #   url: https://github.com/kjhrono/kommons.git
+    #   ref: v0.2.0
 ```
 
 ## Adopting the shell in a new game (~30 lines + your lobby steps)
+
+The whole adoption in one paste — dependency, boot, multiplayer door:
+
+```yaml
+# pubspec.yaml — the release tag; path: ../kommons beside a checkout
+dependencies:
+  kommons:
+    git:
+      url: https://github.com/kjhrono/kommons.git
+      ref: v0.2.0
+```
+
+```dart
+// The shell owns MaterialApp: persisted theme + locale, delegates, preload.
+void main() => runApp(const MyApp());
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) => ShellApp(
+        title: 'My Game',
+        seedColor: const Color(0xff2e5d7a),
+        home: AppSplash(
+          appName: 'My Game',
+          description: 'What your game is, in one line.',
+          actions: SplashActions.directAndNewGame,
+          onDirect: () {},  // PLAY → your single-player screen
+          onNewGame: () {}, // NEW GAME → the lobby (or SharedLobbyEntry)
+        ),
+      );
+}
+
+// The multiplayer door: SharedLobbyStep inside YOUR Scaffold — it renders
+// chips and text fields, so it needs a Material ancestor. One callback
+// hands the table to the game's NEW-GAME section.
+Navigator.push(context, MaterialPageRoute<void>(
+  builder: (_) => Scaffold(
+    appBar: AppBar(title: const Text('NEW GAME')),
+    body: SharedLobbyStep(onHandoff: (SharedLobbyHandoff h) => startGame(h)),
+  ),
+));
+```
 
 1. **Dependencies** — pubspec line above. (`shared_preferences` arrives
    transitively; declare it yourself only if your code imports it directly —
@@ -50,7 +98,9 @@ dependencies:
    apps, personal tools).
 4. **Lobby** — either the one-screen `SharedLobbyStep` (seats by game number,
    solo, one `onHandoff` callback) or a multi-step wizard on `LobbyWizard`:
-   step descriptors + step bodies, no scaffolding code.
+   step descriptors + step bodies, no scaffolding code. Wrap the step in
+   your own `Scaffold` — it renders chips and text fields and needs a
+   Material ancestor.
 5. **Multiplayer** (optional) — `PostgrestSyncService` + `CloudRoomService`
    against your game server (schema: `server/schema.sql` in each game repo),
    `CloudRoomCard` for the saved-games listing.
@@ -86,7 +136,13 @@ ShellStrings.installOverrides({
 ```
 
 (`ShellStrings.resetOverrides()` restores the built-ins; install before
-`runApp`.) Hand-rolled roots put the rest on themselves:
+`runApp`.) The lobby's join wordings are overrides too:
+`inviteJoinedWith` ("Joining table {code} as {name}.", the arrival
+confirmation when an invite or splash scan seats a player) and
+`startingTable` ("Starting table {code}…", the exit confirmation that
+rides the handoff onto the game screen). Keep the `{code}`/`{name}`
+placeholders when rewording — they are what the helpers substitute.
+Hand-rolled roots put the rest on themselves:
 
 ```dart
 MaterialApp(
@@ -159,11 +215,21 @@ opens `SharedLobbyStep`, where the local seat shows that name and ADD
 SEAT offers an **open seat** — "SEAT X — open" — instead of asking for a
 name up front: the slot waits for the friend who will sit there. Tapping
 an open seat claims it (a small dialog asks the name the table will see,
-welcome snackbar included); removing it renumbers the seats below. The
-game number commits with the first seat, and JOIN GAME stays disabled
+welcome snackbar included); removing it renumbers the seats below.The game number commits with the first seat, and JOIN GAME stays disabled
 until every promised seat has been claimed — an open slot is a player who
 has not sat down yet. Up to 8 seats; START SOLO remains the one-tap way
 out.
+
+* **Preparing the table in advance** — pass `gameId:` to
+  `SharedLobbyStep` and the roster persists (prefs key
+  `prefs.lobby.<gameId>.roster`, via `lobby_roster.dart`): a host adds
+  open slots and claims seats today, and after an app restart the same
+  table waits — committed number, open and claimed seats alike. The draft
+  clears when it has served its purpose: starting the game (the handoff
+  owns the table from there) or START SOLO (a solo table has nothing to
+  re-offer). An invite link or scan landing on a prepared table wins for
+  that visit — the link's number replaces the stored one. Without a
+  `gameId` the lobby stays purely in-memory, as before.
 
 **Invites** — a host seats distant friends without dictating a number to
 them. Once a game number is committed (a join, or the host's own table),
@@ -183,6 +249,11 @@ renders that QR as a PNG (white mat, testable via `qrShareExecutor`) and
 hands it to the platform share sheet (`share_plus`) with the invite link
 riding along as text — straight into a chat app. Where no share handler
 exists it falls back to copying the link, exactly like the email button.
+The full join journey — splash scan → locked lobby with the code seated —
+is pinned twice: by the probe (`examples/probe/test/journey_scan_to_handoff_test.dart`)
+and package-level through a bare `ShellApp` host mirroring the adoption
+snippet (`test/journey_scan_to_lobby_test.dart`), so the documented wiring
+itself cannot regress.
 
 On the other end the link carries the table to the friend — or the friend
 scans the code straight off the screen: the lobby's camera **scan button**
@@ -396,8 +467,8 @@ flavor line (660–860 ms) → foreground vignette rises into place last
 | `game_server_dialog.dart` | `showGameServerConnectionDialog` + `saveGameServerConnection`/`storedGameServerUrl` — the shared connect-to-game-server onboarding. |
 | `banner_color_picker.dart` | `bannerPalette`, `showBannerColorPicker`, and the `bannerColor`/`bannerColorHex` codecs every banner tint flows through. |
 | `lobby_wizard.dart` | `LobbyWizard` — the new-game wizard frame: progress rail (tappable nodes, done-checks), "Step X of Y — Title" header, Back/Continue nav (hidden on first/last step). Host supplies `steps: List<LobbyStepDescriptor>` (title, icon, optional `subtitle`), `current`, `onGoto`, `body`, optional `title`, `appBarActions`, and `canContinue(stepIndex)` — the per-step gate that disables Continue until the host says the step is complete (the rail stays free navigation). |
-| `lobby_entry.dart` | `SharedLobbyEntry` — the shared NEW-GAME entry: a name field proposing the persisted player's name (editable; the edit persists through `account.setPlayerName`), then the two front doors — SINGLE-PLAYER (`onSinglePlayer(name)`, the project wires its solo screen) and MULTI-PLAYER (`onMultiPlayer(name)`, land in `SharedLobbyStep`). A game without one of the modes passes a handler that pops instead. Keys `shared-lobby-entry-*`. |
-| `lobby_step.dart` | `SharedLobbyStep` — the shared one-screen lobby for games that don't need a wizard: the local seat (persisted `account` name + next free banner color, seat 1), **open seats** — ADD SEAT opens a roster slot advertised as "SEAT X — open" (no name asked); tapping it claims the seat through a name dialog, and JOIN GAME stays disabled until every promised seat is claimed (up to 8 seats). The game number commits with the first seat (field locks, invite section appears: link, copy, email, QR — see below) and releases when all seats are removed. Exactly one callback — `onHandoff(SharedLobbyHandoff)` — carries `self`, the claimed `seats`, the `roomCode` (null offline) and the `online` flag into the game's NEW-GAME section, where the shell's work ends. Pass `initialCode:` to seat a player who arrived through an invite link, `inviteBaseUrl:` to make the QR scannable on non-web builds. Fully localized, keys prefixed `shared-lobby-*`. |
+| `lobby_entry.dart` | `SharedLobbyEntry` — the shared NEW-GAME entry: a name field proposing the persisted player's name (editable; the edit persists through `account.setPlayerName`), a **banner preview** showing the exact color (and initial) the lobby's seat 1 will carry — assigned by the same `nextFreeBannerColorHex` rule, so the player sees their color before entering — then the two front doors — SINGLE-PLAYER (`onSinglePlayer(name)`, the project wires its solo screen) and MULTI-PLAYER (`onMultiPlayer(name)`, land in `SharedLobbyStep`). A game without one of the modes passes a handler that pops instead. Keys `shared-lobby-entry-*`. |
+| `lobby_step.dart` | `SharedLobbyStep` — the shared one-screen lobby for games that don't need a wizard: the local seat (persisted `account` name + next free banner color, seat 1), **open seats** — ADD SEAT opens a roster slot advertised as "SEAT X — open" (no name asked); tapping it claims the seat through a name dialog; a claimed seat carries an **edit** action (pencil, or a long-press on the chip) whose dialog renames it (typo fixes) or re-opens it for another player — JOIN GAME stays disabled while any promised seat is unclaimed (up to 8 seats) — except for the invited guest: a locked invite code with no extra seats arms JOIN GAME, so they join the host's table without hosting one. The game number commits with the first seat (field locks, invite section appears: link, copy, email, QR — see below) and releases when all seats are removed. Exactly one callback — `onHandoff(SharedLobbyHandoff)` — carries `self`, the claimed `seats`, the `roomCode` (null offline) and the `online` flag into the game's NEW-GAME section, where the shell's work ends. Pass `gameId:` to persist the roster across restarts (`lobby_roster.dart`: the host prepares the table in advance; the draft clears on handoff or solo), `initialCode:` to seat a player who arrived through an invite link (the code shows in the locked field, and the arrival snackbar names the table), `inviteBaseUrl:` to make the QR scannable on non-web builds. Fully localized, keys prefixed `shared-lobby-*`. |
 | `join_link.dart` | `JoinInvite` + `joinInviteFromUri` / `joinInviteFromClipboardText` — the invite codec: `…#join=K7QX2` (fragment, or `?join=` for hosted shorteners, optional `&server=`) parses in, `link(base:)` builds the shareable string; `copyJoinLink` / `readJoinLinkClipboard` wrap the system clipboard (null-safe where none exists). |
 | `join_scan.dart` | `scanInviteWithCamera(context, …)` — the scan-to-join entry point: a `mobile_scanner` camera sheet over the lobby's executor seam (`scanInviteExecutor`, swappable for tests and embedding), parsing what it sees through the same codec — a scanned image of the invite QR works exactly like a scanned text. |
 
@@ -413,6 +484,12 @@ The multiplayer UI speaks the shell's languages: every player-facing string in t
   `deploy.config.example` — host, ssh user/key, target dirs, web root,
   db container, git paths). This is the per-user distribution story: every
   player/collaborator points the config at their own machine.
+
+- **Releases** — pushing a `v*` tag (e.g. `v0.3.0`) triggers the
+  `release` workflow: it checks the tag matches `pubspec.yaml`'s version,
+  runs the package gate (analyze + test), and opens the GitHub Release
+  with the matching CHANGELOG section as notes. The tag is the artifact —
+  games adopt a release with `kommons: { git: { url: …, ref: v0.3.0 } }`.
 
 ## Conventions
 
@@ -430,12 +507,68 @@ The multiplayer UI speaks the shell's languages: every player-facing string in t
   defined in each game repo's `server/schema.sql` (rooms, roster, snapshots,
   action outbox); keep copies in sync across games.
 
+### Change alerts to connected games
+
+When kommons changes on `master` — **after** the consumer gate is green —
+its CI pings every registered game repo with a `repository_dispatch`
+event (`kommons_changed`), carrying the new commit. Setup, once:
+
+1. **Kommons side** — tell it who to alert and let it:
+
+   - Repository **variable** `KOMMONS_NOTIFY_REPOS` (Settings → Secrets
+     and variables → Actions → Variables), space-separated:
+     `kjhrono/kalcio kjhrono/herald`
+   - Repository **secret** `KOMMONS_NOTIFY_TOKEN`: a fine-grained PAT
+     with **repository_dispatch: write** on those repos.
+
+   Either one missing (or a push to a non-master ref) makes the alert
+   step skip silently — CI stays green.
+
+2. **Game side** — each game opts in with this listener
+   (`.github/workflows/kommons-alert.yml`) — checkout order matters:
+   `kommons/` must land beside the game *before* the gate step runs:
+
+   ```yaml
+   name: kommons-changed
+   on:
+     repository_dispatch:
+       types: [kommons_changed]
+   jobs:
+     check:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+           with:
+             ref: master
+         - name: Checkout kommons (the changed dependency)
+           uses: actions/checkout@v4
+           with:
+             repository: kjhrono/kommons
+             ref: ${{ github.event.client_payload.sha }}
+             path: kommons
+         - uses: subosito/flutter-action@v2
+           with:
+             channel: stable
+         - name: Re-verify against the new kommons
+           run: bash kommons/tool/verify_consumers.sh --quick
+   ```
+
+   With the layout contract (game beside `kommons/`), the gate script
+   resolves the game's consumers exactly as in kommons' own CI — the
+   alert reruns the game's analyze (add `t` gates for tests) against
+   the exact commit that triggered the ping.
+
 ## Development
 
 ```bash
 bash tool/verify_consumers.sh          # ONE command: analyze + test for
                                        # the package and examples/probe
 bash tool/verify_consumers.sh --list   # who is registered in the gate
+bash tool/verify_consumers.sh --tag v0.2.0 [--quick]
+                                       # gate a release tag instead of the
+                                       # working tree — "does that tag adopt
+                                       # cleanly?" — via a git-archive
+                                       # snapshot + dependency_overrides
 ```
 
 `--quick` runs analyze only. The same script is the CI gate
