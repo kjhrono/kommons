@@ -30,3 +30,36 @@ jobs:
 
       - name: Run all consumer gates
         run: bash kommons/tool/verify_consumers.sh
+
+      # The change alert: after a green gate on master, ping every game
+      # repo registered in the KOMMONS_NOTIFY_REPOS repository variable
+      # (space-separated, e.g. "kjhrono/kalcio"). Each game opts in by
+      # adding a repository_dispatch listener (see COMMONS.md) — without
+      # one, the ping is a no-op for that repo. The KOMMONS_NOTIFY_TOKEN
+      # secret must be a fine-grained PAT with "repository_dispatch:
+      # write" on the target repos; without the secret the step skips
+      # and the alert is silent.
+      - name: Notify connected games (repository_dispatch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ secrets.KOMMONS_NOTIFY_TOKEN }}
+          NOTIFY_REPOS: ${{ vars.KOMMONS_NOTIFY_REPOS }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "KOMMONS_NOTIFY_TOKEN not set — skipping (games still see changes via the gate/badges)"
+            exit 0
+          fi
+          if [ -z "$NOTIFY_REPOS" ]; then
+            echo "KOMMONS_NOTIFY_REPOS variable not set — nothing to notify"
+            exit 0
+          fi
+          for repo in $NOTIFY_REPOS; do
+            if gh api "repos/$repo/dispatches" \
+                 -f event_type=kommons_changed \
+                 -f "client_payload[sha]=$GITHUB_SHA" \
+                 -f "client_payload[repo]=$GITHUB_REPOSITORY"; then
+              echo "alerted $repo (kommons_changed @ ${GITHUB_SHA:0:8})"
+            else
+              echo "::warning::could not alert $repo — check the token scope and the repo name"
+            fi
+          done

@@ -1,0 +1,149 @@
+# Publishes a release when a v* tag lands on the repo. The package is
+# git-consumed (`publish_to: "none"` in pubspec.yaml — games depend on the
+# tag via `git:` refs), so "publishing" means: verify the tag is coherent
+# (matches pubspec's version), run the package gate, and open the GitHub
+# Release whose notes become the changelog entry players read.
+#
+# The tag IS the artifact — a game adopts a release with:
+#   kommons: { git: { url: …, ref: v0.2.0 } }
+name: release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the tagged tree
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Tag matches pubspec version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::tag v$TAG does not match pubspec version $VER"
+            exit 1
+          fi
+          echo "releasing kommons $VER (tag $GITHUB_REF_NAME)"
+
+      - name: Package gate (analyze + test)
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      # The release test: adopt the freshly pushed tag the way an outside
+      # game would — a throwaway consumer resolving it over public HTTPS.
+      # If the tag cannot resolve, compile and boot the shell, the release
+      # does not open. This is what caught nothing yet, because it always
+      # runs first: a broken tag never becomes a Release.
+      - name: Adopt the tag as a stranger would (throwaway git-dep consumer)
+        run: |
+          set -e
+          SMOKE=/tmp/tag-consumer-smoke
+          rm -rf "$SMOKE" && mkdir -p "$SMOKE/lib" "$SMOKE/test"
+          cd "$SMOKE"
+          TAG_URL="https://github.com/${GITHUB_REPOSITORY}.git"
+          cat > pubspec.yaml <<EOF
+          name: tag_consumer_smoke
+          description: Throwaway consumer proving the tag adopts cleanly.
+          publish_to: none
+          environment:
+            sdk: ^3.5.0
+          dependencies:
+            flutter:
+              sdk: flutter
+            shared_preferences: ^2.3.0
+            kommons:
+              git:
+                url: $TAG_URL
+                ref: $GITHUB_REF_NAME
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+          EOF
+          cat > lib/main.dart <<'EOF'
+          import 'package:flutter/material.dart';
+
+          import 'package:kommons/kommons.dart';
+
+          class SmokeApp extends StatelessWidget {
+            const SmokeApp({super.key});
+
+            @override
+            Widget build(BuildContext context) => ShellApp(
+                  title: 'smoke',
+                  seedColor: Colors.teal,
+                  home: Scaffold(
+                    body: Center(
+                      child: SharedLobbyEntry(
+                        onSinglePlayer: (name) {},
+                        onMultiPlayer: (name) {},
+                      ),
+                    ),
+                  ),
+                );
+          }
+          EOF
+          cat > test/smoke_test.dart <<'EOF'
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:kommons/kommons.dart';
+          import 'package:shared_preferences/shared_preferences.dart';
+
+          import 'package:tag_consumer_smoke/main.dart';
+
+          void main() {
+            TestWidgetsFlutterBinding.ensureInitialized();
+            SharedPreferences.setMockInitialValues({});
+
+            testWidgets('the tag boots the shell and renders the lobby entry',
+                (tester) async {
+              await tester.pumpWidget(const SmokeApp());
+              await tester.pumpAndSettle();
+              expect(find.byType(ShellApp), findsOneWidget);
+              expect(find.byType(SharedLobbyEntry), findsOneWidget);
+            });
+          }
+          EOF
+          flutter pub get
+          # The lock must pin the tag, not drift to a branch head.
+          grep -A4 '^  kommons:' pubspec.lock | grep "ref: \"$GITHUB_REF_NAME\""
+          flutter analyze
+          flutter test
+          echo "tag $GITHUB_REF_NAME adopts cleanly: resolved, compiled, booted"
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists — leaving it alone"
+            exit 0
+          fi
+          # The body: the matching CHANGELOG section, verbatim — from the
+          # "## <version>" line until the next "## " heading or EOF.
+          awk -v ver="^## ${GITHUB_REF_NAME#v}" \
+            '$0 ~ ver {on=1; print; next} on && /^## / {on=0} on {print}' \
+            CHANGELOG.md > body.md
+          [ -s body.md ] || echo "Release ${GITHUB_REF_NAME#v}" > body.md
+          gh release create "$GITHUB_REF_NAME" \
+            --title "kommons ${GITHUB_REF_NAME#v}" \
+            --notes-file body.md \
+            --verify-tag
