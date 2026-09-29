@@ -1,0 +1,13 @@
+name: mediasart_auth_client
+description: Generic Supabase+Brevo email-auth flows for the mediasart projects (confirmation code, change password, forgot password with temp password).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  http: ^1.2.0
+
+dev_dependencies:
+  test: ^1.25.0

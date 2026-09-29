@@ -1,0 +1,13 @@
+{
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "lineWidth": 100
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}

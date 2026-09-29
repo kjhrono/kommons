@@ -1,0 +1,73 @@
+# Central-identity prototype — "project stack B".
+#
+# Production model: a project is an API that VERIFIES foreign tokens but
+# never issues them. So B is just:
+#   * postgrest-b  — B's data API over the identity stack's Postgres
+#                    (prototype simplification; real projects keep their
+#                    own DB), configured with the identity stack's JWT
+#                    secret (the shared `GOTRUE_JWT_SECRET`) and role
+#                    claim key. Verifies A-minted tokens itself.
+#                    Connects as `authenticator_b` (a B-owned login role
+#                    with membership in anon/authenticated — Supabase's
+#                    own `authenticator` is reserved, so B carries its
+#                    twin; the JWT's role claim still switches to
+#                    `authenticated` exactly as in production).
+#   * auth-b       — GoTrue-B with GOTRUE_DISABLE_SIGNUP=true: proves the
+#                    project's auth is closed for signup while identity
+#                    (stack A) keeps creating users via the kit.
+#
+# Both join the identity stack's docker network (supabase_network_…)
+# to reach db/kong; the host reaches them on 31000/31001.
+services:
+  postgrest-b:
+    image: postgrest/postgrest:v12.2.3
+    depends_on: []
+    environment:
+      # B's own database — a real project keeps its own DB; sharing one
+      # database with a second GoTrue fails (reserved roles, schema
+      # ownership). Same Postgres server, separate database = the exact
+      # production shape on one VM.
+      PGRST_DB_URI: postgres://authenticator_b:b-prototype-authenticator-pw@db:5432/project_b
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      # The shared secret, in PostgREST's JWKS form — exactly what the
+      # identity stack's own rest container runs with, so a token minted
+      # by A's GoTrue verifies here byte-for-byte.
+      PGRST_JWT_SECRET: '{"keys":[{"kty":"EC","kid":"b81269f1-21d8-4f2e-b719-c2240a840d90","use":"sig","key_ops":["verify"],"alg":"ES256","ext":true,"crv":"P-256","x":"M5Sjqn5zwC9Kl1zVfUUGvv9boQjCGd45G8sdopBExB4","y":"P6IXMvA2WYXSHSOMTBH2jsw_9rrzGy89FjPf6oOsIxQ"},{"kty":"oct","k":"c3VwZXItc2VjcmV0LWp3dC10b2tlbi13aXRoLWF0LWxlYXN0LTMyLWNoYXJhY3RlcnMtbG9uZw"}]}'
+      PGRST_JWT_SECRET_IS_BASE64: "false"
+      PGRST_LOG_LEVEL: info
+    ports:
+      - "31000:3000"
+    networks: [identity]
+
+  auth-b:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://127.0.0.1:31001/
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://auth_admin_b:b-prototype-auth-pw@db:5432/project_b
+      # The SAME signing secret stack A's GoTrue uses.
+      GOTRUE_JWT_SECRET: 'super-secret-jwt-token-with-at-least-32-characters-long'
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_AUD: "authenticated"
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_EXTERNAL_REDIRECT_URLS: ""
+      GOTRUE_SITE_URL: http://localhost:31001
+      GOTRUE_OPERATOR_LEVEl: error
+      # The proof: identity stack A is the only signup door.
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "false"
+      GOTRUE_SMTP_HOST: ""
+      GOTRUE_SMTP_PORT: "0"
+      GOTRUE_DB_NAMESPACE: auth
+    ports:
+      - "31001:9999"
+    networks: [identity]
+
+networks:
+  identity:
+    external: true
+    name: supabase_network_email-auth-kit-test
