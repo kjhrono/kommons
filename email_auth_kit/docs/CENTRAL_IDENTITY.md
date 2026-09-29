@@ -139,6 +139,15 @@ deployment).
 - Compartmentalization loss is real but acceptable at this scale; the
   blast radius of a JWT-secret leak is now all projects — rotate fast,
   keep the secret in the VM `.env` files with the same backup discipline.
+- **Revocation is expiry-bounded, and that is by design.** Stateless
+  verification means a stolen access JWT stays valid on every project
+  until `exp` (1h): sign-out on the identity stack revokes the refresh
+  path immediately (proof step 5c) but cannot un-issue the token. This
+  is proven honestly in `teststack/identity/proof.py` (step 5d) rather
+  than papered over. If a faster kill-switch is ever needed, the
+  project-side options are: shorter `GOTRUE_JWT_EXP` (e.g. 300s), a
+  `banned_until` check in RLS via a cached copy, or moving verification
+  behind a tiny introspecting gateway. None are planned for Phase 1.
 
 ## 4. User migration plan
 

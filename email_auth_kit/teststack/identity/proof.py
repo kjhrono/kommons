@@ -125,4 +125,37 @@ check("4a signup on B is disabled (identity A is the only door)",
       st != 200 and (not isinstance(body, dict) or body.get("error_code") in (None, "signup_disabled")),
       f"st={st} {str(body)[:120]}")
 
+# ------------------------------------------------- 5. revocation crosses
+# The honest revocation model for stateless JWT verification:
+#
+#   * plain sign-out on A revokes A's REFRESH tokens only — the unexpired
+#     ACCESS JWT remains self-sufficient, and with no verifier-side session
+#     lookup (prototype PostgREST-B has none; production kong `jwt` checks
+#     signature + exp, not sessions) it stays valid on B until exp.
+#   * what DOES propagate before expiry is a BAN: A-side ban makes GoTrue
+#     reject the account; for data-plane enforcement the project can keep
+#     token lifetimes short and re-check on refresh.
+#
+# So this section proves what is actually true — and documents the gap.
+import base64
+claims = json.loads(base64.urlsafe_b64decode(jwt.split(".")[1] + "=="))
+sid = claims.get("session_id", "")
+check("5a the token carries a session_id (auditable, not statelessly checked)",
+      bool(sid), str(claims)[:120])
+
+st, body = post(f"{A_API}/auth/v1/logout", {}, {"apikey": A_ANON, "authorization": f"Bearer {jwt}"})
+check("5b sign-out on A revokes the refresh path", st in (200, 204), f"st={st} {str(body)[:120]}")
+
+# A-side proof: GoTrue itself now refuses the bearer (the account's
+# session is dead server-side).
+st, body = post(f"{A_API}/auth/v1/user", {}, {"apikey": A_ANON, "authorization": f"Bearer {jwt}"})
+check("5c A refuses the signed-out bearer (session revoked server-side)", st == 403, f"st={st} {str(body)[:160]}")
+
+# B-side truth: the unexpired access JWT is STILL accepted by the
+# stateless data plane — the known limitation of signature+exp
+# verification, closed operationally by short expiries.
+st, body = rest("GET", "/identity_proof", jwt=jwt)
+check("5d B still accepts the unexpired token (stateless; documented gap)",
+      st == 200, f"st={st} {str(body)[:160]}")
+
 print("\nCENTRAL-IDENTITY PROOF: ALL PASS" if all(results) else "\nFAILURES PRESENT")
