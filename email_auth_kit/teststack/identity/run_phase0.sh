@@ -22,7 +22,12 @@ B_AUTH_ADMIN_PW=b-prototype-auth-pw
 export A_NETWORK B_AUTHENTICATOR_PW B_AUTH_ADMIN_PW
 
 echo "== 1. stack A (identity): up"
-( cd "$TESTSTACK" && supabase start >/dev/null 2>&1 ) || true
+A_START_LOG=/tmp/phase0-stackA-start.log
+if ! ( cd "$TESTSTACK" && supabase start ) >"$A_START_LOG" 2>&1; then
+  echo "stack A failed to start — last 30 log lines:" >&2
+  tail -30 "$A_START_LOG" >&2
+  exit 1
+fi
 docker ps --format '{{.Names}}' | grep -q "supabase_db_$A_PROJECT" || {
   echo "stack A failed to start" >&2; exit 1; }
 
