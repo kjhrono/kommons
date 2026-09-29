@@ -1,8 +1,10 @@
 # Central identity for the mediasart projects
 
-Status: **design** — nothing here is deployed yet. Prototype target:
-the kit's `teststack/` harness, which already proves the hard parts
-(cross-stack JWT acceptance is the only unproven mechanism; see §3.4).
+Status: **Phase 0 PROVEN** — the two-stack prototype ran green (12/12
+checks, 2026-09-29). See `teststack/identity/` for the working harness,
+its README for the discovered gotchas (reserved roles, non-superuser
+`postgres`, GoTrue's legacy `auth.uid()` migration, RLS stamp defaults),
+and `teststack/identity/proof.py` for the exact checks.
 
 ## 1. Goal
 
