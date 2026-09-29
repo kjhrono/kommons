@@ -110,5 +110,32 @@ check("5d old password now rejected", st == 400, f"st={st}")
 # ---------------------------------------------------------------- step 6
 st, body = post(f"{API}/auth/v1/token?grant_type=password", {"email": email, "password": temp}, {"apikey": ANON})
 check("6 sign-in with the e-mailed temp password works", st == 200 and bool(body.get("access_token")), f"st={st} {str(body)[:120]}")
+jwt = body.get("access_token", "")
+jwt_uid = (body.get("user") or {}).get("id", "")
+
+# ---------------------------------------------------------------- step 7
+# The optional "your password was changed" notice: the notify action is
+# deployed with --no-verify-jwt, so it verifies the caller's JWT itself
+# (anon client + GoTrue getUser) and refuses anyone but the caller.
+check("7a the JWT belongs to the DB user", jwt_uid == uid, f"jwt={jwt_uid} db={uid}")
+
+st, body = post(f"{PR}", {"action": "notify", "user_id": jwt_uid})
+check("7b notify without a bearer is rejected", st == 401 and body.get("error") == "missing_bearer", str(body))
+
+st, body = post(
+    f"{PR}",
+    {"action": "notify", "user_id": jwt_uid},
+    {"authorization": f"Bearer {jwt}", "apikey": ANON},
+)
+check("7c notify with the user's own JWT fires", st == 200 and body.get("notified") is True, str(body))
+mail = latest_mail(email, "password was changed")
+check("7d the notice really arrived", "changed" in (mail.get("Subject") or "").lower(), mail.get("Subject", ""))
+
+st, body = post(
+    f"{PR}",
+    {"action": "notify", "user_id": "00000000-0000-0000-0000-000000000000"},
+    {"authorization": f"Bearer {jwt}", "apikey": ANON},
+)
+check("7e a mismatched user_id is refused", st == 403 and body.get("error") == "user_mismatch", str(body))
 
 print("\nSMOKE SUITE: ALL PASS" if all(ok for _, ok in results) else "\nFAILURES PRESENT")
