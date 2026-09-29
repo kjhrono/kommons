@@ -24,16 +24,24 @@ jobs:
       # GITHUB_TOKEN cannot see it, so this step needs the same
       # fine-grained PAT used for the change alerts, this time with
       # "Contents: read" on kjhrono/kalcio (add it to the existing
-      # KOMMONS_NOTIFY_TOKEN). Until that is done the step fails the
-      # workflow loudly — delete or `continue-on-error: true` this step
-      # to go back to skipping kalcio.
+      # KOMMONS_NOTIFY_TOKEN). Until the PAT carries that permission the
+      # step fails and kalcio SKIPS (see the script) — CI stays green,
+      # the warning below says what to fix; once granted, nothing here
+      # needs to change.
       - name: Checkout kalcio (consumer)
+        id: kalcio
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: kjhrono/kalcio
           ref: main
           path: kalcio
           token: ${{ secrets.KOMMONS_NOTIFY_TOKEN }}
+
+      - name: Explain the skipped kalcio checkout
+        if: steps.kalcio.outcome == 'failure'
+        run: |
+          echo "::warning::kalcio was NOT checked out — the consumer gate skips it this run. Give KOMMONS_NOTIFY_TOKEN 'Contents: read' on kjhrono/kalcio (repo Settings → Secrets and variables → Actions) and this gate starts running."
 
       - uses: actions/setup-java@v4
         with:
