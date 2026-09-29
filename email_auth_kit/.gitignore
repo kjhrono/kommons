@@ -9,10 +9,16 @@ pubspec.lock
 .env.*
 !.env.example
 
-# The teststack's supabase/ dir is DERIVED: config + the kit migration +
-# staged functions are copied in by the documented setup steps (see
-# teststack/README.md). Only the harness scripts themselves are tracked.
-teststack/supabase/
+# The teststack's supabase/ dir is mostly DERIVED: the migration is
+# staged from the kit's canonical copy by run_phase0.sh, and functions/
+# are host-run from the canonical source (see teststack/README.md).
+# Only config.toml is tracked — the CLI's stack identity (project id,
+# ports, auth behavior); a fresh checkout (CI) cannot start the stack
+# without it.
+teststack/supabase/functions/
+teststack/supabase/snippets/
+teststack/supabase/migrations/
+teststack/supabase/.temp/
 
 # OS / editor noise
 .DS_Store

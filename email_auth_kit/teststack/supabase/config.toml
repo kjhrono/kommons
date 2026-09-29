@@ -1,0 +1,10 @@
+project_id = "email-auth-kit-test"
+
+[db]
+major_version = 15
+
+[inbucket]
+enabled = true
+
+[auth.email]
+enable_confirmations = true

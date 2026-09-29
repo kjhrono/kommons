@@ -22,6 +22,10 @@ B_AUTH_ADMIN_PW=b-prototype-auth-pw
 export A_NETWORK B_AUTHENTICATOR_PW B_AUTH_ADMIN_PW
 
 echo "== 1. stack A (identity): up"
+# Stage the kit migration from its canonical source so a fresh checkout
+# (CI) starts the real stack, not a config-less default one.
+mkdir -p "$TESTSTACK/supabase/migrations"
+cp "$KIT_ROOT/supabase/migrations/"*.sql "$TESTSTACK/supabase/migrations/"
 A_START_LOG=/tmp/phase0-stackA-start.log
 if ! ( cd "$TESTSTACK" && supabase start ) >"$A_START_LOG" 2>&1; then
   echo "stack A failed to start — last 30 log lines:" >&2
