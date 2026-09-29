@@ -46,6 +46,12 @@ jobs:
       - name: Package gate (analyze + test)
         run: |
           flutter pub get
+          # Root `flutter analyze` recurses into examples/probe, whose
+          # package:probe imports only resolve after the probe's own pub
+          # get — a fresh CI checkout fails analyze without it (caught on
+          # the first v0.3.0 attempt; locally the probe's .dart_tool
+          # masked it).
+          (cd examples/probe && flutter pub get)
           flutter analyze
           flutter test
 
