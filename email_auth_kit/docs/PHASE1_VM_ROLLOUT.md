@@ -114,6 +114,13 @@ project stack, repeat the prototype's checks with real hosts:
 This is `run_phase0.sh`'s logic with real URLs; port `proof.py`'s
 checks into a `verify_vm_project.sh` (or parameterize the script's
 URLs/keys) before touching the VM, and keep it in the kit for reuse.
+**Done** — `teststack/verify_vm_project.sh` (+ `.py`) implements exactly
+this acceptance bar: identity mint (kit signup → Brevo-mailed code with
+auto-fetch → verify → sign-in), foreign-JWT read + RLS-stamped insert +
+owner-scoped delete on a project probe table, and the signup-refused
+check. All URLs/keys ride KIT_* env; validated against the prototype
+stacks mapped onto the VM's URL shapes (kong defaults, bare-GoTrue
+overrides, per-run plus-addressing to sidestep the kit's rate limiter).
 
 ## 5. Step 4 — flip each app's facade + wipe, project by project
 

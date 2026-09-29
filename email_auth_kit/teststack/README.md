@@ -53,6 +53,22 @@ supabase stop                         # when done
 
 Mailpit UI (every mail the suite sent): http://127.0.0.1:54324
 
+## verify_vm_project.sh — VM acceptance (Phase 1)
+
+The Phase 0 checks parameterized for the real VM
+(see docs/PHASE1_VM_ROLLOUT.md §4): run it per project stack AFTER its
+`.env` carries the shared JWT secret and signup is disabled. The env
+contract is documented at the top of `verify_vm_project.py`;
+`KIT_BREVO_API_KEY` auto-fetches the mailed code (best-effort, falls
+back to an interactive prompt), `KIT_MAILPIT_URL` does the same against
+Mailpit for teststack runs, `KIT_PROBE_TABLE` (+ optional
+`KIT_PROBE_COLUMNS`) selects the auth.uid()-RLS table to probe, and
+`KIT_ADMIN_KEY` enables auto-deleting the minted test user.
+
+Validated end-to-end against the prototype stacks mapped onto the VM's
+URL shapes (kong-style defaults, bare-PostgREST/GoTrue overrides):
+ALL PASS, exit 0.
+
 ## The stack quirk that shapes this harness
 
 `supabase functions serve` needs the edge-runtime container and a
