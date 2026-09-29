@@ -40,7 +40,7 @@ jobs:
           deno-version: v2.x
 
       - name: Bring up both stacks and run the proof
-        run: bash email_auth_kit/teststack/identity/run_phase0.sh
+        run: RUN_SMOKE=1 bash email_auth_kit/teststack/identity/run_phase0.sh
 
       - name: Teardown (keep the runner clean)
         if: always()

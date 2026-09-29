@@ -6,14 +6,18 @@ counters) -> signup (autoconfirm OFF) -> reset link -> confirm -> temp
 password extracted from the mailbox -> real sign-in. Mail is captured by
 Mailpit; DB assertions go through psql.
 """
-import json, re, subprocess, sys, time, urllib.request
+import json, os, re, subprocess, sys, time, urllib.request
 
-API = "http://127.0.0.1:54321"
-EV = "http://127.0.0.1:8787"      # email-verification (host-run deno)
-PR = "http://127.0.0.1:8788"      # password-reset   (host-run deno)
-MAILPIT = "http://127.0.0.1:54324"
-ANON = "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
-DB = "supabase_db_email-auth-kit-test"
+# Driven by run_phase0.sh-style env when present (any teststack restart
+# regenerates the API keys and Mailpit's address, so the defaults below
+# are only a convenience for manual runs against a long-lived stack).
+API = os.environ.get("KIT_API_URL", "http://127.0.0.1:54321")
+EV = os.environ.get("KIT_EV_URL", "http://127.0.0.1:8787")     # email-verification
+PR = os.environ.get("KIT_PR_URL", "http://127.0.0.1:8788")     # password-reset
+MAILPIT = os.environ.get("KIT_MAILPIT_URL", "http://127.0.0.1:54324")
+ANON = os.environ.get("KIT_ANON_KEY",
+                      "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH")
+DB = os.environ.get("KIT_DB_CONTAINER", "supabase_db_email-auth-kit-test")
 
 def post(url, body, headers=None):
     h = {"content-type": "application/json"}

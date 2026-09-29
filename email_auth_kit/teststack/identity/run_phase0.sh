@@ -4,6 +4,9 @@
 #
 #   ./run_phase0.sh            # prove, leave both stacks running
 #   TEARDOWN=1 ./run_phase0.sh # prove, then tear stack B down again
+#   ./run_phase0.sh --smoke    # no identity work: stack A up (steps 1-3)
+#                              # + the kit's 23-check smoke suite
+#   RUN_SMOKE=1 ./run_phase0.sh  # full proof, then the smoke suite
 #
 # Idempotent: every step is a no-op when its outcome already exists.
 # Stack A = the kit's supabase teststack (CLI-managed, project id
@@ -93,6 +96,35 @@ for port in 8787 8788; do
   done
 done
 
+# Derive the kit smoke suite's env from the LIVE stack and run it. Never
+# baked into the suite: any teststack restart regenerates the API keys
+# and Mailpit's address, and a stale suite then fails on delivery/DB.
+run_smoke() {
+  KIT_API_URL="http://127.0.0.1:54321"
+  KIT_EV_URL="http://127.0.0.1:8787"
+  KIT_PR_URL="http://127.0.0.1:8788"
+  KIT_MAILPIT_URL="http://127.0.0.1:54324"
+  SUPABASE_BIN=${SUPABASE_BIN:-$(command -v supabase || true)}
+  [ -n "$SUPABASE_BIN" ] || SUPABASE_BIN="$HOME/.local/bin/supabase"
+  KIT_ANON_KEY=$( ( cd "$TESTSTACK" && "$SUPABASE_BIN" status -o env 2>/dev/null ) \
+    | grep -E 'PUBLISHABLE|ANON_KEY' | cut -d= -f2 | tail -1 || true)
+  # status -o env prints the value quoted; the apikey header wants it bare.
+  KIT_ANON_KEY=${KIT_ANON_KEY%\"}; KIT_ANON_KEY=${KIT_ANON_KEY#\"}
+  KIT_DB_CONTAINER="supabase_db_$A_PROJECT"
+  export KIT_API_URL KIT_EV_URL KIT_PR_URL KIT_MAILPIT_URL KIT_ANON_KEY KIT_DB_CONTAINER
+  [ -n "$KIT_ANON_KEY" ] || { echo "could not derive the anon key for the smoke suite" >&2; exit 1; }
+  python3 "$TESTSTACK/smoke_test.py"
+}
+
+# --smoke: the teststack-restart companion. Steps 1-3 above bring stack A
+# up with fresh env; the 23-check functional suite runs without any of
+# the two-stack identity work.
+if [ "${1:-}" = "--smoke" ]; then
+  run_smoke
+  echo "SMOKE-ONLY RUN COMPLETE (stack A left up for dev use)"
+  exit 0
+fi
+
 echo "== 4. project_b: database + roles (idempotent)"
 docker exec "supabase_db_$A_PROJECT" psql -U postgres -tAc \
   "select 1 from pg_database where datname='project_b'" | grep -q 1 || \
@@ -153,8 +185,6 @@ docker exec -i "supabase_db_$A_PROJECT" psql -U postgres -d project_b \
 body=$(docker exec "supabase_db_$A_PROJECT" psql -U postgres -d project_b -tAc \
   "select pg_get_functiondef('auth.uid()'::regprocedure)" 2>/dev/null)
 case "$body" in *'request.jwt.claims'*) ;; *) echo "FATAL: auth.uid() is not the modern claim reader" >&2; exit 1 ;; esac
-docker exec -i "supabase_db_$A_PROJECT" psql -U postgres -d project_b -q \
-  < post_migration.sql
 
 echo "== 8. postgrest-b: reload schema cache"
 docker compose restart postgrest-b >/dev/null
@@ -169,6 +199,13 @@ sleep 4
 
 echo "== 9. the proof (12 checks)"
 python3 proof.py
+
+# Optional smoke tail: the kit's 23-check functional suite after the
+# proof (RUN_SMOKE=1 ./run_phase0.sh).
+if [ "${RUN_SMOKE:-0}" = 1 ]; then
+  echo "== 10. kit smoke suite (23 checks)"
+  run_smoke
+fi
 
 if [ "${TEARDOWN:-0}" = 1 ]; then
   echo "== teardown: stack B down (stack A stays for dev use)"

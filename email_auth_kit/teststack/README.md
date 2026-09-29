@@ -8,11 +8,31 @@ real infrastructure. Nothing here ships with a project.
 - `supabase/` — minimal stack config (`supabase start`), the kit's
   migration copied in, the two functions staged, and `.env` with the
   local stack's keys (shared local defaults — never real secrets).
-- `smoke_test.py` — the 18-check suite (see below).
+- `smoke_test.py` — the 23-check suite (see below).
 - `smtp_repro.ts` — step-logged standalone repro of the kit's SMTP
   client, useful when debugging mail delivery.
 
 ## Run it
+
+### After any teststack restart (one command)
+
+The smoke suite is driven by run_phase0-style env, so it always runs
+against the live stack's CURRENT keys — no stale baked-in values:
+
+```bash
+identity/run_phase0.sh --smoke        # steps 1-3 (stack A + fresh
+                                      # functions) + all 23 checks
+```
+
+Or as a tail on a full identity-proof run: `RUN_SMOKE=1
+identity/run_phase0.sh` (proof's 16 checks, then the suite's 23).
+
+The suite reads `KIT_API_URL`, `KIT_EV_URL`, `KIT_PR_URL`,
+`KIT_MAILPIT_URL`, `KIT_ANON_KEY`, `KIT_DB_CONTAINER` from the
+environment; the defaults inside the file are only a convenience for a
+long-lived stack whose keys have not rotated.
+
+### Manual, step by step
 
 ```bash
 supabase start                        # first run pulls images
@@ -27,7 +47,7 @@ deno run --allow-net --allow-env \
 deno run --allow-net --allow-env \
   --env-file=supabase/functions/.env \
   supabase/functions/password-reset/index.ts       # FUNCTION_PORT=8788
-python3 smoke_test.py                 # 18 checks, exits non-zero on fail
+python3 smoke_test.py                 # 23 checks, exits non-zero on fail
 supabase stop                         # when done
 ```
 
