@@ -1,0 +1,54 @@
+# Re-proves the central-identity Phase 0 prototype against a real local
+# stack: two Supabase stacks sharing one JWT secret, kit functions live,
+# a foreign-minted JWT driving the project stack's RLS (12 checks).
+#
+# This is the drift alarm for the prototype AND the kit's auth seam: if
+# a GoTrue/PostgREST/edge-runtime image change or a kit regression
+# breaks cross-stack verification, this fails within a day instead of
+# at the next human run.
+name: identity-proof
+
+on:
+  schedule:
+    - cron: "23 4 * * *" # daily, off the busy window
+  workflow_dispatch: {} # manual rerun
+  push:
+    paths:
+      - "email_auth_kit/supabase/**"
+      - "email_auth_kit/teststack/identity/**"
+
+jobs:
+  phase0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # Stack A needs the supabase CLI; the script does everything else
+      # (start, secret extraction, stack B, provisioning, functions, proof).
+      - name: Install the Supabase CLI
+        run: |
+          curl -fsSL -o /tmp/supabase.tgz \
+            https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz
+          mkdir -p ~/.local/bin
+          tar -xzf /tmp/supabase.tgz -C ~/.local/bin supabase
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Deno (the kit functions run host-side)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Bring up both stacks and run the proof
+        run: bash email_auth_kit/teststack/identity/run_phase0.sh
+
+      - name: Teardown (keep the runner clean)
+        if: always()
+        run: |
+          cd email_auth_kit/teststack/identity && docker compose down || true
+          cd .. && supabase stop --no-backup || true
+
+      - name: Name the failure
+        if: failure()
+        run: |
+          echo "::error::Phase 0 central-identity proof FAILED — the two-stack prototype no longer verifies. See the run_phase0.sh step's log; the last known-good kit commit was $(git rev-parse HEAD)."
