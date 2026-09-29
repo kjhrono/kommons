@@ -65,16 +65,32 @@ if ! grep -q '^SUPABASE_SERVICE_ROLE_KEY=..' "$ENVF" || ! grep -q '^SUPABASE_ANO
 fi
 DENO=${DENO:-$HOME/.deno/bin/deno}
 [ -x "$DENO" ] || DENO=$(command -v deno || echo /usr/bin/env deno)
+# Always relaunch with fresh env: a supabase stop/start regenerates the
+# API keys and Mailpit's IP, so any function left over from a previous run
+# (whatever tree it was launched from) serves with dead env and 500s.
+# The script arg is the only string present in every invocation form
+# (launchers cd into functions/, so the arg may be relative) — match it.
+pkill -f 'email-verification/index.ts' 2>/dev/null \
+  && echo "   killed stale email-verification" || true
+pkill -f 'password-reset/index.ts' 2>/dev/null \
+  && echo "   killed stale password-reset" || true
+sleep 1
+DENO=${DENO:-$HOME/.deno/bin/deno}
+[ -x "$DENO" ] || DENO=$(command -v deno || echo /usr/bin/env deno)
 for fn in email-verification password-reset; do
   port=$([ "$fn" = email-verification ] && echo 8787 || echo 8788)
-  if curl -s -m 2 -o /dev/null "http://127.0.0.1:$port/"; then
-    echo "   $fn already serving on :$port"
-  else
-    ( cd "$KIT_ROOT/supabase/functions" && \
-      FUNCTION_PORT=$port setsid nohup "$DENO" run --allow-net --allow-env \
-        --env-file=$ENVF "$fn/index.ts" </dev/null >"/tmp/phase0-$fn.log" 2>&1 & )
-    echo "   $fn launched on :$port"
-  fi
+  ( cd "$KIT_ROOT/supabase/functions" && \
+    FUNCTION_PORT=$port setsid nohup "$DENO" run --allow-net --allow-env \
+      --env-file=$ENVF "$fn/index.ts" </dev/null >"/tmp/phase0-$fn.log" 2>&1 & )
+  echo "   $fn launched on :$port"
+done
+# Wait for readiness: the proof's first signup races deno's boot otherwise.
+for port in 8787 8788; do
+  for i in $(seq 1 30); do
+    code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/" || true)
+    [ "$code" != "000" ] && break
+    sleep 1
+  done
 done
 
 echo "== 4. project_b: database + roles (idempotent)"
@@ -106,6 +122,13 @@ docker exec -i "supabase_db_$A_PROJECT" psql -U postgres -d project_b -q \
 
 echo "== 8. postgrest-b: reload schema cache"
 docker compose restart postgrest-b >/dev/null
+# docker restart returns before PGRST-B actually listens; the proof's
+# first B call then gets an empty reply and fails spuriously (cold runs
+# only — warm reuse never saw it). Wait for the OpenAPI root like auth-b.
+for i in $(seq 1 30); do
+  [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:31000/)" = 200 ] && break
+  sleep 1
+done
 sleep 4
 
 echo "== 9. the proof (12 checks)"
