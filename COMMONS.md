@@ -558,6 +558,19 @@ event (`kommons_changed`), carrying the new commit. Setup, once:
    alert reruns the game's analyze (add `t` gates for tests) against
    the exact commit that triggered the ping.
 
+### The email-auth-kit subpackage
+
+`email_auth_kit/` carries the generic mediasart email-identity flows
+(confirmation codes, change password, forgot-password with temp
+password): a Supabase SQL migration, two Deno edge functions (Brevo,
+with an SMTP-capture fallback for local stacks), and a pure-Dart
+client (`mediasart_auth_client`) games add as a **path dep on this
+subpackage**. Its gates run as part of the consumer script (the
+`email_auth_kit` consumer), so a kit change is verified exactly like a
+shell change. Design docs: `email_auth_kit/docs/` (component reference
+and the central-identity plan, whose Phase 0 two-stack proof lives in
+`email_auth_kit/teststack/identity/`).
+
 ## Development
 
 ```bash

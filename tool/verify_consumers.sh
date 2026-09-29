@@ -19,6 +19,9 @@
 # Consumers (edit CONSUMERS below as games join):
 #   - the package itself (analyze + test)
 #   - examples/probe    (analyze + test, path dep on ../..)
+#   - email_auth_kit    (analyze + test — the mediasart email-identity
+#                         kit lives in this repo as a subpackage, so its
+#                         pure-Dart client gates with the shell)
 #   - kalcio            (analyze only — its 45–90 min test battery is
 #                         kalcio's own CI's job; a repo not checked out
 #                         beside kommons is SKIPPED with a warning)
@@ -35,6 +38,7 @@ COMMONS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONSUMERS=(
   "commons|${COMMONS_DIR}|at"
   "probe|${COMMONS_DIR}/examples/probe|at"
+  "email_auth_kit|${COMMONS_DIR}/email_auth_kit|at"
   "kalcio|${COMMONS_DIR}/../kalcio|a"
 )
 
