@@ -105,6 +105,22 @@ docker exec "supabase_db_$A_PROJECT" psql -U postgres -tAc \
         create role auth_admin_b login password '$B_AUTH_ADMIN_PW' noinherit;"
 
 echo "== 5. project_b: schema provisioning"
+# CI's database is virgin: no auth schema exists until GoTrue-B boots
+# (step 6) and migrates it. The DDL below (default auth.uid(), whoami())
+# must not depend on that hidden ordering — create the schema and a stub
+# auth.uid() here. NOTE: postgres is NOT a superuser on this stack, and
+# GoTrue-B's migration replaces this stub as auth_admin_b — so the stub
+# is created AS auth_admin_b (postgres holds admin on that role, having
+# created it in step 4). Ownership by auth_admin_b end-to-end means every
+# later replace is legal.
+docker exec "supabase_db_$A_PROJECT" psql -U postgres -d project_b -q -c \
+  "create schema if not exists auth;              -- postgres owns the DB
+   grant usage, create on schema auth to auth_admin_b;  -- owner grants
+   grant auth_admin_b to postgres;
+   set role auth_admin_b;
+   create or replace function auth.uid() returns uuid
+   language sql stable as \$\$ select null::uuid \$\$;
+   reset role;"
 docker exec -i "supabase_db_$A_PROJECT" psql -U postgres -d project_b -q \
   < project_b_schema.sql
 
@@ -116,7 +132,27 @@ for i in $(seq 1 30); do
 done
 curl -s -m 2 -o /dev/null -w '   auth-b health: %{http_code}\n' http://127.0.0.1:31001/health
 
+# /health answers before GoTrue-B's FIRST-BOOT migration lands its legacy
+# auth.uid() (observed on a virgin database: the health-wait passed, then
+# the legacy reader overwrote everything we install). The stub's body is
+# unique, so wait for the body to CHANGE — i.e. GoTrue's legacy write
+# landed — before modernizing. (postgres is not superuser, so the
+# fingerprint must be body-based, not ownership-based.)
+for i in $(seq 1 60); do
+  b=$(docker exec "supabase_db_$A_PROJECT" psql -U postgres -d project_b -tAc \
+    "select coalesce(pg_get_functiondef('auth.uid()'::regprocedure),'')" 2>/dev/null || echo '')
+  case "$b" in *'null::uuid'*) sleep 2 ;; *) break ;; esac
+done
+
 echo "== 7. post-migration fixes (modern auth.uid, grants)"
+docker exec -i "supabase_db_$A_PROJECT" psql -U postgres -d project_b \
+  -v ON_ERROR_STOP=1 -q < post_migration.sql
+
+# Assert the modern reader actually landed (the CI run that motivated
+# this ordering failed silently here: the stub survived, RLS saw null).
+body=$(docker exec "supabase_db_$A_PROJECT" psql -U postgres -d project_b -tAc \
+  "select pg_get_functiondef('auth.uid()'::regprocedure)" 2>/dev/null)
+case "$body" in *'request.jwt.claims'*) ;; *) echo "FATAL: auth.uid() is not the modern claim reader" >&2; exit 1 ;; esac
 docker exec -i "supabase_db_$A_PROJECT" psql -U postgres -d project_b -q \
   < post_migration.sql
 
