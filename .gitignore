@@ -1,0 +1,19 @@
+# Dart / Flutter
+.dart_tool/
+build/
+pubspec.lock
+*.log
+
+# Local env files (teststack keys are local-only by design)
+.env
+.env.*
+!.env.example
+
+# The teststack's supabase/ dir is DERIVED: config + the kit migration +
+# staged functions are copied in by the documented setup steps (see
+# teststack/README.md). Only the harness scripts themselves are tracked.
+teststack/supabase/
+
+# OS / editor noise
+.DS_Store
+*.swp
