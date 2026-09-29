@@ -19,6 +19,22 @@ jobs:
         with:
           path: kommons
 
+      # Kalcio is gated analyze-only by the consumer script (its own CI
+      # owns its 45–90 min test battery). PRIVATE repo: the default
+      # GITHUB_TOKEN cannot see it, so this step needs the same
+      # fine-grained PAT used for the change alerts, this time with
+      # "Contents: read" on kjhrono/kalcio (add it to the existing
+      # KOMMONS_NOTIFY_TOKEN). Until that is done the step fails the
+      # workflow loudly — delete or `continue-on-error: true` this step
+      # to go back to skipping kalcio.
+      - name: Checkout kalcio (consumer)
+        uses: actions/checkout@v4
+        with:
+          repository: kjhrono/kalcio
+          ref: main
+          path: kalcio
+          token: ${{ secrets.KOMMONS_NOTIFY_TOKEN }}
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

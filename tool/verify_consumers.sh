@@ -19,6 +19,9 @@
 # Consumers (edit CONSUMERS below as games join):
 #   - the package itself (analyze + test)
 #   - examples/probe    (analyze + test, path dep on ../..)
+#   - kalcio            (analyze only — its 45–90 min test battery is
+#                         kalcio's own CI's job; a repo not checked out
+#                         beside kommons is SKIPPED with a warning)
 #
 # Every project runs even if an earlier one fails; the summary at the end
 # lists failures and the exit code is non-zero if anything failed. CI: run
@@ -32,6 +35,7 @@ COMMONS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONSUMERS=(
   "commons|${COMMONS_DIR}|at"
   "probe|${COMMONS_DIR}/examples/probe|at"
+  "kalcio|${COMMONS_DIR}/../kalcio|a"
 )
 
 QUICK=0
@@ -54,7 +58,7 @@ while [ $# -gt 0 ]; do
         echo "$name [$g] $dir"
       done
       exit 0 ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown flag: $1 (try --help)"; exit 2 ;;
   esac
   shift
@@ -71,6 +75,7 @@ fi
 
 declare -a FAILED=()
 declare -a OK=()
+declare -a SKIPPED=()
 
 # Tag mode: materialize the ref into a scratch snapshot via git archive
 # (read-only on the repo, no worktree metadata) and clean up on exit.
@@ -103,6 +108,11 @@ for entry in "${CONSUMERS[@]}"; do
     else
       # Consumer: a disposable copy whose kommons dep is overridden onto
       # the tagged snapshot — the working tree is never modified.
+      if [ ! -d "$dir" ]; then
+        echo "    SKIPPED: $dir is not checked out beside kommons"
+        SKIPPED+=("$name (not checked out)")
+        continue
+      fi
       rundir="$TAGTMP/$name"
       mkdir -p "$rundir"
       (cd "$dir" && tar --exclude=.dart_tool --exclude=build --exclude=.git -cf - .) \
@@ -114,7 +124,12 @@ for entry in "${CONSUMERS[@]}"; do
   echo ""
   echo "=== $name ($rundir)"
   if [ ! -d "$rundir" ]; then
-    FAILED+=("$name (missing directory)")
+    # A consumer that isn't checked out can't be gated here — that is
+    # the workflow's provisioning concern (see consumers.yml), not a
+    # broken build. Skip loudly; only real gate failures turn the exit
+    # code red.
+    echo "    SKIPPED: $rundir is not checked out beside kommons"
+    SKIPPED+=("$name (not checked out)")
     continue
   fi
   if [ -n "$TAG" ]; then
@@ -146,8 +161,12 @@ done
 
 echo ""
 echo "======================================="
+if [ ${#SKIPPED[@]} -gt 0 ]; then
+  echo "SKIPPED (${#SKIPPED[@]}):"
+  for s in "${SKIPPED[@]}"; do echo "  - $s"; done
+fi
 if [ ${#FAILED[@]} -eq 0 ]; then
-  echo "ALL GATES GREEN (${#CONSUMERS[@]} consumers$([ $QUICK -eq 1 ] && echo ', analyze-only')${TAG:+ @ $TAG})"
+  echo "ALL GATES GREEN (${#CONSUMERS[@]} consumers, ${#SKIPPED[@]} skipped$([ $QUICK -eq 1 ] && echo ', analyze-only')${TAG:+ @ $TAG})"
   exit 0
 fi
 echo "FAILURES (${#FAILED[@]}):"
