@@ -5,6 +5,59 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
+## 0.4.0 — 2026-09-29
+
+The release that folds the mediasart email-identity kit into the repo
+as a subpackage, registers kalcio in the consumer gate, and hardens the
+release machinery itself.
+
+### The email_auth_kit subpackage
+
+`email_auth_kit/` carries the generic, project-agnostic email-identity
+flows for every mediasart app: a Supabase SQL migration (`auth_events`
+audit/challenge table with hashed codes, rate-limit guard, SECURITY
+DEFINER helpers), two Deno edge functions (`email-verification` with
+kit-native signup — the user is created unconfirmed and one 6-digit
+code mail goes out; `password-reset` with link → temp-password
+flows and a self-verified `notify` action), and a pure-Dart client
+(`mediasart_auth_client`) that games add as a path dep on the
+subpackage. Verified end to end against a local stack (23-check smoke
+suite with real mail) and 11 client unit tests; both gate with this
+repo's consumer script. Design docs in `email_auth_kit/docs/`,
+including the central-identity plan whose two-stack Phase 0 proof
+(`teststack/identity/`) ran 12/12 green.
+
+### Consumer gate and change alerts
+
+- kalcio registered in the gate (analyze-only — its test battery is
+  kalcio CI's job); consumers missing from the checkout skip loudly
+  instead of failing CI.
+- Tag mode gates the kit from the **tagged snapshot**; tags predating
+  the subpackage skip loudly.
+- `tool/verify_alert_chain.sh` closes the kommons→kalcio alert loop in
+  one guarded command.
+
+### Release machinery
+
+- Release workflow pub-gets the probe before the root analyze (fresh
+  checkouts have no probe `.dart_tool` — caught on the first v0.3.0
+  attempt).
+- Actions bumped to Node 24 majors (checkout@v5, setup-java@v5);
+  Dependabot now groups future action bumps into one weekly PR.
+
+### Adoption
+
+```yaml
+kommons:
+  git:
+    url: https://github.com/kjhrono/kommons.git
+    ref: v0.4.0
+```
+
+No shell API changes in 0.4.0 — the lobby/auth surfaces are unchanged
+from 0.3.0; everything new is the subpackage and the CI machinery
+around it.
+
 ## 0.3.0 — 2026-09-24
 
 The lobby remembers its roster, the invited guest can start the table,

@@ -9,7 +9,7 @@
 /// Pure Dart (no Flutter, no dart:io), so every mediasart project —
 /// web, desktop, mobile — wires it in as-is. Typed errors
 /// ([AuthCodeException.reason]) keep UI branching clean.
-library mediasart_auth_client;
+library;
 
 import 'dart:convert';
 
