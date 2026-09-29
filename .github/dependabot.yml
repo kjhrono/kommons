@@ -1,0 +1,22 @@
+# Dependabot — GitHub Actions version bumps as automatic PRs.
+#
+# The workflow files pin actions by major tag (actions/checkout@v5,
+# actions/setup-java@v5, subosito/flutter-action@v2). Dependabot watches
+# them all and opens a PR whenever a new major/minor/patch lands — the
+# Node-20-deprecation wave (checkout v4 → v5, setup-java v4 → v5) is the
+# kind of bump this automates.
+#
+# All action bumps are grouped into ONE weekly PR: on a two-workflow
+# repo the volume is tiny, and a single green-or-red PR is easier to
+# judge than three fragments. A bump merges only after the consumers
+# and release workflows prove it on the PR itself.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
