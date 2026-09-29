@@ -109,6 +109,20 @@ for entry in "${CONSUMERS[@]}"; do
   if [ -n "$TAG" ]; then
     if [ "$dir" = "$COMMONS_DIR" ]; then
       rundir="$SNAPSHOT" # the package itself, exactly as tagged
+    elif [ "$name" = "email_auth_kit" ]; then
+      # The kit is a SUBPACKAGE of this repo: in tag mode the tagged
+      # snapshot is the real artifact, so gate the snapshot's copy (it
+      # depends on nothing external, so no override needed). Tags cut
+      # before the subtree landed (v0.3.0 and earlier) skip loudly —
+      # gating the working-tree kit against an old kommons tag would
+      # silently verify a combination that never shipped.
+      if [ -d "$SNAPSHOT/email_auth_kit" ]; then
+        rundir="$SNAPSHOT/email_auth_kit"
+      else
+        echo "    SKIPPED: $TAG predates the email_auth_kit subpackage"
+        SKIPPED+=("$name (not in $TAG)")
+        continue
+      fi
     else
       # Consumer: a disposable copy whose kommons dep is overridden onto
       # the tagged snapshot — the working tree is never modified.
