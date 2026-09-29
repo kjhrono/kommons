@@ -95,12 +95,16 @@ st, body = rest("GET", "/identity_proof", jwt=jwt)
 check("3b owner sees exactly their row", st == 200 and len(body) == 1 and body[0]["owner"] == uid, str(body)[:120])
 
 # second identity user: same project, different uid → no access
-st, body = post(EV, {"action": "signup", "email": f"dave{int(time.time())}@kit.test", "password": password})
-mail = latest_mail(f"dave{int(time.time())}@kit.test", "confirmation code")
+# NOTE: the address is computed ONCE — calling int(time.time()) four times
+# raced the second boundary on CI and signed in a user that was never
+# created (st=400 on 3c, only when the boundary happened to be crossed).
+dave_email = f"dave{int(time.time())}@kit.test"
+st, body = post(EV, {"action": "signup", "email": dave_email, "password": password})
+mail = latest_mail(dave_email, "confirmation code")
 dave_code = re.search(r"\b(\d{6})\b", mail.get("Text", "")).group(1)
-post(EV, {"action": "verify", "email": f"dave{int(time.time())}@kit.test", "code": dave_code})
+post(EV, {"action": "verify", "email": dave_email, "code": dave_code})
 st, dbody = post(f"{A_API}/auth/v1/token?grant_type=password",
-                 {"email": f"dave{int(time.time())}@kit.test", "password": password}, {"apikey": A_ANON})
+                 {"email": dave_email, "password": password}, {"apikey": A_ANON})
 dave_jwt = dbody.get("access_token", "")
 check("3c second user exists on A", st == 200 and bool(dave_jwt), f"st={st}")
 st, body = rest("GET", "/identity_proof", jwt=dave_jwt)
