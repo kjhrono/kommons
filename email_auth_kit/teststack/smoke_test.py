@@ -24,7 +24,7 @@ def post(url, body, headers=None):
     h.update(headers or {})
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=h, method="POST")
     try:
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=10) as r:
             return r.status, json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"{}")
@@ -141,5 +141,47 @@ st, body = post(
     {"authorization": f"Bearer {jwt}", "apikey": ANON},
 )
 check("7e a mismatched user_id is refused", st == 403 and body.get("error") == "user_mismatch", str(body))
+
+# ---------------------------------------------------------------- step 8
+# ban-management (the kill-switch's ops surface). EVERY action is gated:
+# the bearer must be the exact service-role key (the kit's functions run
+# behind VERIFY_JWT=false, so an exact-secret match — not a decodable
+# claim — is the unforgable credential). Read-only actions get the key
+# here; the gate itself is exercised with and without it.
+BM = os.environ.get("KIT_BM_URL", "http://127.0.0.1:8789")
+SVC = os.environ.get("KIT_SVC_KEY", "")
+BM_H = {"authorization": f"Bearer {SVC}"} if SVC else {}
+
+st, body = post(f"{BM}", {"action": "status", "email": f"nobody{int(time.time())}@kit.test"})
+check("8a status without a bearer is refused (every action gated)",
+      st == 401 and body.get("error") == "service_role_required", f"st={st} {str(body)[:120]}")
+st, body = post(f"{BM}", {"action": "ban", "email": email, "until": "2035-01-01T00:00:00Z"})
+check("8b ban without the service-role key refused", st == 401, f"st={st} {str(body)[:120]}")
+
+if BM_H:
+    st, body = post(f"{BM}", {"action": "status", "email": f"nobody{int(time.time())}@kit.test"}, BM_H)
+    check("8c status with the key: unknown address reported honestly",
+          st == 200 and body.get("known") is False, f"st={st} {str(body)[:120]}")
+    st, body = post(f"{BM}", {"action": "list"}, BM_H)
+    check("8d list with the key answers", st == 200 and isinstance(body.get("bans"), list),
+          f"st={st} {str(body)[:120]}")
+    st, body = post(f"{BM}", {"action": "ban", "email": email,
+                              "until": "2035-01-01T00:00:00Z", "reason": "smoke"}, BM_H)
+    check("8e ban drives both planes (kit claim + native)", st == 200 and body.get("banned") is True
+          and body.get("native_ban") is True, f"st={st} {str(body)[:140]}")
+    row = psql(f"select banned_until::text from auth_kit_bans where user_id='{uid}'")
+    check("8f kit ban row present", row.startswith("2035-01-01"), row)
+    st, body = post(f"{BM}", {"action": "status", "email": email}, BM_H)
+    check("8g status reflects the ban", st == 200 and body.get("banned") is True
+          and body.get("native_ban") is True, f"st={st} {str(body)[:160]}")
+    st, body = post(f"{BM}", {"action": "unban", "email": email}, BM_H)
+    check("8h unban lifts both planes", st == 200 and body.get("banned") is False
+          and body.get("kit_lifted") is True and body.get("native_lifted") is True,
+          f"st={st} {str(body)[:140]}")
+    row = psql(f"select count(*) from auth_kit_bans where user_id='{uid}'")
+    check("8i kit ban row removed", row == "0", row)
+else:
+    check("8c KIT_SVC_KEY provided (bearer-gated checks skipped)", False,
+          "export KIT_SVC_KEY via run_phase0.sh")
 
 print("\nSMOKE SUITE: ALL PASS" if all(ok for _, ok in results) else "\nFAILURES PRESENT")

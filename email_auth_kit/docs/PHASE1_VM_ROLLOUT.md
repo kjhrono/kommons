@@ -17,6 +17,11 @@ applied on all six (`teststack/ban_aware_auth_uid.sql`, owner
 preserved). Verified over the public URL — 14/14 ALL PASS: ban via
 `auth_kit_set_ban`, claim on the fresh token, staging `kit_probe`
 refuses the banned token (read/insert/whoami), unban restores.
+`ban-management` deployed on identity and proven over the public URL
+(16/16: one service-role call drives both planes; sign-in refused while
+banned; unban restores). Note: katalogus-staging's stack dir moved to
+`~/Apps/stages/katalogus-staging/docker` (VM reorg) — harness runners
+referencing the old `~/Apps/database/` path need updating.
 Companion to [CENTRAL_IDENTITY.md](CENTRAL_IDENTITY.md) (the design;
 Phase 0 proven in `teststack/identity/` and automated in CI).
 

@@ -69,6 +69,27 @@ Two actions in one function (`action` in the JSON body):
 - `notify` `{ user_id }` → optional "your password was changed" e-mail
   (call after a voluntary change; requires the caller's JWT).
 
+### `ban-management/` (index.ts)
+
+The kill-switch's support-dashboard surface — ops calls instead of psql.
+Gated by the EXACT service-role key (constant-time compare of the bearer
+against `SUPABASE_SERVICE_ROLE_KEY`; the kit's functions run behind
+`VERIFY_JWT=false`, so an exact-secret match, not a decodable claim, is
+the unforgable credential). Every action requires it.
+
+- `ban` `{ email, until, reason?, notify? }` → drives BOTH planes in one
+  call: the kit claim (`auth_kit_set_ban`) + GoTrue's native ban
+  (`ban_duration` via admin API). `until` is ISO or `"forever"`;
+  `notify: true` mails a suspension notice.
+- `unban` `{ email, notify? }` → lifts both planes.
+- `status` `{ email }` → `{ known, banned, kit_banned_until, native_ban,
+  reason, set_at }`.
+- `list` → all live kit bans.
+
+Deploy exactly like the kit's other functions (router dispatches the
+sibling dir; env: runtime-injected `SUPABASE_URL` +
+`SUPABASE_SERVICE_ROLE_KEY`, optional `BREVO_*` for the notify mail).
+
 ## Client: `lib/mediasart_auth_client.dart`
 
 Pure Dart, zero Flutter, zero generated code:

@@ -77,11 +77,13 @@ pkill -f 'email-verification/index.ts' 2>/dev/null \
   && echo "   killed stale email-verification" || true
 pkill -f 'password-reset/index.ts' 2>/dev/null \
   && echo "   killed stale password-reset" || true
+pkill -f 'ban-management/index.ts' 2>/dev/null \
+  && echo "   killed stale ban-management" || true
 sleep 1
 DENO=${DENO:-$HOME/.deno/bin/deno}
 [ -x "$DENO" ] || DENO=$(command -v deno || echo /usr/bin/env deno)
-for fn in email-verification password-reset; do
-  port=$([ "$fn" = email-verification ] && echo 8787 || echo 8788)
+for fn in email-verification password-reset ban-management; do
+  port=$([ "$fn" = email-verification ] && echo 8787 || echo 8788); [ "$fn" = ban-management ] && port=8789
   ( cd "$KIT_ROOT/supabase/functions" && \
     FUNCTION_PORT=$port setsid nohup "$DENO" run --allow-net --allow-env \
       --env-file=$ENVF "$fn/index.ts" </dev/null >"/tmp/phase0-$fn.log" 2>&1 & )
