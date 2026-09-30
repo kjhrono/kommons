@@ -1,14 +1,14 @@
 # Phase 1 — central identity on the VM (rollout plan)
 
-Status: **Steps 1–3 done on the VM (2026-09-30).** The identity stack
-serves `https://auth.mediasart.com` — shared `mediasart.com` certbot
-lineage expanded (auth in the SAN, chain verifies), nginx routes
-/auth/v1, /rest/v1, /functions/v1 to the stack gateway, HTTP→HTTPS
-redirect. Verified from outside: TLS + endpoint probes, then the full
-11-check smoke through the public URL (kit signup → Brevo code →
-verify → sign-in → reset flow → cleanup): ALL PASS.
-Execute
-staging-first, one section at a time, verifying between steps.
+Status: **Steps 1–3 done and verified on the VM (2026-09-30).** §2
+identity stack live at `https://auth.mediasart.com` (certbot lineage
+expanded — auth in the SAN, chain verifies; nginx routes /auth/v1,
+/rest/v1, /functions/v1; HTTP→HTTPS redirect; 11-check smoke through
+the public URL: ALL PASS). §4 shared-secret cutover done on all six
+project stacks — acceptance harness 6/6 VM VERIFICATION: ALL PASS.
+Remaining: Steps 4–5 (facade flips + wipes, staging first), Step 6
+cleanup. Execute staging-first, one section at a time, verifying
+between steps.
 Companion to [CENTRAL_IDENTITY.md](CENTRAL_IDENTITY.md) (the design;
 Phase 0 proven in `teststack/identity/` and automated in CI).
 
@@ -128,6 +128,20 @@ owner-scoped delete on a project probe table, and the signup-refused
 check. All URLs/keys ride KIT_* env; validated against the prototype
 stacks mapped onto the VM's URL shapes (kong defaults, bare-GoTrue
 overrides, per-run plus-addressing to sidestep the kit's rate limiter).
+
+**Executed on the VM (2026-09-30)** — all six stacks (katalogus,
+katalogus-staging, kalcio, kognitio, kollectio, kapaxinfiniti) cut over
+and verified: kit mint on auth.mediasart.com, foreign-JWT read +
+owner-scoped insert/delete on a per-stack `kit_probe` table
+(`teststack/kit_probe_table.sql`), own signup refused. Ops notes the
+run earned: GoTrue refuses to boot with an empty `GOTRUE_SMTP_PORT` —
+keep the inert `2500` placeholder (empty `SMTP_HOST` is what disables
+mail); this stack generation's envoy gateway checks API keys only while
+JWT signatures verify in rest+auth, so each stack's own anon key still
+opens its own gateway and identity's anon key becomes the shared door
+at facade-flip time; `JWT_JWKS` must stay unset for the shared-secret
+fallthrough; kognitio's GoTrue/rest target its own `kognitio-db`
+database and kollectio's DB is the bare `kollectio` container.
 
 ## 5. Step 4 — flip each app's facade + wipe, project by project
 

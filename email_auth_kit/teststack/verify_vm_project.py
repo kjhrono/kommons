@@ -38,6 +38,7 @@ Exactly one user is created in the identity stack's real database and
 removed again (with KIT_ADMIN_KEY); the probe row is removed always.
 """
 import base64, json, os, re, sys, time, urllib.request
+from urllib.parse import quote
 
 AUTH = os.environ["KIT_AUTH_URL"].rstrip("/")
 ANON = os.environ["KIT_ANON_KEY"]
@@ -109,7 +110,7 @@ if not code and BREVO:
     while time.time() < deadline and not code:
         time.sleep(5)
         try:
-            st2, box = req(f"https://api.brevo.com/v3/smtp/emails?email={EMAIL}&limit=30",
+            st2, box = req(f"https://api.brevo.com/v3/smtp/emails?email={quote(EMAIL, safe='@')}&limit=30",
                            headers={"api-key": BREVO}, method="GET")
             for m in (box or {}).get("transactionalEmails", []):
                 if EMAIL.lower() not in json.dumps(m.get("to", [m.get("email", "")])).lower():
