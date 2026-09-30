@@ -66,6 +66,70 @@ real VM hosts.
   are send-suppressed until `DELETE /smtp/blockedContacts/{email}`
   clears them.
 
+### Phase 1 — central identity live on the VM
+
+Steps 1–3 of `docs/PHASE1_VM_ROLLOUT.md` are done and verified: the
+identity stack serves `https://auth.mediasart.com`, and every project
+stack now verifies tokens signed with identity's JWT secret.
+
+- **auth.mediasart.com live** — the shared `mediasart.com` certbot
+  lineage expanded (auth in the SAN, chain verifies); nginx routes
+  /auth/v1, /rest/v1, /functions/v1 to the identity gateway with
+  HTTP→HTTPS redirect. Verified from outside (TLS + endpoint probes)
+  and with the full 11-check smoke through the public URL.
+- **Shared secret on all six stacks** — katalogus, katalogus-staging,
+  kalcio, kognitio, kollectio, kapaxinfiniti rolled with their
+  `COMPOSE_PROJECT_NAME`-pinned `.env`s (backups kept), signups
+  disabled, SMTP emptied. Ops notes the run earned: GoTrue refuses to
+  boot on an empty `GOTRUE_SMTP_PORT` (keep the inert `2500`
+  placeholder); this stack generation's envoy gateway checks API keys
+  only while signatures verify in rest+auth, so each stack keeps its
+  own anon key until the facade flip.
+- **Acceptance 6/6 ALL PASS** — `verify_vm_project.sh` per stack: kit
+  mint on identity, foreign-JWT read plus RLS-stamped insert/delete on
+  a per-stack `kit_probe` table (`teststack/kit_probe_table.sql`), own
+  signup refused. Harness fix from the run: Brevo's list filter
+  percent-decodes `+` as a space, so derived plus-addresses encode with
+  `quote(email, safe='@')`.
+- Topology absorbed: kognitio targets its own `kognitio-db` database,
+  kollectio's DB is a bare postgres container, and katalogus-staging
+  moved to `~/Apps/stages/` in a VM reorg (verified intact after the
+  move).
+
+### The ban kill-switch
+
+The revocation primitive CENTRAL_IDENTITY.md anticipated: identity
+writes a ban flag that every project's RLS can check — no cross-stack
+plumbing, the flag rides the JWT.
+
+- **Identity side** (`20260930000000_email_auth_kit_bans.sql`) —
+  `auth_kit_bans`, the service-role `auth_kit_set_ban` RPC, and
+  `auth_kit_custom_access_token`: the GoTrue custom access token hook
+  embedding a `kit_banned_until` claim into every token minted or
+  refreshed while a ban is live. SECURITY DEFINER (the ban table has
+  zero policies) with EXECUTE granted back to `supabase_auth_admin` —
+  the blanket revoke would otherwise break every sign-in.
+- **Project side** (`teststack/ban_aware_auth_uid.sql`) — a ban-aware
+  `auth.uid()` returns NULL on a live claim, denying every
+  `auth.uid()`-keyed policy; applied on all six VM stacks with
+  `supabase_auth_admin` ownership preserved.
+- **Proven twice**: in the prototype (proof section 6, 15 checks,
+  CI-green on a virgin database) and on the VM over the public URL
+  (14/14: ban → claim on the fresh token → staging refuses
+  read/insert/whoami → pre-ban tokens honestly honored until exp →
+  unban restores everything).
+- **`ban-management/` edge function** — the dashboard surface: one
+  service-role call drives BOTH planes (kit claim + GoTrue's native
+  ban), plus `status`/`list` and optional notify mails. The gate is an
+  exact constant-time bearer match against the service-role key — the
+  kit's functions run behind `VERIFY_JWT=false`, so a decodable-claim
+  check would be forgeable. 16/16 public-URL verification; the smoke
+  suite gains section 8 and a 10s timeout on every request.
+- **Client** — `AuthBannedException` (subclass of `AuthCodeException`)
+  thrown by the new ban-aware `signIn` / `refreshSession` on either
+  plane (`bannedUntil` from the claim when known); catch it first for
+  the suspended-account UX.
+
 ## 0.4.0 — 2026-09-29
 
 The release that folds the mediasart email-identity kit into the repo
