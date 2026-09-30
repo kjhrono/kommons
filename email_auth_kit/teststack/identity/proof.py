@@ -8,7 +8,9 @@ A's JWT secret.
 
 Proves: kit-on-A mints a confirmed user → A's JWT verifies on B →
 B's RLS keys on the foreign token's auth.uid() → other users and anon
-get nothing → B's own GoTrue refuses signups.
+get nothing → B's own GoTrue refuses signups → the kit's ban kill-switch
+(embedded kit_banned_until claim + ban-aware auth.uid()) denies a banned
+account on B and unban restores it.
 """
 import json, re, subprocess, sys, time, urllib.request
 
@@ -161,5 +163,113 @@ check("5c A refuses the signed-out bearer (session revoked server-side)", st == 
 st, body = rest("GET", "/identity_proof", jwt=jwt)
 check("5d B still accepts the unexpired token (stateless; documented gap)",
       st == 200, f"st={st} {str(body)[:160]}")
+
+# --------------------------------------- 6. the kit's ban kill-switch
+# The data-plane revocation primitive (migration
+# 20260930000000_email_auth_kit_bans.sql): identity embeds a
+# kit_banned_until claim in every token minted or refreshed while a ban
+# is live (custom access token hook); B's ban-aware auth.uid() returns
+# NULL on a live claim, so every auth.uid()-keyed policy denies — with B
+# knowing nothing about A. Closes the ban-shaped half of section 5's gap:
+# refresh re-mints with the claim, so the kill lands within one refresh
+# cycle. Still honest: pre-ban tokens carry no claim and live until exp.
+import os
+SVC = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip().strip('"')
+check("6a proof environment: service-role key available (run_phase0.sh)", bool(SVC), "exported by run_phase0.sh")
+
+def svc_rpc(name, body):
+    h = {"apikey": SVC, "authorization": f"Bearer {SVC}", "content-type": "application/json"}
+    req = urllib.request.Request(f"{A_API}/rest/v1/rpc/{name}",
+                                 data=json.dumps(body).encode(), headers=h, method="POST")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()[:200]
+
+def admin_patch(uid_, body_):
+    # Admin user update: some GoTrue builds expose PUT, others PATCH —
+    # try both (405 = "wrong verb on this build").
+    h = {"apikey": A_ANON, "authorization": f"Bearer {SVC}", "content-type": "application/json"}
+    for m in ("PUT", "PATCH"):
+        req = urllib.request.Request(f"{A_API}/auth/v1/admin/users/{uid_}",
+                                     data=json.dumps(body_).encode(), headers=h, method=m)
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            if e.code == 405:
+                continue
+            return e.code, e.read().decode()[:200]
+    return 405, "both PUT and PATCH refused"
+
+st, body = svc_rpc("auth_kit_set_ban", {"p_email": email,
+                                        "p_banned_until": "2035-01-01T00:00:00Z",
+                                        "p_reason": "proof kill-switch"})
+check("6b ban written through the kit's service-role RPC", st == 200 and body is True,
+      f"st={st} {str(body)[:140]}")
+
+st, body = post(f"{A_API}/auth/v1/token?grant_type=password",
+                {"email": email, "password": password}, {"apikey": A_ANON})
+banned_jwt = body.get("access_token", "")
+banned_claims = (json.loads(base64.urlsafe_b64decode(banned_jwt.split(".")[1] + "=="))
+                 if banned_jwt else {})
+check("6c fresh token carries the live kit_banned_until claim",
+      st == 200 and str(banned_claims.get("kit_banned_until", "")).startswith("2035-01-01"),
+      f"st={st} claims={json.dumps(banned_claims, default=str)[:180]}")
+
+st, body = rest("GET", "/identity_proof", jwt=banned_jwt)
+check("6d B: banned token's RLS view is empty", st == 200 and body == [],
+      f"st={st} {str(body)[:140]}")
+st, body = rest("POST", "/identity_proof", {"label": "banned tries to write"}, jwt=banned_jwt)
+check("6e B: banned token cannot insert (RLS WITH CHECK denies)",
+      st in (401, 403, 404), f"st={st} {str(body)[:140]}")
+st, body = rest("POST", "/rpc/whoami", {}, jwt=banned_jwt)
+check("6f B: whoami() is null for the banned token", st == 200 and body is None,
+      f"st={st} {str(body)[:140]}")
+st, body = rest("POST", "/rpc/jwt_debug", {}, jwt=banned_jwt)
+check("6g B: the claim rides the token itself (jwt_debug sees it)",
+      st == 200 and isinstance(body, str) and "kit_banned_until" in body,
+      f"st={st} {str(body)[:180]}")
+
+st, body = rest("GET", "/identity_proof", jwt=jwt)
+check("6h B: the PRE-ban token is still honored (stateless until exp; documented)",
+      st == 200 and len(body) == 1, f"st={st} {str(body)[:140]}")
+
+# GoTrue's native ban (what the kit's edge functions set via the admin
+# API) closes the AUTH plane: sign-in and refresh refuse outright.
+st, body = admin_patch(uid, {"ban_duration": "876000h"})
+check("6i A: native ban set through the admin API", st == 200, f"st={st} {str(body)[:140]}")
+st, body = post(f"{A_API}/auth/v1/token?grant_type=password",
+                {"email": email, "password": password}, {"apikey": A_ANON})
+check("6j A: sign-in refused while natively banned", st in (400, 403),
+      f"st={st} {str(body)[:140]}")
+st, body = admin_patch(uid, {"ban_duration": "none"})
+check("6k A: native ban lifted", st == 200, f"st={st} {str(body)[:140]}")
+
+# The two planes are independent: auth open again (native lifted), data
+# still closed (kit claim live) — then the kit RPC reopens data too.
+st, body = post(f"{A_API}/auth/v1/token?grant_type=password",
+                {"email": email, "password": password}, {"apikey": A_ANON})
+still_claimed = (json.loads(base64.urlsafe_b64decode(body["access_token"].split(".")[1] + "=="))
+                 if st == 200 and body.get("access_token") else {})
+check("6l A: auth-plane open again, data-plane claim still live",
+      st == 200 and "kit_banned_until" in still_claimed,
+      f"st={st} claims={json.dumps(still_claimed, default=str)[:160]}")
+
+st, body = svc_rpc("auth_kit_set_ban", {"p_email": email, "p_banned_until": None})
+check("6m kit RPC lifts the ban (null banned_until)", st == 200 and body is True,
+      f"st={st} {str(body)[:140]}")
+
+st, body = post(f"{A_API}/auth/v1/token?grant_type=password",
+                {"email": email, "password": password}, {"apikey": A_ANON})
+clean_jwt = body.get("access_token", "")
+clean_claims = (json.loads(base64.urlsafe_b64decode(clean_jwt.split(".")[1] + "=="))
+                if clean_jwt else {})
+check("6n A: fresh token is claim-free again", st == 200 and "kit_banned_until" not in clean_claims,
+      f"st={st} claims={json.dumps(clean_claims, default=str)[:160]}")
+st, body = rest("POST", "/rpc/whoami", {}, jwt=clean_jwt)
+check("6o B: access fully restored after the unban", st == 200 and body == uid,
+      f"st={st} {str(body)[:140]}")
 
 print("\nCENTRAL-IDENTITY PROOF: ALL PASS" if all(results) else "\nFAILURES PRESENT")

@@ -22,6 +22,30 @@ One idempotent migration per project. Creates:
 - `REVOKE`s so anon/authenticated can't read the audit table directly;
   only `service_role` (edge functions) touches it.
 
+### `20260930000000_email_auth_kit_bans.sql`
+
+The kill-switch (identity-side; additive, idempotent):
+
+- `public.auth_kit_bans` — `(user_id PK→auth.users, banned_until,
+  reason, set_at)`; RLS on, zero policies (service_role only).
+- `public.auth_kit_set_ban(email, banned_until, reason)` — service-role
+  RPC; null `banned_until` lifts the ban; returns false for unknown
+  addresses.
+- `public.auth_kit_custom_access_token(event)` — the **custom access
+  token hook** (wire it in `config.toml`:
+  `[auth.hook.custom_access_token]` with
+  `uri = "pg-functions://postgres/public/auth_kit_custom_access_token"`).
+  SECURITY DEFINER (the ban table has no RLS policies; GoTrue's caller
+  role must read it); embeds `kit_banned_until` in every token minted or
+  refreshed while a ban is live. EXECUTE is granted back to
+  `supabase_auth_admin` — the blanket revoke would otherwise break every
+  sign-in.
+- Project side (no migration needed there — the exact SQL lives in
+  `teststack/identity/post_migration.sql`): a ban-aware `auth.uid()`
+  returns NULL on a live `kit_banned_until` claim, denying every
+  `auth.uid()`-keyed policy. Pre-ban tokens stay valid until exp;
+  refresh re-mints with the claim.
+
 ## supabase/functions/
 
 ### `email-verification/` (index.ts, deno.json)

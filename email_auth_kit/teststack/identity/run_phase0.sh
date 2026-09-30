@@ -197,8 +197,13 @@ for i in $(seq 1 30); do
 done
 sleep 4
 
-echo "== 9. the proof (12 checks)"
-python3 proof.py
+echo "== 9. the proof (sections 1-5 + the ban kill-switch section 6)"
+# Section 6 drives the kit's ban RPC through A's REST gateway, which
+# needs the stack's service-role key — read it from the function env
+# derived in step 3 (always fresh, never baked in). status -o env prints
+# the value QUOTED; the Bearer header wants it bare.
+KIT_SVC_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$ENVF" | cut -d= -f2- | tr -d '"')
+SUPABASE_SERVICE_ROLE_KEY="$KIT_SVC_KEY" python3 proof.py
 
 # Optional smoke tail: the kit's 23-check functional suite after the
 # proof (RUN_SMOKE=1 ./run_phase0.sh).

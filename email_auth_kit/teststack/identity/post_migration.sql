@@ -18,9 +18,31 @@ set role auth_admin_b;
 
 -- The modern claim readers (replace GoTrue's bundled legacy readers,
 -- which modern PostgREST cannot satisfy).
+--
+-- Ban-aware on purpose (the kit's kill-switch, migration
+-- 20260930000000_email_auth_kit_bans.sql): the identity stack's custom
+-- access token hook embeds a kit_banned_until claim in every token minted
+-- or refreshed while a ban is live. A live claim makes auth.uid()
+-- return NULL — so every auth.uid()-keyed RLS policy denies without the
+-- project knowing anything about the identity stack. Stateless: the claim
+-- rides the token B already verifies. Honest gap: tokens minted BEFORE
+-- the ban carry no claim and stay valid until exp; refresh re-mints with
+-- it (docs/CENTRAL_IDENTITY.md §revocation).
 create or replace function auth.uid() returns uuid as $$
-  select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')::uuid;
-$$ language sql stable;
+declare
+  v_claims jsonb := current_setting('request.jwt.claims', true)::jsonb;
+  v_banned timestamptz;
+begin
+  if v_claims is null then
+    return null;
+  end if;
+  v_banned := nullif(v_claims ->> 'kit_banned_until', '')::timestamptz;
+  if v_banned is not null and v_banned > now() then
+    return null;
+  end if;
+  return nullif(v_claims ->> 'sub', '')::uuid;
+end;
+$$ language plpgsql stable;
 
 create or replace function auth.role() returns text as $$
   select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'role', '');

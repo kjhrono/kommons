@@ -139,15 +139,26 @@ deployment).
 - Compartmentalization loss is real but acceptable at this scale; the
   blast radius of a JWT-secret leak is now all projects — rotate fast,
   keep the secret in the VM `.env` files with the same backup discipline.
-- **Revocation is expiry-bounded, and that is by design.** Stateless
-  verification means a stolen access JWT stays valid on every project
-  until `exp` (1h): sign-out on the identity stack revokes the refresh
-  path immediately (proof step 5c) but cannot un-issue the token. This
-  is proven honestly in `teststack/identity/proof.py` (step 5d) rather
-  than papered over. If a faster kill-switch is ever needed, the
-  project-side options are: shorter `GOTRUE_JWT_EXP` (e.g. 300s), a
-  `banned_until` check in RLS via a cached copy, or moving verification
-  behind a tiny introspecting gateway. None are planned for Phase 1.
+- **Revocation is expiry-bounded — except for bans, which propagate.**
+  Stateless verification means a stolen access JWT stays valid on every
+  project until `exp` (1h): sign-out on the identity stack revokes the
+  refresh path immediately (proof 5c) but cannot un-issue the token
+  (proof 5d proves the residual window honestly). Bans are different:
+  the kit's kill-switch embeds a `kit_banned_until` claim in every token
+  minted or refreshed while a ban is live (custom access token hook),
+  and a project-side ban-aware `auth.uid()` nulls out on a live claim —
+  so every `auth.uid()`-keyed policy denies within one refresh cycle,
+  with the project knowing nothing about the identity stack. Pre-ban
+  tokens still live until exp (stateless, by design); refresh re-mints
+  with the claim. Proven in `teststack/identity/proof.py` section 6
+  (ban → claim → RLS refusal → unban restores). If a faster kill than
+  one refresh cycle is ever needed: shorter `GOTRUE_JWT_EXP` (e.g. 300s)
+  or a tiny introspecting gateway. The RLS mirror-table option is
+  superseded by the claim approach.
+- **The kit's ban mechanics are data-plane only.** `auth_kit_set_ban`
+  closes what the banned account can DO on every project; GoTrue's
+  native ban (what the edge functions set via the admin API) closes
+  SIGN-IN and refresh. The proof shows both, independently liftable.
 
 ## 4. User migration plan
 

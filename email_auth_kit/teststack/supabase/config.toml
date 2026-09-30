@@ -8,3 +8,9 @@ enabled = true
 
 [auth.email]
 enable_confirmations = true
+
+# The kit's kill-switch: embed kit_banned_until in every token GoTrue
+# mints or refreshes (function ships in the kit's ban migration).
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/auth_kit_custom_access_token"
