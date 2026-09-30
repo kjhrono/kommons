@@ -113,7 +113,10 @@ run_smoke() {
   # status -o env prints the value quoted; the apikey header wants it bare.
   KIT_ANON_KEY=${KIT_ANON_KEY%\"}; KIT_ANON_KEY=${KIT_ANON_KEY#\"}
   KIT_DB_CONTAINER="supabase_db_$A_PROJECT"
-  export KIT_API_URL KIT_EV_URL KIT_PR_URL KIT_MAILPIT_URL KIT_ANON_KEY KIT_DB_CONTAINER
+  # ban-management section: the suite's bearer-gated checks need the
+  # exact service-role key (same derivation as the proof's SVC).
+  KIT_SVC_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$ENVF" | cut -d= -f2- | tr -d '"')
+  export KIT_API_URL KIT_EV_URL KIT_PR_URL KIT_MAILPIT_URL KIT_ANON_KEY KIT_DB_CONTAINER KIT_SVC_KEY
   [ -n "$KIT_ANON_KEY" ] || { echo "could not derive the anon key for the smoke suite" >&2; exit 1; }
   python3 "$TESTSTACK/smoke_test.py"
 }
