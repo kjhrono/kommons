@@ -5,6 +5,67 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
+## Unreleased
+
+Phase 0 of the central-identity plan became a permanent, CI-guarded
+harness instead of a one-off demo: the two-stack proof now survives
+fresh checkouts and restarts, the kit's smoke suite runs anywhere via
+environment, and a new harness proves the same acceptance bar against
+real VM hosts.
+
+### Phase 0 harness hardening
+
+- **The proof survives a virgin database** — stack B's schema
+  provisioning no longer depends on GoTrue's first-boot ordering: a
+  stub `auth.uid()` owned by `auth_admin_b` (the role GoTrue-B
+  migrates as) is replaced by the modern claim reader once the
+  fingerprint of GoTrue's bundled legacy function changes, with
+  `ON_ERROR_STOP` and a post-flight assert so a silently-stubbed proof
+  can't pass.
+- **Restart-proof runs** — readiness waits for auth-b, postgrest-b and
+  the host-run kit functions, and stale function processes are killed
+  before relaunch, so a `supabase stop/start` no longer races deno's
+  boot or serves dead env from an earlier run.
+- **Failure visibility** — a stack-A startup failure prints its log
+  tail instead of a bare non-zero exit, and the teststack
+  `config.toml` is tracked so CI starts the real stack, not a
+  config-less default one.
+- **Honest revocation checks** — the proof pins what stateless
+  verification actually guarantees: sign-out revokes the refresh path
+  and identity refuses the bearer server-side, while an unexpired
+  access token stays valid on the data plane until `exp`.
+- The identity-proof workflow reruns the proof on a schedule and on
+  kit changes — a standing drift alarm.
+
+### Smoke suite parameterization
+
+- The 23-check smoke suite reads its stack coordinates (`KIT_API_URL`,
+  `KIT_EV_URL`, `KIT_PR_URL`, `KIT_MAILPIT_URL`, `KIT_ANON_KEY`,
+  `KIT_DB_CONTAINER`) from the environment, with `--smoke` and
+  `RUN_SMOKE=1` modes — `identity/run_phase0.sh --smoke` re-validates a
+  restarted teststack against its CURRENT keys instead of baking any
+  in, because every restart regenerates the API keys and Mailpit's
+  address.
+
+### VM acceptance harness
+
+- **`teststack/verify_vm_project.sh` (+ `.py`)** — Phase 1's acceptance
+  bar parameterized for real VM hosts over the `KIT_*` env contract:
+  identity mint through the kit (signup → Brevo-mailed code with
+  auto-fetch → verify → sign-in), foreign-JWT read on the project,
+  RLS-stamped insert keyed on `auth.uid()`, owner-scoped delete, and
+  the project's own signup refused. Plus-addressing per run sidesteps
+  the kit's rate limiter; `KIT_BREVO_API_KEY`/`KIT_MAILPIT_URL`
+  auto-fetch the mailed code, `KIT_ADMIN_KEY` auto-deletes the minted
+  user.
+- The Brevo auto-fetch was fixed against the live API: the list
+  endpoint is `GET /smtp/emails?email=<addr>` (the filter is mandatory
+  and `@` must not be %-encoded), message content lives at
+  `GET /smtp/emails/{uuid}` in `body`, the list index lags sends by up
+  to ~2 minutes (deadline polling), and hard-bounced test addresses
+  are send-suppressed until `DELETE /smtp/blockedContacts/{email}`
+  clears them.
+
 ## 0.4.0 — 2026-09-29
 
 The release that folds the mediasart email-identity kit into the repo
