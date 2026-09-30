@@ -1,9 +1,12 @@
 # Phase 1 — central identity on the VM (rollout plan)
 
-Status: **in progress** — §2 (identity stack) and the kit deployment
-are **done on the VM and verified end to end** (kit signup → Brevo code
-→ verify → sign-in, plus the full reset flow, 2026-09-30); §3
-(auth.mediasart.com cert + vhost) is staged in `~/incoming/` on the VM.
+Status: **Steps 1–3 done on the VM (2026-09-30).** The identity stack
+serves `https://auth.mediasart.com` — shared `mediasart.com` certbot
+lineage expanded (auth in the SAN, chain verifies), nginx routes
+/auth/v1, /rest/v1, /functions/v1 to the stack gateway, HTTP→HTTPS
+redirect. Verified from outside: TLS + endpoint probes, then the full
+11-check smoke through the public URL (kit signup → Brevo code →
+verify → sign-in → reset flow → cleanup): ALL PASS.
 Execute
 staging-first, one section at a time, verifying between steps.
 Companion to [CENTRAL_IDENTITY.md](CENTRAL_IDENTITY.md) (the design;
