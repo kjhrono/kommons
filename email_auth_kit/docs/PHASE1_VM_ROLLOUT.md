@@ -9,6 +9,14 @@ project stacks — acceptance harness 6/6 VM VERIFICATION: ALL PASS.
 Remaining: Steps 4–5 (facade flips + wipes, staging first), Step 6
 cleanup. Execute staging-first, one section at a time, verifying
 between steps.
+
+**Ban kill-switch deployed (2026-09-30).** Identity: bans migration +
+custom access token hook (override env `GOTRUE_HOOK_CUSTOM_ACCESS_
+TOKEN_*`, values in the stack `.env`). Projects: ban-aware `auth.uid()`
+applied on all six (`teststack/ban_aware_auth_uid.sql`, owner
+preserved). Verified over the public URL — 14/14 ALL PASS: ban via
+`auth_kit_set_ban`, claim on the fresh token, staging `kit_probe`
+refuses the banned token (read/insert/whoami), unban restores.
 Companion to [CENTRAL_IDENTITY.md](CENTRAL_IDENTITY.md) (the design;
 Phase 0 proven in `teststack/identity/` and automated in CI).
 
