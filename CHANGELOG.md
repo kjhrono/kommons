@@ -5,7 +5,13 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
-## Unreleased
+## 0.5.0 — 2026-09-30
+
+The identity phase lands: the email_auth_kit becomes the VM's central
+identity service with a proven revocation primitive, and the harnesses
+that keep it honest become permanent CI machinery.
+
+### Phase 0 harness hardening
 
 Phase 0 of the central-identity plan became a permanent, CI-guarded
 harness instead of a one-off demo: the two-stack proof now survives
@@ -129,6 +135,19 @@ plumbing, the flag rides the JWT.
   thrown by the new ban-aware `signIn` / `refreshSession` on either
   plane (`bannedUntil` from the claim when known); catch it first for
   the suspended-account UX.
+
+### Adoption
+
+```yaml
+kommons:
+  git:
+    url: https://github.com/kjhrono/kommons.git
+    ref: v0.5.0
+```
+
+No shell API changes in 0.5.0 — the lobby/auth surfaces are unchanged
+from 0.4.0; everything new is the kit's VM rollout, the ban
+kill-switch, and the harness/CI machinery around them.
 
 ## 0.4.0 — 2026-09-29
 
