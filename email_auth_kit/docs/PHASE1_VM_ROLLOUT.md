@@ -1,6 +1,10 @@
 # Phase 1 — central identity on the VM (rollout plan)
 
-Status: **plan** — nothing on the VM has been touched. Execute
+Status: **in progress** — §2 (identity stack) and the kit deployment
+are **done on the VM and verified end to end** (kit signup → Brevo code
+→ verify → sign-in, plus the full reset flow, 2026-09-30); §3
+(auth.mediasart.com cert + vhost) is staged in `~/incoming/` on the VM.
+Execute
 staging-first, one section at a time, verifying between steps.
 Companion to [CENTRAL_IDENTITY.md](CENTRAL_IDENTITY.md) (the design;
 Phase 0 proven in `teststack/identity/` and automated in CI).

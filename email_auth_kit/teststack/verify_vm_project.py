@@ -101,19 +101,31 @@ check("1 identity: kit signup accepted, code mailed via Brevo",
 
 code = os.environ.get("KIT_CODE", "")
 if not code and BREVO:
-    try:
-        st2, box = req("https://api.brevo.com/v3/smtp/email?limit=20&sort=desc",
-                       headers={"api-key": BREVO}, method="GET")
-        msg = next((m for m in (box or {}).get("transactionalEmails", [])
-                    if EMAIL.lower() in json.dumps(m.get("to", [])).lower()
-                    and "code" in (m.get("subject") or "").lower()), None)
-        if msg:
-            st3, full = req(f"https://api.brevo.com/v3/smtp/email/{msg['uuid']}",
-                            headers={"api-key": BREVO}, method="GET")
-            m = re.search(r"\b(\d{6})\b", json.dumps(full))
-            code = m.group(1) if m else ""
-    except Exception as e:  # best-effort: fall through to the next source
-        print(f"   note: Brevo auto-fetch failed ({e})")
+    # Brevo API: list is GET /smtp/emails?email=<addr> (email filter is
+    # mandatory, and `@` must NOT be %-encoded in it), content at
+    # GET /smtp/emails/{uuid} in the `body` field. The list index lags
+    # sends by up to a couple of minutes — poll with a deadline.
+    deadline, last_err = time.time() + 120, None
+    while time.time() < deadline and not code:
+        time.sleep(5)
+        try:
+            st2, box = req(f"https://api.brevo.com/v3/smtp/emails?email={EMAIL}&limit=30",
+                           headers={"api-key": BREVO}, method="GET")
+            for m in (box or {}).get("transactionalEmails", []):
+                if EMAIL.lower() not in json.dumps(m.get("to", [m.get("email", "")])).lower():
+                    continue
+                if "code" not in (m.get("subject") or "").lower():
+                    continue
+                st3, full = req(f"https://api.brevo.com/v3/smtp/emails/{m['uuid']}",
+                                headers={"api-key": BREVO}, method="GET")
+                mm = re.search(r"\b(\d{6})\b", full.get("body", ""))
+                if mm:
+                    code = mm.group(1)
+                    break
+        except Exception as e:  # transient API errors — keep polling
+            last_err = e
+    if not code and last_err:
+        print(f"   note: Brevo auto-fetch failed ({last_err})")
 if not code and MAILPIT:
     try:
         st2, box = req(f"{MAILPIT}/api/v1/messages?limit=50")
