@@ -6,6 +6,11 @@
 ///   * change password at will — [changePassword]
 ///   * forgot password via link → temp password — [requestReset] / [completeReset]
 ///
+/// plus the identity-stack session surface — [signIn] / [refreshSession] —
+/// both ban-aware: when the identity stack has banned the account (the
+/// kit's kill-switch), they throw [AuthBannedException] so the UI can
+/// branch cleanly instead of showing a generic login failure.
+///
 /// Pure Dart (no Flutter, no dart:io), so every mediasart project —
 /// web, desktop, mobile — wires it in as-is. Typed errors
 /// ([AuthCodeException.reason]) keep UI branching clean.
@@ -64,6 +69,52 @@ class MediasartAuth {
   /// `locked`, `expired`, `no_pending`, or `rate_limited`.
   Future<void> verifyCode(String email, String code) =>
       _post(_emailVerificationPath, {'action': 'verify', 'email': email, 'code': code});
+
+  // ------------------------------------------------------------------
+  // Session — sign in / refresh against the IDENTITY stack
+  // ------------------------------------------------------------------
+
+  /// Signs in with email + password against the identity stack
+  /// (`https://auth.mediasart.com` — point [supabaseUrl] there; project
+  /// stacks have signup disabled and are not the auth door).
+  ///
+  /// Ban-aware: throws [AuthBannedException] when the account is banned
+  /// — either because the identity refused the sign-in (native ban) or
+  /// because the freshly minted token carries a live `kit_banned_until`
+  /// claim (the data-plane kill-switch). Catch it BEFORE
+  /// [AuthCodeException]: it is a subclass, so a lone generic catch
+  /// would also swallow it.
+  Future<AuthSession> signIn({
+    required String email,
+    required String password,
+  }) =>
+      SupabaseAuth.signInWithPassword(
+        baseUrl: supabaseUrl,
+        anonKey: anonKey,
+        email: email,
+        password: password,
+      );
+
+  /// Rotates the session's tokens. Supabase revokes the old refresh
+  /// token on password change (and after a temp-password reset), so the
+  /// app must persist the fresh ones — hand [onSessionUpdated] your
+  /// persistence callback.
+  ///
+  /// Ban-aware: a native ban surfaces as [AuthBannedException], which
+  /// also means the refresh token is dead — sign the user out and show
+  /// the banned state, don't retry.
+  Future<AuthSession> refreshSession({
+    required AuthSession session,
+    void Function(AuthSession newSession)? onSessionUpdated,
+  }) async {
+    final updated = await SupabaseAuth.refresh(
+      baseUrl: supabaseUrl,
+      anonKey: anonKey,
+      refreshToken: session.refreshToken,
+    );
+    onSessionUpdated?.call(updated);
+    return updated;
+  }
 
   // ------------------------------------------------------------------
   // Flow 2 — change password at will

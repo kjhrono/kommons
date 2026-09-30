@@ -98,7 +98,18 @@ Pure Dart, zero Flutter, zero generated code:
   and anon key. Methods mirror the flows:
   `requestCode / verifyCode / requestReset / completeReset /
   notifyPasswordChanged`, plus `changePassword` which goes straight to
-  Supabase Auth (no edge function needed).
+  Supabase Auth (no edge function needed), and the ban-aware identity
+  session surface `signIn / refreshSession` (point `supabaseUrl` at
+  `https://auth.mediasart.com`).
+- **Ban detection** — `signIn` and `refreshSession` throw
+  `AuthBannedException` when the account is banned: either the identity
+  refused the sign-in/refresh (native ban), or the fresh token carries
+  a live `kit_banned_until` claim (the data-plane kill-switch;
+  `bannedUntil` carries the claim's timestamp). It subclasses
+  `AuthCodeException` (reason `banned`), so generic catches keep
+  working — but catch the ban type first for the dedicated UX (sign
+  out, show a "account suspended" state; on refresh-refusal the token
+  is dead, don't retry).
 - `AuthCode/auth` — minimal Supabase Auth REST wrapper used by
   `changePassword` and by the login-after-reset path.
 - `AuthException` — typed errors (network, rate-limited, expired,

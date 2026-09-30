@@ -11,6 +11,7 @@
 ///   * `unauthorized`       — bad/missing JWT where one was required
 ///   * `invalid_credentials`— sign-in with temp password rejected
 ///   * `weak_password`      — new password rejected by the password rules
+///   * `banned`             — surfaced as [AuthBannedException]
 ///   * `server`             — anything else (see [detail])
 library;
 
@@ -29,4 +30,31 @@ class AuthCodeException implements Exception {
   @override
   String toString() =>
       'AuthCodeException($reason${detail == null ? '' : ': $detail'})';
+}
+
+/// The account is banned on the identity stack.
+///
+/// Thrown from sign-in/refresh when the identity refuses the account
+/// (auth plane), and from [MediasartAuth.signIn] when a freshly minted
+/// token still carries a LIVE `kit_banned_until` claim (data plane —
+/// the kill-switch embeds it in every token minted or refreshed while a
+/// ban is active). A subclass of [AuthCodeException] with reason
+/// `banned`, so existing `catch (e) if (e is AuthCodeException)` blocks
+/// keep working; catch this type FIRST for the ban-specific UX.
+///
+/// [bannedUntil] is the raw ISO timestamp from the claim when known —
+/// show it when your UX wants to, but treat it as advisory: an admin
+/// may lift the ban earlier.
+class AuthBannedException extends AuthCodeException {
+  /// ISO timestamp of the ban's end, from the kit_banned_until claim
+  /// (null when detected via the auth plane's refusal instead).
+  final String? bannedUntil;
+
+  const AuthBannedException({this.bannedUntil, String? detail})
+      : super('banned', detail: detail);
+
+  @override
+  String toString() => 'AuthBannedException(banned'
+      '${bannedUntil == null ? '' : ' until $bannedUntil'}'
+      '${detail == null ? '' : ': $detail'})';
 }

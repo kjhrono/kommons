@@ -224,4 +224,112 @@ void main() {
     expect(poster.calls.single.headers['authorization'], 'Bearer at');
     expect(jsonDecode(poster.calls.single.body)['user_id'], 'u1');
   });
+
+  group('ban detection', () {
+    // Real-shape JWT (unverified signature is fine — the client only
+    // decodes claims AFTER the stack answered 200).
+    String jwtWith(Map<String, dynamic> claims) {
+      String b64(Map<String, dynamic> j) =>
+          base64Url.encode(utf8.encode(jsonEncode(j)));
+      return '${b64({'alg': 'HS256', 'typ': 'JWT'})}.${b64(claims)}.sig';
+    }
+
+    Map<String, dynamic> sessionBody(String jwt) => {
+          'access_token': jwt,
+          'refresh_token': 'rt',
+          'user': {'id': 'u1', 'email': 'user@example.com'},
+        };
+
+    test('signIn returns the session for a claim-free token', () async {
+      poster.responses
+          .add(_Res(200, sessionBody(jwtWith({'sub': 'u1', 'role': 'authenticated'}))));
+
+      final s = await auth.signIn(email: 'user@example.com', password: 'pw');
+
+      expect(s.userId, 'u1');
+      expect(poster.calls.single.url.path, contains('/auth/v1/token'));
+      expect(jsonDecode(poster.calls.single.body)['email'], 'user@example.com');
+    });
+
+    test('signIn surfaces a NATIVE ban (auth plane) as AuthBannedException', () async {
+      poster.responses.add(const _Res(400,
+          {'error_code': 'user_banned', 'msg': 'User is banned'}));
+
+      await expectLater(
+        auth.signIn(email: 'user@example.com', password: 'pw'),
+        throwsA(isA<AuthBannedException>()
+            .having((e) => e.reason, 'reason', 'banned')
+            .having((e) => e.bannedUntil, 'bannedUntil', isNull)),
+      );
+    });
+
+    test('signIn surfaces a LIVE kit_banned_until claim (data plane)', () async {
+      poster.responses.add(_Res(200, sessionBody(jwtWith({
+        'sub': 'u1',
+        'role': 'authenticated',
+        'kit_banned_until': '2035-01-01T00:00:00Z',
+      }))));
+
+      await expectLater(
+        auth.signIn(email: 'user@example.com', password: 'pw'),
+        throwsA(isA<AuthBannedException>()
+            .having((e) => e.bannedUntil, 'bannedUntil', '2035-01-01T00:00:00Z')),
+      );
+    });
+
+    test('an EXPIRED kit_banned_until claim does not deny', () async {
+      poster.responses.add(_Res(200, sessionBody(jwtWith({
+        'sub': 'u1',
+        'role': 'authenticated',
+        'kit_banned_until': '2020-01-01T00:00:00Z',
+      }))));
+
+      final s = await auth.signIn(email: 'user@example.com', password: 'pw');
+      expect(s.userId, 'u1');
+    });
+
+    test('plain invalid credentials stay AuthCodeException, not banned', () async {
+      poster.responses.add(const _Res(400,
+          {'error_code': 'invalid_credentials', 'msg': 'Invalid login credentials'}));
+
+      await expectLater(
+        auth.signIn(email: 'user@example.com', password: 'wrong'),
+        throwsA(isA<AuthCodeException>()
+            .having((e) => e.reason, 'reason', 'invalid_credentials')
+            .having((e) => e is AuthBannedException, 'not a ban', isFalse)),
+      );
+    });
+
+    test('refreshSession surfaces a native ban (the refresh token is dead)', () async {
+      poster.responses.add(const _Res(400,
+          {'error_code': 'user_banned', 'msg': 'User is banned'}));
+
+      await expectLater(
+        auth.refreshSession(
+          session: const AuthSession(
+            userId: 'u1', email: 'user@example.com', accessToken: 'at', refreshToken: 'rt',
+          ),
+        ),
+        throwsA(isA<AuthBannedException>()),
+      );
+    });
+
+    test('refreshSession checks the live claim on the rotated token', () async {
+      poster.responses.add(_Res(200, sessionBody(jwtWith({
+        'sub': 'u1',
+        'role': 'authenticated',
+        'kit_banned_until': '2035-01-01T00:00:00Z',
+      }))));
+
+      await expectLater(
+        auth.refreshSession(
+          session: const AuthSession(
+            userId: 'u1', email: 'user@example.com', accessToken: 'at', refreshToken: 'rt',
+          ),
+        ),
+        throwsA(isA<AuthBannedException>()
+            .having((e) => e.bannedUntil, 'bannedUntil', '2035-01-01T00:00:00Z')),
+      );
+    });
+  });
 }
