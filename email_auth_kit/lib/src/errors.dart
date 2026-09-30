@@ -50,8 +50,8 @@ class AuthBannedException extends AuthCodeException {
   /// (null when detected via the auth plane's refusal instead).
   final String? bannedUntil;
 
-  const AuthBannedException({this.bannedUntil, String? detail})
-      : super('banned', detail: detail);
+  const AuthBannedException({this.bannedUntil, super.detail})
+      : super('banned');
 
   @override
   String toString() => 'AuthBannedException(banned'
