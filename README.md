@@ -62,9 +62,12 @@ the localized string catalog — themed, translated and ready.
   `AppTopBar`, the shared `SettingsScreen` with email +
   reference OAuth sign-in (Google, GitHub — the game server's hosted
   authorize flow: popups on the web, deep links through the system browser
-  on Android/iOS), persisted day/night theme (`appTheme`),
+  on Android/iOS),  persisted day/night theme (`appTheme`),
   persisted language (`appLocale`, strings in `ShellStrings`), account
-  state (`account`) and cross-project preference sync.
+  state (`account` — with terminal ban handling: a suspended account
+  loses its stored session on every path and the settings card shows the
+  suspension banner; and native reset parking: a forgot-password request
+  parks the address itself) and cross-project preference sync.
 - **Multiplayer core** — `LobbySeat`, the `GameSyncService` transport
   (in-memory and PostgREST implementations), `CloudRoomService` +
   `CloudRoomCard` + `CloudHandoverSection` (saved-games listing, host

@@ -5,6 +5,39 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
+## Unreleased
+
+### The shell enforces the ban; the shell parks the reset
+
+Two behaviors that early consumers had to reimplement per game become
+native `AccountController` behavior — other games get them for free, and
+adapters that predate them can shed their workarounds.
+
+- **Ban gate** — a `banned` refusal from the auth service is terminal at
+  the controller level on every path that can surface it: the password
+  sign-in (including the sign-up-or-in fallback), signup, code/link
+  verification, recovery, and the silent paths (startup session restore
+  and expired-token refresh). The controller stamps the suspension
+  (`account.banned`, `account.bannedUntil` parsed from the refusal
+  message when the server sends a window), drops the stored session,
+  and notifies listeners. Silent paths still degrade to the device-local
+  record — the settings card carries the news instead: an `ACCOUNT
+  SUSPENDED` banner with the window. Sign-out and `resetForTest` clear
+  the state. Callers treat a ban as terminal: no retry — the token is
+  dead server-side no matter what the local copy claims. The contract
+  for auth services: surface the suspension as `AuthException` code
+  `banned` (the plain GoTrue REST client already passes GoTrue's
+  `error_code` through; the kit-backed adapters map
+  `AuthBannedException` to it).
+- **Native reset parking** — `requestPasswordReset` parks the address
+  itself (`account.pendingResetEmail`), idempotently, exactly like the
+  parked signup. Screens no longer have to remember to
+  `parkPasswordReset` after the request; doing so stays harmless.
+
+New in `test/account_ban_gate_test.dart` (8 tests: the gate on sign-in,
+window capture, the dead-session drop on the silent restore, sign-out
+clearing, parking, resend, and the settings banner).
+
 ## 0.5.0 — 2026-09-30
 
 The identity phase lands: the email_auth_kit becomes the VM's central

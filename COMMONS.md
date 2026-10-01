@@ -112,7 +112,7 @@ Navigator.push(context, MaterialPageRoute<void>(
 | Export | What it gives you |
 | --- | --- |
 | `shell_app.dart` | `ShellApp` — the root widget that owns the MaterialApp wiring: persisted theme + locale on MaterialApp, Material localization delegates (the host's own merge in after), and the shell's startup preload (theme, locale, account). `seedColor`/`themeBuilder` shape the themes; `locale`/`themeMode`/`supportedLocales` are overrides. `onJoinInvite` receives a parsed invite when the app is opened through a join link (see **Invites** below); `onRecoveryLink` receives a reset-email link the same way. A signup-confirmation link (`…type=signup`) is handled by the shell itself — it completes a parked registration (see **Signup confirmation** below). When an authorize-redirect link (`…#access_token=…`) re-opens the app with no OAuth flow waiting, the shell restores the session it carries (`restoreSessionsFromLinks: false` opts out). |
-| `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state, **cross-project preference sync**), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
+| `app_settings.dart` | Globals `appTheme` (`AppThemeNotifier`, persisted day/night) and `account` (`AccountController` — player name, session, cloud sign-in state, **cross-project preference sync**), plus `appLocale` (`AppLocaleNotifier`, persisted language). `ServerConnection` records a game-server URL+key. A `banned` auth answer is terminal controller-wide: `account.banned` / `account.bannedUntil` carry the suspension and the stored session is dropped on every path (see **Account suspension** below). Tests: `SharedPreferences.setMockInitialValues({})`, `account.resetForTest()`, `appLocale.resetForTest()`. |
 | `shell_preferences.dart` | The cross-project preference sync codec: the `kommons` slice of GoTrue `user_metadata` (theme, locale, player name) with per-key `updatedAt` stamps, the patch builder and the reconcile rules the controller runs on sign-in — plus the per-game settings map (`kommons.games.<gameId>`) hosts can opt into. See **Cross-project preference sync** below. |
 | `app_top_bar.dart` | `AppTopBar` — release version (left), theme toggle + settings gear (right); `settingsBuilder` seam decides which settings screen opens. `AppTopBarActions` drops the same two buttons into any host `AppBar.actions`. |
 | `auth_service.dart` | `AuthService` — plain GoTrue/Supabase REST client (no SDK): email sign-in/sign-up with confirmation, password recovery (`resetPassword` → `/auth/v1/recover`, `verifyRecovery` → `/auth/v1/verify` type=recovery) and password change (`updatePassword` → `PUT /auth/v1/user`), OAuth authorize URLs + implicit-fragment decoding (`authorizeUrl`, `sessionFromImplicitFragment`, `fetchUser`), `AuthSession` (including the OAuth `provider_token` grant), `AuthException`. Per-app configuration: point it at your auth server. |
@@ -334,7 +334,10 @@ in-app (email templates stay server-side):
   (GoTrue `/auth/v1/recover`), the player types it back and lands signed-in
   with `account.passwordResetPending` true — the forced change-password form
   is the only step on the card (sign-out is refused until a new password is
-  chosen, code `reset_in_progress`).
+  chosen, code `reset_in_progress`). Requesting parks the address natively
+  (`account.pendingResetEmail` — idempotent since the native-parking
+  landing), so the sub-form's resend and paste-verify survive rebuilds
+  without the screen remembering to park.
 * **Recovery links** (`recovery_link.dart`) — a `{{ .ConfirmationURL }}`
   template's whole link is a supported sign-back-in path, two ways:
 
@@ -373,6 +376,22 @@ in-app (email templates stay server-side):
   flow. A successful change clears the key server-side (GoTrue metadata
   merge: `"must_change_password": null` removes it) and locally in the same
   PUT.
+* **Account suspension** — a `banned` answer from the auth service (GoTrue's
+  native ban, the kit's ban kill-switch — any service surfacing code
+  `banned`) is terminal controller-wide: every auth path — password sign-in
+  (including the sign-up-or-in fallback), signup, code/link verification,
+  recovery, and the silent restore/token-refresh — stamps
+  `account.banned` + `account.bannedUntil` (the server's window, parsed
+  from the refusal message when one was sent), drops the stored session,
+  and notifies. The card shows an **ACCOUNT SUSPENDED** banner with the
+  window (localized; reword with `accountSuspended` /
+  `accountSuspendedUntilPattern`). Silent paths still degrade to the
+  device-local record — the banner carries the news. There is no retry:
+  the token is dead server-side no matter what the local copy claims;
+  sign-out clears the state. Contract for custom `AuthService`
+  implementations: surface the suspension as `AuthException` code
+  `banned` (the plain GoTrue REST client passes GoTrue's `error_code`
+  through verbatim).
 * `cancel-reset` (`resend-reset` beside it) leaves the sub-form without
   side effects; validation errors (`invalid_email`, `shortPassword`,
   `passwordMismatch`) surface inline before any call.
