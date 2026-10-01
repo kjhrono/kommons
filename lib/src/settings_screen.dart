@@ -70,6 +70,7 @@ class SettingsScreen extends StatefulWidget {
     this.oauthProviders = const <String, OAuthProviderHandler>{},
     this.serverSetup,
     this.showAccountCard = true,
+    this.showEmailOnlySignIn = true,
   });
 
   /// Which game is hosting the screen. Tags the route so games can share
@@ -93,6 +94,14 @@ class SettingsScreen extends StatefulWidget {
   /// hide the shared email/sign-up card entirely; name and language cards
   /// still render, and the host appends its own sections below them.
   final bool showAccountCard;
+
+  /// Hides the email-only "Sign in with email" button (the device-local
+  /// record, no password, no server). Hosts with real cloud accounts set
+  /// this false — the button would otherwise sit beside the cloud button
+  /// and accept any address without proof, which players read as the
+  /// cloud sign-in working with no password. Games without accounts keep
+  /// the default.
+  final bool showEmailOnlySignIn;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -433,13 +442,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             const SizedBox(height: 8),
                             Row(children: [
-                              FilledButton.icon(
-                                key: const ValueKey('email-signin'),
-                                onPressed: _signIn,
-                                icon: const Icon(Icons.mail_outline),
-                                label: Text(strings.signInWithEmail),
-                              ),
-                              const SizedBox(width: 8),
+                              if (widget.showEmailOnlySignIn) ...[
+                                FilledButton.icon(
+                                  key: const ValueKey('email-signin'),
+                                  onPressed: _signIn,
+                                  icon: const Icon(Icons.mail_outline),
+                                  label: Text(strings.signInWithEmail),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               OutlinedButton(
                                 key: const ValueKey('oauth-google'),
                                 onPressed: _providerEnabled('google')

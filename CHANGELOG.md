@@ -5,6 +5,14 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
+## Unreleased
+
+- **`SettingsScreen.showEmailOnlySignIn`** (default true) — hosts with
+  real cloud accounts set it false to hide the email-only device-local
+  button: beside the cloud sign-in it accepted any address with no
+  password and read as the cloud sign-in working passwordless. The cloud
+  button keeps its `cloud-signin` key for tests.
+
 ## 0.6.0 — 2026-10-01
 
 The shell takes over two account behaviors every consumer had to

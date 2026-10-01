@@ -294,6 +294,28 @@ void main() {
   });
 
   group('Settings screen password forms', () {
+    testWidgets('the email-only button shows by default and hides on opt-out',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData.dark(),
+        home: const SettingsScreen(),
+      ));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('email-signin')), findsOneWidget);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData.dark(),
+        home: const SettingsScreen(showEmailOnlySignIn: false),
+      ));
+      await tester.pump();
+      // The device-local sign-in accepts any address without proof — hosts
+      // with real cloud accounts hide it so it cannot read as the cloud
+      // sign-in working passwordless.
+      expect(find.byKey(const ValueKey('email-signin')), findsNothing);
+      // The cloud button stays.
+      expect(find.byKey(const ValueKey('cloud-signin')), findsOneWidget);
+    });
+
     Future<void> pumpSettings(WidgetTester tester) async {
       await tester.pumpWidget(MaterialApp(
         theme: ThemeData.dark(),
