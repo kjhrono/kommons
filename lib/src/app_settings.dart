@@ -361,7 +361,10 @@ class AccountController extends ValueNotifier<Account?> {
       _resetPasswordArmed = _session!.mustChangePassword;
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       unawaited(syncPreferencesOnSignIn());
-    } on AuthException {
+    } on AuthException catch (error) {
+      // Same terminal case on the startup restore: stamp the suspension,
+      // drop the dead session either way.
+      if (error.code == 'banned') await _markBanned(error);
       _session = null;
       await prefs.remove(_sessionKey);
     }
@@ -394,7 +397,11 @@ class AccountController extends ValueNotifier<Account?> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
       return _session!.accessToken;
-    } on AuthException {
+    } on AuthException catch (error) {
+      // A ban during the silent refresh is terminal: the suspension is
+      // stamped for the settings card (the session is cleared there) while
+      // the caller still gets its null.
+      if (error.code == 'banned') await _markBanned(error);
       return null;
     }
   }
@@ -974,6 +981,9 @@ class AccountController extends ValueNotifier<Account?> {
     try {
       session = await service.signUp(email: clean, password: password);
     } on AuthException catch (error) {
+      // A ban is terminal no matter which step refused it (the signup or
+      // the fallback sign-in): stamp the suspension for the settings card.
+      if (error.code == 'banned') await _markBanned(error);
       if (error.code == 'email_not_confirmed') {
         // The server registered the address but withheld the session until
         // the confirmation email is verified (autoconfirm off). Park the
@@ -988,7 +998,15 @@ class AccountController extends ValueNotifier<Account?> {
           error.code != 'email_exists') {
         rethrow;
       }
-      session = await service.signIn(email: clean, password: password);
+      try {
+        session = await service.signIn(email: clean, password: password);
+      } on AuthException catch (signInError) {
+        // A centrally suspended account is terminal: no retry, and any
+        // stored session is dead server-side too. Stamp the suspension for
+        // the settings card, then surface it.
+        if (signInError.code == 'banned') await _markBanned(signInError);
+        rethrow;
+      }
     }
     _session = session;
     _pendingSignupEmail = null;
@@ -1035,20 +1053,29 @@ class AccountController extends ValueNotifier<Account?> {
       throw const AuthException('no_server',
           'Configure the game server first (host or join an online room once).');
     }
-    final session =
-        await service.verifySignup(email: email, token: code.trim());
-    await _landConfirmedSignup(session, fallbackEmail: email);
+    AuthSession session;
+    try {
+      session = await service.verifySignup(email: email, token: code.trim());
+    } on AuthException catch (error) {
+      if (error.code == 'banned') await _markBanned(error);
+      rethrow;
+    }
+    await _landSession(session, fallbackEmail: email);
   }
 
-  /// The shared landing for a confirmed signup — code or emailed link
-  /// alike: the session is kept, the parked state retired, the account
-  /// recorded, preferences synced (a fresh account pulls nothing but
-  /// pushes this device's shell preferences, provenance stamped).
-  Future<void> _landConfirmedSignup(AuthSession session,
-      {required String fallbackEmail}) async {
+  /// The shared landing for any authenticated arrival — a confirmed
+  /// signup (code or emailed link alike) or a password recovery: the
+  /// session is kept, parked states retired, the account recorded,
+  /// preferences synced. [recovery] lands a recovery session, which always
+  /// forces the change-password form; a signup forces it only when the
+  /// server flagged the session itself (an admin-issued temp password).
+  Future<void> _landSession(AuthSession session,
+      {required String fallbackEmail, bool recovery = false}) async {
     _session = session;
     _pendingSignupEmail = null;
-    _resetPasswordArmed = session.mustChangePassword;
+    _resetEmail = null;
+    _resetPasswordArmed = recovery || session.mustChangePassword;
+    _recoveryNoPassword = recovery;
     value = Account(
         displayName: playerName,
         email: session.email.isNotEmpty ? session.email : fallbackEmail,
@@ -1086,12 +1113,17 @@ class AccountController extends ValueNotifier<Account?> {
           'This confirmation link must be opened on the device that '
               'registered (or the server should mail token-hash links).');
     }
-    final session = link.isTokenHash
-        ? await service.verifySignupTokenHash(link.tokenHash!)
-        : await service.verifySignup(
-            email: _pendingSignupEmail ?? '', token: link.token!);
-    await _landConfirmedSignup(session,
-        fallbackEmail: _pendingSignupEmail ?? '');
+    AuthSession session;
+    try {
+      session = link.isTokenHash
+          ? await service.verifySignupTokenHash(link.tokenHash!)
+          : await service.verifySignup(
+              email: _pendingSignupEmail ?? '', token: link.token!);
+    } on AuthException catch (error) {
+      if (error.code == 'banned') await _markBanned(error);
+      rethrow;
+    }
+    await _landSession(session, fallbackEmail: _pendingSignupEmail ?? '');
   }
 
   /// Sends the "forgot password" email: the game server mails the
@@ -1112,6 +1144,11 @@ class AccountController extends ValueNotifier<Account?> {
           'Configure the game server first (host or join an online room once).');
     }
     await service.resetPassword(email: clean);
+    // Native reset parking: the address is recorded so the recovery UI
+    // (resend, code entry, context) survives a rebuild exactly like the
+    // parked signup does. Idempotent — callers that parked themselves
+    // (older shells) re-park the same address harmlessly.
+    await parkPasswordReset(clean);
   }
 
   /// Finishes the recovery: verifies the code (or link token) from the
@@ -1131,27 +1168,14 @@ class AccountController extends ValueNotifier<Account?> {
       throw const AuthException('no_server',
           'Configure the game server first (host or join an online room once).');
     }
-    final session =
-        await service.verifyRecovery(email: email, token: code.trim());
-    _session = session;
-    _pendingSignupEmail = null;
-    _resetEmail = null; // the reset is complete: the player is back in
-    // Recovery always forces the change; the flag (set alongside an
-    // admin-issued temp password) is redundant here but harmless.
-    _resetPasswordArmed = true;
-    _recoveryNoPassword = true;
-    value = Account(
-      displayName: playerName,
-      email: session.email.isNotEmpty ? session.email : email,
-      provider: 'email',
-    );
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_emailKey, value!.email);
-    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
-    await prefs.remove(_pendingKey);
-    notifyListeners();
-    _signInSync = syncPreferencesOnSignIn();
-    unawaited(_signInSync!);
+    AuthSession session;
+    try {
+      session = await service.verifyRecovery(email: email, token: code.trim());
+    } on AuthException catch (error) {
+      if (error.code == 'banned') await _markBanned(error);
+      rethrow;
+    }
+    await _landSession(session, fallbackEmail: email, recovery: true);
   }
 
   /// Completes a password reset that arrived as a whole link — the
@@ -1179,33 +1203,62 @@ class AccountController extends ValueNotifier<Account?> {
           'This recovery link must be opened on the device that requested '
               'the reset (or the server should mail token-hash links).');
     }
-    final session = link.isTokenHash
-        ? await service.verifyRecoveryTokenHash(link.tokenHash!)
-        : await service.verifyRecovery(
-            email: _resetEmail ?? '', token: link.token!);
-    _session = session;
-    _pendingSignupEmail = null;
-    _resetEmail = null;
-    _resetPasswordArmed = true;
-    _recoveryNoPassword = true;
-    value = Account(
-      displayName: playerName,
-      email: session.email.isNotEmpty ? session.email : '',
-      provider: 'email',
-    );
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_emailKey, value!.email);
-    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
-    await prefs.remove(_pendingKey);
-    notifyListeners();
-    _signInSync = syncPreferencesOnSignIn();
-    unawaited(_signInSync!);
+    AuthSession session;
+    try {
+      session = link.isTokenHash
+          ? await service.verifyRecoveryTokenHash(link.tokenHash!)
+          : await service.verifyRecovery(
+              email: _resetEmail ?? '', token: link.token!);
+    } on AuthException catch (error) {
+      if (error.code == 'banned') await _markBanned(error);
+      rethrow;
+    }
+    await _landSession(session, fallbackEmail: '', recovery: true);
   }
 
   /// True while the current cloud session came from a password recovery —
   /// the settings screen shows the change-password form (and no other
   /// account actions) until the player sets their own password.
   bool get passwordResetPending => _resetPasswordArmed;
+
+  /// True when the identity server answered `banned` — the account is
+  /// suspended centrally and its tokens are dead server-side. Set on any
+  /// auth call that surfaces the refusal (a password sign-in, or a silent
+  /// refresh on restore/token acquisition); cleared by [signOut] and
+  /// [resetForTest]. Callers treat it as terminal: no retry, sign out and
+  /// stay local.
+  bool get banned => _banned;
+  bool _banned = false;
+
+  /// The suspension answer from the last `banned` refusal (GoTrue's
+  /// `banned_until`, when the server sent one), for display next to
+  /// [banned]. Empty when the server gave no window.
+  String get bannedUntil => _bannedUntil;
+  String _bannedUntil = '';
+
+  /// Records a `banned` refusal from any auth call: the stored session is
+  /// forgotten (its token is dead no matter what the local copy claims)
+  /// and the suspension state is stamped for the settings card. Sign-in
+  /// callers rethrow their [AuthException] afterwards (a sign-in refusal
+  /// is always user-visible); silent callers (restore, token refresh)
+  /// keep degrading to null — the account card still announces the
+  /// suspension on the next listen.
+  Future<void> _markBanned(AuthException error) async {
+    _banned = true;
+    _bannedUntil = _bannedUntilOf(error.message);
+    _session = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_sessionKey);
+    notifyListeners();
+  }
+
+  /// The `banned_until` window, when the service message carries one
+  /// ("… suspended until `2026-10-10T10:00:00Z`.").
+  static String _bannedUntilOf(String message) {
+    final match = RegExp(r'until (.+?)\.?$', caseSensitive: false)
+        .firstMatch(message);
+    return match?.group(1) ?? '';
+  }
 
   /// True when the current session carries the server's
   /// `must_change_password` flag — the player signed in with an
@@ -1501,6 +1554,8 @@ class AccountController extends ValueNotifier<Account?> {
     final session = _session;
     _session = null;
     _pendingSignupEmail = null;
+    _banned = false;
+    _bannedUntil = '';
     _syncPushTimer?.cancel();
     _pendingPushes.clear();
     _pendingGamePushes.clear();
@@ -1542,6 +1597,8 @@ class AccountController extends ValueNotifier<Account?> {
     _pendingSignupEmail = null;
     _resetEmail = null;
     _resetPasswordArmed = false;
+    _banned = false;
+    _bannedUntil = '';
     _loaded = false;
     playerName = 'Player';
     authService = null; // tests inject their own per case

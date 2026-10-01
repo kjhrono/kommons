@@ -50,6 +50,9 @@ class ShellStrings {
     this.confirm = 'Confirm',
     this.resendEmail = 'Resend email',
     this.useDifferentAddress = 'Use a different address',
+    this.accountSuspended = 'ACCOUNT SUSPENDED',
+    this.accountSuspendedUntilPattern =
+        'This account is suspended (until {until}). Sign in is disabled until the suspension is lifted.',
     this.signInPitch =
         'Sign in to keep your name, saves and shared games on the cloud. Email comes first; other providers can join later.',
     this.emailLabel = 'Email',
@@ -243,6 +246,8 @@ class ShellStrings {
       String? confirm,
       String? resendEmail,
       String? useDifferentAddress,
+      String? accountSuspended,
+      String? accountSuspendedUntilPattern,
       String? signInPitch,
       String? emailLabel,
       String? emailHint,
@@ -403,6 +408,9 @@ class ShellStrings {
         confirm = confirm ?? 'Conferma',
         resendEmail = resendEmail ?? 'Reinvia email',
         useDifferentAddress = useDifferentAddress ?? 'Usa un altro indirizzo',
+        accountSuspended = accountSuspended ?? 'ACCOUNT SOSPESO',
+        accountSuspendedUntilPattern = accountSuspendedUntilPattern ??
+            'Questo account è sospeso (fino a {until}). L\'accesso è disabilitato fino alla revoca della sospensione.',
         signInPitch =
             'Accedi per conservare nome, salvataggi e partite condivise sul cloud. Prima la email; gli altri provider potranno unirsi più avanti.',
         emailLabel = emailLabel ?? 'Email',
@@ -661,6 +669,13 @@ class ShellStrings {
   final String confirm;
   final String resendEmail;
   final String useDifferentAddress;
+
+  /// Account-card banner: a centrally suspended account (terminal — the
+  /// identity server refuses every auth call for it).
+  final String accountSuspended;
+
+  /// {until} is the suspension window when the server sent one ('—' otherwise).
+  final String accountSuspendedUntilPattern;
   final String signInPitch;
   final String emailLabel;
   final String emailHint;
@@ -931,6 +946,11 @@ class ShellStrings {
   /// The reset-email-sent line with the address spelled out.
   String resetSent(String email) =>
       resetSentPattern.replaceAll('{email}', email);
+
+  /// The account-suspension line with the window spelled out ('—' when the
+  /// server sent none).
+  String accountSuspendedUntil(String until) =>
+      accountSuspendedUntilPattern.replaceAll('{until}', until);
 
   /// The lobby wizard's step header.
   String stepHeader(int step, int total, String title) => stepHeaderPattern

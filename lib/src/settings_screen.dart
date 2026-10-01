@@ -272,6 +272,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ]),
                           const SizedBox(height: 12),
+                          if (account.banned) ...[
+                            // -- Centrally suspended account --------------------------------
+                            Row(
+                              key: const ValueKey('account-suspended-banner'),
+                              children: [
+                              const Icon(Icons.block, color: Colors.redAccent),
+                              const SizedBox(width: 8),
+                              Text(strings.accountSuspended,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2,
+                                      color: Colors.redAccent)),
+                            ]),
+                            const SizedBox(height: 8),
+                            Text(
+                              strings.accountSuspendedUntil(
+                                  account.bannedUntil.isEmpty
+                                      ? '—'
+                                      : account.bannedUntil),
+                              style: TextStyle(color: Colors.grey.shade400),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                           if (_pendingSignupEmail != null) ...[
                             // -- Awaiting email confirmation ---------------------------------
                             Row(children: [
