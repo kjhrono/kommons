@@ -5,7 +5,11 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
-## Unreleased
+## 0.6.0 — 2026-10-01
+
+The shell takes over two account behaviors every consumer had to
+reinvent: the ban kill-switch becomes controller-enforced end to end,
+and the forgot-password flow parks its own state.
 
 ### The shell enforces the ban; the shell parks the reset
 
@@ -37,6 +41,22 @@ adapters that predate them can shed their workarounds.
 New in `test/account_ban_gate_test.dart` (8 tests: the gate on sign-in,
 window capture, the dead-session drop on the silent restore, sign-out
 clearing, parking, resend, and the settings banner).
+
+### Adoption
+
+```yaml
+kommons:
+  git:
+    url: https://github.com/kjhrono/kommons.git
+    ref: v0.6.0
+```
+
+Additions, no breaking changes: `account.banned` / `account.bannedUntil`
+and the settings-card suspension banner are new surfaces — any game whose
+`AuthService` surfaces GoTrue's `banned` error_code (the plain REST client
+already does) gets the gate for free. Games that parked the reset address
+in their own screens can drop the call; leaving it is harmless (the
+parking is idempotent).
 
 ## 0.5.0 — 2026-09-30
 
