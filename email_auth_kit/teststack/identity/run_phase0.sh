@@ -5,7 +5,7 @@
 #   ./run_phase0.sh            # prove, leave both stacks running
 #   TEARDOWN=1 ./run_phase0.sh # prove, then tear stack B down again
 #   ./run_phase0.sh --smoke    # no identity work: stack A up (steps 1-3)
-#                              # + the kit's 23-check smoke suite
+#                              # + the kit's 46-check smoke suite
 #   RUN_SMOKE=1 ./run_phase0.sh  # full proof, then the smoke suite
 #
 # Idempotent: every step is a no-op when its outcome already exists.
@@ -122,7 +122,7 @@ run_smoke() {
 }
 
 # --smoke: the teststack-restart companion. Steps 1-3 above bring stack A
-# up with fresh env; the 23-check functional suite runs without any of
+# up with fresh env; the 46-check functional suite runs without any of
 # the two-stack identity work.
 if [ "${1:-}" = "--smoke" ]; then
   run_smoke
@@ -210,10 +210,10 @@ echo "== 9. the proof (sections 1-5 + the ban kill-switch section 6)"
 KIT_SVC_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$ENVF" | cut -d= -f2- | tr -d '"')
 SUPABASE_SERVICE_ROLE_KEY="$KIT_SVC_KEY" python3 proof.py
 
-# Optional smoke tail: the kit's 23-check functional suite after the
+# Optional smoke tail: the kit's 46-check functional suite after the
 # proof (RUN_SMOKE=1 ./run_phase0.sh).
 if [ "${RUN_SMOKE:-0}" = 1 ]; then
-  echo "== 10. kit smoke suite (23 checks)"
+  echo "== 10. kit smoke suite (46 checks)"
   run_smoke
 fi
 

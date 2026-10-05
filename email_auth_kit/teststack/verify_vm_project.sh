@@ -25,6 +25,13 @@ for v in KIT_AUTH_URL KIT_ANON_KEY KIT_PROJECT_URL KIT_PROJECT_ANON_KEY \
          KIT_PROBE_TABLE KIT_VM_EMAIL; do
   [ -n "${!v:-}" ] || MISSING+=("$v")
 done
+# Identity-only run: skip the project probes (checks 7-10) when the app's
+# data backend does not share the identity JWT secret (no web project
+# stack exists yet). The identity mint (checks 1-6, 11) is what the
+# phone app exercises.
+if [ -n "${KIT_SKIP_PROJECT:-}" ]; then
+  echo "== skipping project probes (checks 7-10): KIT_SKIP_PROJECT set"
+fi
 if [ ${#MISSING[@]} -gt 0 ]; then
   echo "missing required parameters: ${MISSING[*]}" >&2
   echo "full env contract: see the docstring at the top of verify_vm_project.py" >&2

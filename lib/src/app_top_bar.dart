@@ -89,14 +89,23 @@ class _AppTopBarState extends State<AppTopBar> {
         ] else
           const Spacer(),
         // Right: theme toggle and settings — identical on every host screen.
+        // The label rides on the ICON, not just the tooltip: a Tooltip
+        // surfaces its text to the semantics tree only while the tooltip
+        // is VISIBLE, so a tooltip-only icon button announces as a bare
+        // "button" in a freshly pumped tree (caught at runtime by the
+        // route-semantics walk, katalogus
+        // test/route_semantics_walk_test.dart).
         IconButton(
           key: const ValueKey('theme-toggle'),
           tooltip: appLocale.strings.switchThemeTooltip,
-          icon: Icon(
-            appTheme.mode == ThemeMode.light
-                ? Icons.dark_mode_outlined
-                : Icons.light_mode_outlined,
-            size: 20,
+          icon: Semantics(
+            label: appLocale.strings.switchThemeTooltip,
+            child: Icon(
+              appTheme.mode == ThemeMode.light
+                  ? Icons.dark_mode_outlined
+                  : Icons.light_mode_outlined,
+              size: 20,
+            ),
           ),
           onPressed: () => setState(() => appTheme.mode =
               appTheme.mode == ThemeMode.light
@@ -106,7 +115,10 @@ class _AppTopBarState extends State<AppTopBar> {
         IconButton(
           key: const ValueKey('settings-button'),
           tooltip: appLocale.strings.settingsTooltip,
-          icon: const Icon(Icons.settings_outlined, size: 20),
+          icon: Semantics(
+            label: appLocale.strings.settingsTooltip,
+            child: const Icon(Icons.settings_outlined, size: 20),
+          ),
           onPressed: _openSettings,
         ),
       ]),
@@ -146,13 +158,17 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
             : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
       ),
+      // Labels on the icons, not just the tooltips — see AppTopBar.
       IconButton(
         tooltip: appLocale.strings.switchThemeTooltip,
-        icon: Icon(
-          appTheme.mode == ThemeMode.light
-              ? Icons.dark_mode_outlined
-              : Icons.light_mode_outlined,
-          size: 20,
+        icon: Semantics(
+          label: appLocale.strings.switchThemeTooltip,
+          child: Icon(
+            appTheme.mode == ThemeMode.light
+                ? Icons.dark_mode_outlined
+                : Icons.light_mode_outlined,
+            size: 20,
+          ),
         ),
         onPressed: () => setState(() => appTheme.mode =
             appTheme.mode == ThemeMode.light
@@ -161,7 +177,10 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
       ),
       IconButton(
         tooltip: appLocale.strings.settingsTooltip,
-        icon: const Icon(Icons.settings_outlined, size: 20),
+        icon: Semantics(
+          label: appLocale.strings.settingsTooltip,
+          child: const Icon(Icons.settings_outlined, size: 20),
+        ),
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(

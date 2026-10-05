@@ -1,10 +1,11 @@
 /// mediasart_auth_client — generic Supabase + Brevo email-auth flows.
 ///
-/// Three flows, one client:
+/// Four flows, one client:
 ///
 ///   * email confirmation code at registration — [requestCode] / [verifyCode]
 ///   * change password at will — [changePassword]
 ///   * forgot password via link → temp password — [requestReset] / [completeReset]
+///   * Google identity linking — [linkGoogleIdentity]
 ///
 /// plus the identity-stack session surface — [signIn] / [refreshSession] —
 /// both ban-aware: when the identity stack has banned the account (the
@@ -216,6 +217,69 @@ class MediasartAuth {
   }
 
   // ------------------------------------------------------------------
+  // Flow 4 — Google identity linking (hosted-authorize OAuth)
+  // ------------------------------------------------------------------
+
+  /// Moves the Google identity of an OAuth-minted user onto the
+  /// password account — the remedy for hosted-authorize Google sign-in
+  /// always minting a NEW auth.users row, even when the Google email
+  /// matches an existing password member.
+  ///
+  /// The caller is the member themselves: sign them in with the
+  /// PASSWORD first (proof of account ownership) and pass that session
+  /// as [passwordSession]; the server also checks that the Google
+  /// identity's email ([expectedEmail]) equals the password account's
+  /// (proof the consent happened on the same address). The minted
+  /// stranger is deleted server-side — keep using [passwordSession].
+  ///
+  /// Returns true when the link was made now, false when there is
+  /// nothing to link — the Google identity already sits on the
+  /// password account, or the minted stranger is gone (a previous
+  /// link completed and this call is a retry after a lost
+  /// response). Either way the member keeps using [passwordSession].
+  ///
+  /// Requires the kit's `auth_kit_link_google_identity` migration on
+  /// the identity stack. Refusals are typed [AuthCodeException]s:
+  /// `unauthorized` (stale/malformed session or missing grant),
+  /// `google_identity_missing`, `email_mismatch`, `identity_conflict`
+  /// (the Google identity sits on a third account), `server` otherwise
+  /// (see [AuthCodeException.detail]).
+  Future<bool> linkGoogleIdentity({
+    required AuthSession passwordSession,
+    required String googleUserId,
+    required String expectedEmail,
+  }) async {
+    final PostResponse res;
+    try {
+      res = await Poster.send(
+        'POST',
+        Uri.parse('$supabaseUrl/rest/v1/rpc/auth_kit_link_google_identity'),
+        headers: {
+          'content-type': 'application/json',
+          'apikey': anonKey,
+          'authorization': 'Bearer ${passwordSession.accessToken}',
+        },
+        body: jsonEncode({
+          'p_password_session': passwordSession.accessToken,
+          'p_google_user_id': googleUserId,
+          'p_expected_email': expectedEmail,
+        }),
+      );
+    } on Exception {
+      throw const AuthCodeException('network');
+    }
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      try {
+        return jsonDecode(res.body) == true;
+      } on FormatException {
+        throw const AuthCodeException('server', detail: 'rpc_unreadable');
+      }
+    }
+    throw _linkRefusalOf(res.body, res.statusCode);
+  }
+
+  // ------------------------------------------------------------------
   // Plumbing
   // ------------------------------------------------------------------
 
@@ -286,7 +350,45 @@ class MediasartAuth {
       // fall through
     }
     return 'http_error';
-  }  static int? _attemptsOf(String body) {
+  }  /// Maps a PostgREST RPC refusal to the typed exception. The SQL
+  /// function raises bare messages (see the migration header); map the
+  /// user-meaningful ones verbatim, fold the rest into `unauthorized`
+  /// or `server`.
+  static AuthCodeException _linkRefusalOf(String body, int statusCode) {
+    String? message;
+    String? code;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        message = (decoded['message'] ?? decoded['error']) as String?;
+        code = decoded['code'] as String?;
+      }
+    } on FormatException {
+      // non-JSON refusal body — fall through to the status mapping
+    }
+    switch (message) {
+      case 'invalid_session':
+      case 'password_account_missing':
+      case 'permission_denied':
+        throw const AuthCodeException('unauthorized');
+      case 'google_identity_missing':
+        throw const AuthCodeException('google_identity_missing');
+      case 'email_mismatch':
+        throw const AuthCodeException('email_mismatch');
+      case 'identity_owned_elsewhere':
+        throw const AuthCodeException('identity_conflict');
+    }
+    if (statusCode == 401 || statusCode == 403) {
+      throw AuthCodeException('unauthorized', detail: message ?? code);
+    }
+    if (statusCode == 404 && code == 'PGRST202') {
+      // Schema cache missed the function: the migration is not applied.
+      throw const AuthCodeException('server', detail: 'missing_rpc');
+    }
+    throw AuthCodeException('server', detail: message ?? code ?? 'http_$statusCode');
+  }
+
+  static int? _attemptsOf(String body) {
     try {
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['attempts_left'] is int) {

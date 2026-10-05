@@ -53,7 +53,10 @@ services:
       GOTRUE_JWT_EXP: "3600"
       GOTRUE_JWT_AUD: "authenticated"
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_EXTERNAL_REDIRECT_URLS: ""
+      # Real GoTrue var — the earlier GOTRUE_EXTERNAL_REDIRECT_URLS spelling
+      # does not exist and was silently ignored. Empty = B honours no
+      # off-origin redirects beyond its own site URL.
+      GOTRUE_URI_ALLOW_LIST: ""
       GOTRUE_SITE_URL: http://localhost:31001
       GOTRUE_OPERATOR_LEVEl: error
       # The proof: identity stack A is the only signup door.

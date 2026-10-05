@@ -148,9 +148,11 @@ class AuthException implements Exception {
 /// That is GoTrue's own route, and Kong serves it as an OPEN route (no apikey,
 /// no key-auth plugin), which is exactly what makes a plain browser redirect
 /// work. Every self-hosted Supabase stack answers it out of the box, so no
-/// per-site rewrite is needed — and the redirect target must be listed in the
-/// stack's `GOTRUE_URI_ALLOW_LIST`, or GoTrue refuses it with
-/// "redirect URI not allowed" instead of redirecting.
+/// per-site rewrite is needed — and the redirect target must satisfy the
+/// stack's rules (`GOTRUE_URI_ALLOW_LIST`, plus the same-origin allowance on
+/// `GOTRUE_SITE_URL`), or GoTrue silently substitutes its default site URL: /authorize
+/// still answers 302 (validation never happens there), and the member lands on
+/// the site URL only at the END of the flow instead of back in the app.
 ///
 /// The server-side counterpart lives in the Supabase stack's env: with no
 /// real SMTP configured, `GOTRUE_MAILER_AUTOCONFIRM=true` is what makes

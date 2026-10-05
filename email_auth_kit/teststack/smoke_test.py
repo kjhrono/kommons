@@ -3,10 +3,11 @@
 
 Drives: confirmation-code request -> verify (with wrong-code + lockout
 counters) -> signup (autoconfirm OFF) -> reset link -> confirm -> temp
-password extracted from the mailbox -> real sign-in. Mail is captured by
-Mailpit; DB assertions go through psql.
+password extracted from the mailbox -> real sign-in -> Google identity
+linking (the hosted-authorize remedy). Mail is captured by Mailpit; DB
+assertions go through psql.
 """
-import json, os, re, subprocess, sys, time, urllib.request
+import hashlib, json, os, re, subprocess, sys, time, urllib.request
 
 # Driven by run_phase0.sh-style env when present (any teststack restart
 # regenerates the API keys and Mailpit's address, so the defaults below
@@ -183,5 +184,104 @@ if BM_H:
 else:
     check("8c KIT_SVC_KEY provided (bearer-gated checks skipped)", False,
           "export KIT_SVC_KEY via run_phase0.sh")
+
+# ---------------------------------------------------------------- step 9
+# Google identity linking (the hosted-authorize remedy). A real
+# Google OAuth sign-in mints a STRANGER account: a fresh user
+# carrying exactly one google identity whose identity_data email
+# matches the password member's address. The member proved the
+# account by signing in with the password (alice's `jwt` from
+# step 6); the app now moves the identity onto that account.
+# NB: auth.identities.email is a GENERATED column in this GoTrue
+# generation — insert identity_data only, never the email.
+def mint_google_stranger(tag, google_email):
+    """Fresh signup user whose email identity is swapped for a
+    google one — what a hosted-authorize Google sign-in leaves
+    behind. Returns (user id, google provider id)."""
+    address = f"{tag}{int(time.time())}@kit.test"
+    post(f"{API}/auth/v1/signup", {"email": address, "password": password},
+         {"apikey": ANON})
+    stranger = psql(f"select id from auth.users where email='{address}'")
+    sub = f"gsub-{tag}-{int(time.time())}"
+    psql(f"delete from auth.identities where user_id='{stranger}' and provider='email'")
+    psql(f"insert into auth.identities (provider_id, user_id, identity_data, provider) "
+         f"values ('{sub}', '{stranger}', "
+         f"jsonb_build_object('email','{google_email}','sub','{sub}'), 'google')")
+    return stranger, sub
+
+rpc = f"{API}/rest/v1/rpc/auth_kit_link_google_identity"
+link_headers = {"apikey": ANON, "authorization": f"Bearer {jwt}"}
+
+stranger, gsub = mint_google_stranger("gstranger", email)
+row = psql(f"select provider, email from auth.identities where user_id='{stranger}'")
+check("9a the minted stranger carries exactly one google identity with the member's email",
+      row == f"google|{email}", row)
+
+st, body = post(rpc, {"p_password_session": jwt, "p_google_user_id": stranger,
+                      "p_expected_email": email}, link_headers)
+check("9b link with the member's JWT answers true", st == 200 and body is True, f"st={st} {body}")
+owner = psql(f"select user_id from auth.identities where provider='google' and provider_id='{gsub}'")
+check("9c the identity now sits on the password account", owner == uid, f"owner={owner} member={uid}")
+check("9d the minted stranger is deleted",
+      psql(f"select count(*) from auth.users where id='{stranger}'") == "0")
+providers = psql(f"select raw_app_meta_data->'providers' from auth.users where id='{uid}'")
+check("9e the member's provider metadata gains google", '"google"' in providers, providers)
+expected_hash = hashlib.sha256(gsub.encode()).hexdigest()
+row = psql(f"select kind, code_hash from auth_events where kind='identity_linked' "
+           f"and email='{email}' order by created_at desc limit 1")
+check("9f audit row written with the sha256 of the google sub",
+      row == f"identity_linked|{expected_hash}", f"{row} != identity_linked|{expected_hash}")
+
+st, body = post(rpc, {"p_password_session": jwt, "p_google_user_id": stranger,
+                      "p_expected_email": email}, link_headers)
+check("9g a replay (stranger already gone) is idempotent: false, not an error",
+      st == 200 and body is False, f"st={st} {body}")
+
+# Refusals — each maps to a typed client reason.
+mismatch_stranger, _ = mint_google_stranger("gmismatch", "other@example.com")
+st, body = post(rpc, {"p_password_session": jwt, "p_google_user_id": mismatch_stranger,
+                      "p_expected_email": email}, link_headers)
+check("9h a stranger with a different google email is refused: email_mismatch",
+      st == 400 and body.get("message") == "email_mismatch", f"st={st} {body}")
+# An EXISTING account without a google identity (a fresh signup
+# keeps its email identity) is not a minted stranger.
+plain = f"plain{int(time.time())}@kit.test"
+post(f"{API}/auth/v1/signup", {"email": plain, "password": password}, {"apikey": ANON})
+plain_uid = psql(f"select id from auth.users where email='{plain}'")
+st, body = post(rpc, {"p_password_session": jwt, "p_google_user_id": plain_uid,
+                      "p_expected_email": email}, link_headers)
+check("9i an account without a google identity is refused: google_identity_missing",
+      st == 400 and body.get("message") == "google_identity_missing", f"st={st} {body}")
+st, body = post(rpc, {"p_password_session": "not-a-jwt", "p_google_user_id": stranger,
+                      "p_expected_email": email}, link_headers)
+check("9j a malformed session JWT is refused: invalid_session",
+      st == 400 and body.get("message") == "invalid_session", f"st={st} {body}")
+st, body = post(rpc, {"p_password_session": jwt, "p_google_user_id": stranger,
+                      "p_expected_email": email}, {"apikey": ANON})
+check("9k anon (no member JWT) is refused: execute revoked from anon",
+      st == 401 and "permission denied" in body.get("message", ""), f"st={st} {body}")
+
+# The race the row lock closes: another transaction moves the
+# identity while the RPC sits between its proof-2 read and its
+# locked re-read. The RPC must see the move and refuse — never
+# steal an identity that found a new owner mid-flight.
+third, gsub3 = mint_google_stranger("grace", email)
+fourth = f"fourth{int(time.time())}@kit.test"
+post(f"{API}/auth/v1/signup", {"email": fourth, "password": password}, {"apikey": ANON})
+fourth_uid = psql(f"select id from auth.users where email='{fourth}'")
+mover = subprocess.Popen(
+    ["docker", "exec", "-i", DB, "psql", "-U", "postgres", "-tAc",
+     f"begin; update auth.identities set user_id='{fourth_uid}' "
+     f"where provider='google' and provider_id='{gsub3}'; "
+     f"select pg_sleep(4); commit;"],
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+time.sleep(1.5)  # let the uncommitted move take its row lock
+st, body = post(rpc, {"p_password_session": jwt, "p_google_user_id": third,
+                      "p_expected_email": email}, link_headers)
+check("9l a mid-flight identity move is refused: identity_owned_elsewhere",
+      st == 400 and body.get("message") == "identity_owned_elsewhere", f"st={st} {body}")
+mover.wait(timeout=20)
+check("9m the racing move really committed (identity kept its new owner)",
+      psql(f"select user_id from auth.identities where provider_id='{gsub3}'") == fourth_uid)
 
 print("\nSMOKE SUITE: ALL PASS" if all(ok for _, ok in results) else "\nFAILURES PRESENT")

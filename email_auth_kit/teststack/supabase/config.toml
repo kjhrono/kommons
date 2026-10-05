@@ -6,6 +6,24 @@ major_version = 15
 [inbucket]
 enabled = true
 
+[auth]
+# GoTrue's redirect allow list (the CLI key for GOTRUE_URI_ALLOW_LIST). The
+# two entries mirror what the deployed stacks must carry: the app's custom
+# scheme verbatim, and an off-origin host WITH the trailing slash its
+# hash-form redirect keeps once GoTrue cuts the fragment (see katalogus
+# docs/FEATURE_GOOGLE_SIGNIN.md → "Redirect-validation probe"; the Google
+# round trip in tool/dev/verify_e2e.sh §7 exercises both).
+additional_redirect_urls = ["katalogus://auth-callback", "https://katalogus-staging.mediasart.com/"]
+
+# The provider the Google round trip needs. Credentials are deliberately
+# dummy: the probe asserts the hand-off (302 to Google, client id,
+# /auth/v1/callback, state) and the return leg — it never completes a
+# consent, so no real client is involved.
+[auth.external.google]
+enabled = true
+client_id = "test-google-client-id"
+client_secret = "test-google-client-secret"
+
 [auth.email]
 enable_confirmations = true
 

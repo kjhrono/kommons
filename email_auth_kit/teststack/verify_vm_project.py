@@ -33,6 +33,11 @@ Optional:
                         code (teststack/validation runs)
   KIT_ADMIN_KEY         identity service_role: deletes the minted test user
   KIT_CODE              pre-supplied code (skips all auto-fetch/prompt)
+  KIT_SKIP_PROJECT      set to skip the project probes (checks 7-10):
+                        the app's data backend does not share the identity
+                        JWT secret (no web project stack exists yet). The
+                        identity mint (checks 1-6, 11) is what the phone
+                        app exercises.
 
 Exactly one user is created in the identity stack's real database and
 removed again (with KIT_ADMIN_KEY); the probe row is removed always.
@@ -171,7 +176,10 @@ jwt = body["access_token"]
 uid = json.loads(base64.urlsafe_b64decode(jwt.split(".")[1] + "==")).get("sub", "")
 
 # ------------------------------------- 7-9. the foreign token on project
-st, body = req(f"{REST}/{TABLE}?select=*&limit=1",
+if not os.environ.get("KIT_SKIP_PROJECT"):
+    pass
+else:
+    st, body = req(f"{REST}/{TABLE}?select=*&limit=1",
                headers={"apikey": P_ANON, "Authorization": f"Bearer {jwt}"})
 check(f"7 project: foreign JWT accepted on {TABLE} (auth.uid() RLS)",
       st == 200, f"st={st} {str(body)[:140]}")

@@ -7,8 +7,21 @@ import 'package:mediasart_auth_client/src/http.dart';
 
 class _Res {
   final int status;
-  final Map<String, dynamic> body;
+  final dynamic body;
   const _Res(this.status, this.body);
+}
+
+/// A Poster impl that throws before answering: the network seam.
+class _ExplodingPoster implements PosterImpl {
+  @override
+  Future<PostResponse> send(
+    String method,
+    Uri url, {
+    required Map<String, String> headers,
+    required String body,
+  }) async {
+    throw Exception('connection refused');
+  }
 }
 
 /// Scripted Poster impl: answers from a queue, records every call.
@@ -329,6 +342,91 @@ void main() {
         ),
         throwsA(isA<AuthBannedException>()
             .having((e) => e.bannedUntil, 'bannedUntil', '2035-01-01T00:00:00Z')),
+      );
+    });
+  });
+
+  group('google identity linking', () {
+    const passwordSession = AuthSession(
+      userId: 'u-password',
+      email: 'member@example.com',
+      accessToken: 'pw-at',
+      refreshToken: 'pw-rt',
+    );
+
+    Future<bool> link() => auth.linkGoogleIdentity(
+          passwordSession: passwordSession,
+          googleUserId: '11111111-2222-3333-4444-555555555555',
+          expectedEmail: 'member@example.com',
+        );
+
+    test('posts the RPC with the member JWT as bearer and the three args', () async {
+      // A `returns boolean` RPC answers with the bare JSON boolean.
+      poster.responses.add(const _Res(200, true));
+
+      final linked = await link();
+
+      expect(linked, isTrue);
+      final call = poster.calls.single;
+      expect(call.url.path, contains('/rest/v1/rpc/auth_kit_link_google_identity'));
+      expect(call.headers['authorization'], 'Bearer pw-at');
+      expect(call.headers['apikey'], key);
+      final body = jsonDecode(call.body) as Map<String, dynamic>;
+      expect(body['p_password_session'], 'pw-at');
+      expect(body['p_google_user_id'], '11111111-2222-3333-4444-555555555555');
+      expect(body['p_expected_email'], 'member@example.com');
+    });
+
+    test('false result means the idempotent replay (already linked)', () async {
+      poster.responses.add(const _Res(200, false));
+
+      expect(await link(), isFalse);
+    });
+
+    test('SQL refusals map to typed reasons', () async {
+      final cases = <(String, String)>[ // (SQL message, client reason)
+        ('invalid_session', 'unauthorized'),
+        ('password_account_missing', 'unauthorized'),
+        ('google_identity_missing', 'google_identity_missing'),
+        ('google_email_missing', 'server'),
+        ('email_mismatch', 'email_mismatch'),
+        ('identity_owned_elsewhere', 'identity_conflict'),
+      ];
+      for (final (sqlMessage, reason) in cases) {
+        poster.responses.clear();
+        poster.responses.add(_Res(400, {'message': sqlMessage, 'code': 'P0001'}));
+        await expectLater(
+          link(),
+          throwsA(isA<AuthCodeException>().having((e) => e.reason, 'reason', reason)),
+          reason: '$sqlMessage should map to $reason',
+        );
+      }
+    });
+
+    test('gateway refusals (stale JWT, missing grant) are unauthorized', () async {
+      poster.responses
+          .add(const _Res(401, {'message': 'JWT expired', 'code': 'PGRST301'}));
+      await expectLater(
+        link(),
+        throwsA(isA<AuthCodeException>().having((e) => e.reason, 'reason', 'unauthorized')),
+      );
+
+      poster.responses.clear();
+      poster.responses.add(const _Res(404,
+          {'message': 'function not found', 'code': 'PGRST202'}));
+      await expectLater(
+        link(),
+        throwsA(isA<AuthCodeException>()
+            .having((e) => e.reason, 'reason', 'server')
+            .having((e) => e.detail, 'detail', 'missing_rpc')),
+      );
+    });
+
+    test('network failure maps to the network reason', () async {
+      Poster.impl = _ExplodingPoster();
+      await expectLater(
+        link(),
+        throwsA(isA<AuthCodeException>().having((e) => e.reason, 'reason', 'network')),
       );
     });
   });

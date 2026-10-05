@@ -135,11 +135,14 @@ class SupabaseAuth {
   /// the token (it minted it), and never to grant anything ourselves.
   static Map<String, dynamic> _claimsOf(String jwt) {
     try {
-      final part = jwt.split('.')[1];
-      final normalized = base64Url.normalize(part);
+      final parts = jwt.split('.');
+      if (parts.length < 2) return const {};
+      final normalized = base64Url.normalize(parts[1]);
       return jsonDecode(utf8.decode(base64Url.decode(normalized)))
           as Map<String, dynamic>;
-    } on Exception {
+    } on Object {
+      // Malformed token — RangeError (no payload segment) and
+      // TypeError (payload is not a JSON object) included.
       return const {};
     }
   }
