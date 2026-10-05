@@ -8,7 +8,7 @@ real infrastructure. Nothing here ships with a project.
 - `supabase/` — minimal stack config (`supabase start`), the kit's
   migration copied in, the two functions staged, and `.env` with the
   local stack's keys (shared local defaults — never real secrets).
-- `smoke_test.py` — the 46-check suite (see below).
+- `smoke_test.py` — the 50-check suite (see below).
 - `smtp_repro.ts` — step-logged standalone repro of the kit's SMTP
   client, useful when debugging mail delivery.
 
@@ -21,7 +21,7 @@ against the live stack's CURRENT keys — no stale baked-in values:
 
 ```bash
 identity/run_phase0.sh --smoke        # steps 1-3 (stack A + fresh
-                                      # functions) + all 46 checks
+                                      # functions) + all 50 checks
 ```
 
 Or as a tail on a full identity-proof run: `RUN_SMOKE=1
@@ -47,7 +47,7 @@ deno run --allow-net --allow-env \
 deno run --allow-net --allow-env \
   --env-file=supabase/functions/.env \
   supabase/functions/password-reset/index.ts       # FUNCTION_PORT=8788
-python3 smoke_test.py                 # 46 checks, exits non-zero on fail
+python3 smoke_test.py                 # 50 checks, exits non-zero on fail
 supabase stop                         # when done
 ```
 

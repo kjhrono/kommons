@@ -72,6 +72,24 @@ check("1d challenge row stored hashed+pending", row.startswith("email_code|0|t")
 # ---------------------------------------------------------------- step 2
 st, body = post(f"{EV}", {"action": "verify", "email": email, "code": "000000"})
 check("2a wrong code rejected with attempts_left", st == 400 and body.get("error") == "code_invalid" and body.get("attempts_left", 0) >= 4, str(body))
+# The wrong-code branch must PERSIST the failed attempt: it calls
+# consume_auth_event with the event id. Without that id PostgREST cannot
+# resolve the function (PGRST202), the RPC fails silently and attempts
+# stays 0 — so the counter above (computed from the pre-read row) lies
+# and code_locked is unreachable. Assert the DB side, not just the reply.
+row = psql(f"select attempts from auth_events where email='{email}' and kind='email_code' order by created_at desc limit 1")
+check("2a2 wrong code persisted an attempt", row == "1", row)
+
+# Lockout: a second, isolated challenge is burned to the 5th failure.
+lock_email = f"lockout{int(time.time())}@kit.test"
+st, body = post(f"{EV}", {"action": "request", "email": lock_email})
+check("2a3 lockout challenge requested", st == 200 and body.get("sent") is True, str(body))
+for _ in range(4):
+    post(f"{EV}", {"action": "verify", "email": lock_email, "code": "000000"})
+st, body = post(f"{EV}", {"action": "verify", "email": lock_email, "code": "000000"})
+check("2a4 5th wrong code locks the challenge", st == 400 and body.get("error") == "code_locked", str(body))
+row = psql(f"select attempts || '|' || case when consumed_at is not null then 't' else 'f' end from auth_events where email='{lock_email}' and kind='email_code' order by created_at desc limit 1")
+check("2a5 locked challenge consumed at max attempts", row == "5|t", row)
 
 # ------------------------------------------------------- step 3: signup
 password = "Str0ngPass!2026"

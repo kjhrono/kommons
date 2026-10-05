@@ -24,6 +24,10 @@ export 'src/confirmation_link.dart';
 export 'src/recovery_link.dart';
 export 'src/shell_app.dart';
 
+/// Email identity subpackage (RegisterLink, RegistrationFlow, SignInFlow...)
+/// — import as `package:kommons/email_auth_kit.dart`.
+export 'email_auth_kit.dart';
+
 // Multiplayer core: seat model, sync transport contracts and implementations,
 // room registry, server connection dialog, banner color picker.
 export 'src/multiplayer/lobby_seat.dart';

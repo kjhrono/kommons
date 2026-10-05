@@ -23,8 +23,13 @@ import 'src/auth.dart';
 import 'src/errors.dart';
 import 'src/http.dart';
 
-export 'src/auth.dart' show AuthSession;
+export 'src/auth.dart' show AuthSession, generateCodeVerifier, generateCodeChallenge;
 export 'src/errors.dart';
+
+/// Flutter UI widgets (RegisterLink, RegistrationFlow, ForgotPasswordLink,
+/// ForgotPasswordFlow, SignInFlow) — available when this package is
+/// consumed in a Flutter project.
+export 'src/ui/registration_flow.dart';
 
 class MediasartAuth {
   /// Supabase project URL, e.g. https://katalogus.mediasart.com
@@ -37,6 +42,10 @@ class MediasartAuth {
 
   static const _emailVerificationPath = '/functions/v1/email-verification';
   static const _passwordResetPath = '/functions/v1/password-reset';
+
+  /// The GoTrue / Supabase Auth REST base path on the identity stack.
+  /// Used by [googleOAuthUrl] to build the authorize URL.
+  static const _authPath = '/auth/v1';
 
   // ------------------------------------------------------------------
   // Flow 1 — email confirmation code (registration proof)
@@ -96,10 +105,55 @@ class MediasartAuth {
         password: password,
       );
 
-  /// Rotates the session's tokens. Supabase revokes the old refresh
-  /// token on password change (and after a temp-password reset), so the
-  /// app must persist the fresh ones — hand [onSessionUpdated] your
-  /// persistence callback.
+  /// Builds the Google OAuth authorize URL for the identity stack's
+  /// hosted-authorize flow with PKCE (S256).
+  ///
+  /// Open this in a browser (via [url_launcher] or the platform
+  /// browser), then exchange the returned [code] with
+  /// [signInWithGoogleCode].
+  ///
+  /// [codeChallenge] is generated from [generateCodeChallenge]; keep the
+  /// matching [codeVerifier] in scope — you need it for the exchange.
+  ///
+  /// [redirectTo] is your app's deep-link URL and must be allow-listed
+  /// in the identity stack's Supabase project settings.
+  String googleOAuthUrl({
+    required String redirectTo,
+    required String codeChallenge,
+  }) {
+    final params = {
+      'provider': 'google',
+      'redirect_to': redirectTo,
+      'code_challenge': codeChallenge,
+      'code_challenge_method': 'S256',
+    };
+    return '$supabaseUrl$_authPath/authorize?${Uri(queryParameters: params)}';
+  }
+
+  /// Exchanges a Google OAuth [code] (returned via the deep-link
+  /// [redirectTo]) for a session, using the [codeVerifier] that
+  /// produced the [generateCodeChallenge] sent in [googleOAuthUrl].
+  ///
+  /// Ban-aware: a fresh token carrying a live `kit_banned_until` claim
+  /// throws [AuthBannedException].
+  Future<AuthSession> signInWithGoogleCode({
+    required String code,
+    required String codeVerifier,
+    String? redirectTo,
+  }) =>
+      SupabaseAuth.exchangeCode(
+        baseUrl: supabaseUrl,
+        anonKey: anonKey,
+        code: code,
+        codeVerifier: codeVerifier,
+        redirectTo: redirectTo,
+      );
+
+  /// ------------------------------------------------------------------
+  /// Flow 2 — change password at will
+  /// ------------------------------------------------------------------
+
+  /// Changes the password of the signed-in user to [newPassword].
   ///
   /// Ban-aware: a native ban surfaces as [AuthBannedException], which
   /// also means the refresh token is dead — sign the user out and show

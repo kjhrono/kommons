@@ -7,11 +7,56 @@ pre-1.0, minor versions carry the features.
 
 ## Unreleased
 
-- **`SettingsScreen.showEmailOnlySignIn`** (default true) — hosts with
-  real cloud accounts set it false to hide the email-only device-local
-  button: beside the cloud sign-in it accepted any address with no
-  password and read as the cloud sign-in working passwordless. The cloud
-  button keeps its `cloud-signin` key for tests.
+(none)
+
+## 0.7.0 — 2026-10-05
+
+### JWT secret monitoring toolkit
+
+The central-identity cutover shares one `GOTRUE_JWT_SECRET` across all project
+stacks. A silent rollback to a pre-cutover local secret breaks auth for every
+consumer, so three operational scripts guard against it:
+
+- **`tool/jwt-secret-drift-check.sh`** (run every 15 min via crontab) —
+  compares every stack's `JWT_SECRET` against the identity stack's; logs
+  `DRIFT`/`WARN`/`OK` to `~/logs/jwt-secret-drift.log` and alerts on drift.
+- **`tool/jwt-secret-revert-watchdog.sh`** (run every 15 min via crontab) —
+  builds a fingerprint registry from every `.env.bak.*` history file and,
+  when a stack's secret exactly matches a known pre-cutover fingerprint,
+  force-re-cuts automatically: backs up `.env`, restores the identity secret,
+  runs `docker compose up -d --force-recreate`, polls the auth container
+  health, and verifies the secret landed in the running container.
+- **`tool/jwt-secret-daily-summary.sh`** (run daily at 09:00 UTC via crontab)
+  — parses the shared drift log for the past 24 h, reports all OK runs plus
+  any DRIFT/WARN/REVERT incidents, and sends the digest via webhook + Brevo
+  email.
+
+Key operational decisions:
+
+- **No `--wait` on `docker compose up`** — Supabase's realtime container
+  has a flaky WebSocket healthcheck that intermittently fails and blocks
+  `--wait` until timeout; the watchdog instead polls the auth container only.
+- **`GOTRHE_JWT_SECRET` → `GOTRUE_JWT_SECRET`** typo in the auth container
+  verification step is fixed.
+- All scripts use `ALERT_WEBHOOK_URL` (generic incoming-webhook) instead of
+  a provider-specific webhook URL; alerts also fall back to Brevo email via
+  `BREVO_API_KEY` + `ALERT_EMAIL`.
+
+### Shell API changes
+
+No Dart API changes — this release is operational tooling only.
+
+### Adoption
+
+```yaml
+kommons:
+  git:
+    url: https://github.com/kjhrono/kommons.git
+    ref: v0.7.0
+```
+
+The three scripts are sourced from `~/bin/` on the VM; see inline docs for
+required env vars (`ALERT_EMAIL`, `BREVO_API_KEY`, `ALERT_WEBHOOK_URL`).
 
 ## 0.6.0 — 2026-10-01
 

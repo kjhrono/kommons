@@ -1,7 +1,23 @@
 import 'dart:convert';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 
 import 'errors.dart';
 import 'http.dart';
+
+/// PKCE code-verifier (RFC 7636 §4.1) — 43–128 chars from the
+/// unreserved set. We mint 64 bytes (≈ 86 chars), plenty of entropy.
+String generateCodeVerifier() {
+  final rng = Random.secure();
+  final bytes = List<int>.generate(64, (_) => rng.nextInt(256));
+  return base64Url.encode(bytes);
+}
+
+/// PKCE code-challenge (S256): BASE64URL-ENCODE(SHA256(VERIFIER)).
+String generateCodeChallenge(String verifier) {
+  return base64Url.encode(sha256.convert(utf8.encode(verifier)).bytes);
+}
 
 /// The slice of a Supabase session the flows need.
 class AuthSession {
@@ -126,6 +142,46 @@ class SupabaseAuth {
     // Password change revokes other sessions' refresh tokens; refresh
     // this session so the caller persists valid ones.
     return refresh(baseUrl: baseUrl, anonKey: anonKey, refreshToken: refreshToken);
+  }
+
+  // ----------------------------------------- Google OAuth (PKCE code flow)
+
+  /// Exchanges a Google OAuth authorization code for a session via the
+  /// hosted-authorize PKCE flow.
+  ///
+  /// Supabase's `/auth/v1/token?grant_type=authorization_code` endpoint
+  /// validates the [code] against the [codeVerifier] that was sent (as a
+  /// code_challenge) when the browser was launched, then mints tokens.
+  /// [redirectTo] must match what was used in the initial authorize URL.
+  ///
+  /// Ban-aware: a live `kit_banned_until` claim on the new token throws
+  /// [AuthBannedException], just like [signInWithPassword].
+  static Future<AuthSession> exchangeCode({
+    required String baseUrl,
+    required String anonKey,
+    required String code,
+    required String codeVerifier,
+    String? redirectTo,
+  }) async {
+    final body = {'code': code, 'code_verifier': codeVerifier};
+    if (redirectTo != null) body['redirect_to'] = redirectTo;
+    final res = await Poster.send(
+      'POST',
+      _auth(baseUrl, '/token?grant_type=authorization_code'),
+      headers: _headers(anonKey),
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200) {
+      throw _refusalOf(res.body);
+    }
+    final session = AuthSession.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+    final liveBan = _liveBanIn(session.accessToken);
+    if (liveBan != null) {
+      throw AuthBannedException(bannedUntil: liveBan);
+    }
+    return session;
   }
 
   // ------------------------------------------------------- ban plumbing

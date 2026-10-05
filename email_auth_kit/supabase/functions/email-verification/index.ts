@@ -181,6 +181,7 @@ Deno.serve(
         await admin.rpc("consume_auth_event", {
           // "_____wrong" can never match a 6-digit code — this only
           // counts the failed attempt and applies the lockout rule.
+          p_event_id: ev.id,
           p_presented: "_____wrong",
           p_kind: "email_code",
         });
