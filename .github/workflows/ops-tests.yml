@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # cron executes these scripts directly, so their executable bit is
       # load-bearing in production: losing it breaks the VM's monitoring
