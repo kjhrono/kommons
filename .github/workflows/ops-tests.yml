@@ -1,0 +1,103 @@
+# Runs the hermetic tool/ ops test suites on every push and pull request.
+#
+# The JWT-secret monitors, the retention sweeps and their helpers are shell
+# scripts deployed to ~/bin and driven by cron, so a regression here is
+# silent until the moment an alert stops arriving — the worst time to find
+# out.  Each suite below builds its own sandbox under a temp directory and
+# stubs `docker`/`curl`, so they are safe on a shared runner and need no
+# network, no Docker daemon and no Flutter toolchain: the whole job is
+# seconds rather than minutes.
+#
+# The suite list is explicit rather than a glob, because two ops scripts in
+# tool/ are deliberately NOT hermetic and must stay manual, on the VM, where
+# the state they exercise actually exists:
+#   tool/test_watchdog.sh        — inspects the real ~/Projects tree
+#   tool/test_watchdog_revert.sh — rewrites a real stack's .env to exercise
+#                                  the live watchdog against ~/bin
+#                                  (test_daily_summary.sh is hermetic and is
+#                                  in the list below)
+name: ops-tests
+
+on:
+  # every push, on any branch, so a regression is caught on the working
+  # branch rather than only once it has been merged
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  tool-suites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # cron executes these scripts directly, so their executable bit is
+      # load-bearing in production: losing it breaks the VM's monitoring
+      # long before anything else notices.
+      - name: Deployed tool scripts are executable
+        run: |
+          deployed="
+            tool/alert.sh
+            tool/cleanup-env-backups.sh
+            tool/gotify-messages.sh
+            tool/gotify-report-digest.sh
+            tool/gotify-retention-sweep.sh
+            tool/jwt-secret-daily-summary.sh
+            tool/jwt-secret-delivery-watchdog.sh
+            tool/jwt-secret-drift-check.sh
+            tool/jwt-secret-liveness-check.sh
+            tool/jwt-secret-revert-watchdog.sh
+          "
+          bad=""
+          for f in $deployed; do
+            [ -f "$f" ] || { bad="$bad $f(missing)"; continue; }
+            [ -x "$f" ] || bad="$bad $f"
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::not executable — cron runs these directly:$bad"
+            exit 1
+          fi
+          echo "all deployed tool scripts are present and executable"
+
+      - name: Run hermetic ops suites
+        run: |
+          suites=(
+            test_watchdog_identity_skip.sh
+            test_liveness_check.sh
+            test_daily_summary.sh
+            test_gotify_audit.sh
+            test_gotify_report_digest.sh
+            test_gotify_retention_sweep.sh
+            test_delivery_watchdog.sh
+            test_cleanup_notify.sh
+          )
+
+          # Run every suite even after a failure, so one run reports the whole
+          # picture instead of hiding later breakage behind the first one.
+          status=0
+          results=()
+          for suite in "${suites[@]}"; do
+            echo "::group::$suite"
+            if bash "tool/$suite"; then
+              results+=("PASS  $suite")
+            else
+              results+=("FAIL  $suite")
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+
+          echo
+          echo "=== hermetic ops suite results ==="
+          printf '%s\n' "${results[@]}"
+          exit "$status"
+
+      - name: Name the failure
+        if: failure()
+        run: |
+          echo "::error::a hermetic tool/ ops suite FAILED — the monitoring toolkit regressed. Re-run the failing suite locally with 'bash tool/<suite>.sh'; it needs only bash, python3 and a temp directory."

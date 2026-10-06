@@ -83,7 +83,10 @@ the localized string catalog — themed, translated and ready.
 
 Server operators: enabling Google/GitHub and allow-listing redirect
 origins on the game server is documented in
-[docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md).
+[docs/OAUTH_SERVER_SETUP.md](docs/OAUTH_SERVER_SETUP.md). The monitoring
+stack's push-alert channel — what Gotify is, the send/read recipe, and how
+to adopt it in another project — is documented in
+[docs/GOTIFY.md](docs/GOTIFY.md).
 
 ## Development
 

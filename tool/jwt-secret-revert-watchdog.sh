@@ -24,7 +24,16 @@
 #   BREVO_API_KEY      — Brevo REST API key for email alerts
 #   BREVO_SENDER       — sender email (default: noreply@mediasart.com)
 #   BREVO_SENDER_NAME  — sender name (default: mediasart)
+#   GOTIFY_URL         — Gotify server base URL (e.g. https://notify.mediasart.com)
+#   GOTIFY_APP_TOKEN   — Gotify application token for the alert app
+#   GOTIFY_PRIORITY    — default priority for Gotify alerts (default: 5)
 set -euo pipefail
+
+# Source shared alert helpers (send_webhook_alert, send_gotify_alert,
+# send_email_alert, send_brevo_alert, timestamp, json_escape) from tool/alert.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=alert.sh
+. "${SCRIPT_DIR}/alert.sh"
 
 # --------------------------------------------------------------------------- #
 # Configuration
@@ -35,6 +44,19 @@ IDENTITY_ENV="$HOME/Projects/kommons/supabase-identity/docker/.env"
 REGISTRY_DIR="$HOME/.jwt-secret-history"
 REGISTRY_FILE="$REGISTRY_DIR/registry.sha256"
 mkdir -p "$HOME/logs" "$REGISTRY_DIR"
+
+# --------------------------------------------------------------------------- #
+# Liveness heartbeat
+# --------------------------------------------------------------------------- #
+
+MONITOR_ID="revert-watchdog"
+HEARTBEAT_VERDICT="ok"
+heartbeat() { echo "$(timestamp) HEARTBEAT ${MONITOR_ID} ${HEARTBEAT_VERDICT}" >> "$LOG"; }
+# On EXIT rather than at the end, so every path — including an unexpected
+# `set -e` abort — leaves exactly one heartbeat behind.  This monitor is
+# silent when healthy apart from its own registry/OK lines, so the heartbeat
+# is what jwt-secret-liveness-check.sh measures.
+trap heartbeat EXIT
 
 # Stacks: name|env_path|compose_dir
 # kommons is the identity reference — checked for completeness but
@@ -53,8 +75,6 @@ STACKS=(
 # Helpers
 # --------------------------------------------------------------------------- #
 
-timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
-
 # Read the raw JWT_SECRET value from an env file (handles quoted values)
 get_jwt_secret() {
   local env_file="$1" val=""
@@ -71,51 +91,13 @@ fingerprint() {
   printf '%s' "$1" | sha256sum | awk '{print $1}'
 }
 
-# --------------------------------------------------------------------------- #
-# Alert helpers (same pattern as jwt-secret-drift-check.sh)
-# --------------------------------------------------------------------------- #
-
-send_webhook_alert() {
-  local message="$1"
-  [ -n "${ALERT_WEBHOOK_URL:-}" ] || return 0
-  local safe
-  safe=$(printf '%s\n' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  curl -s -o /dev/null --max-time 10 \
-    -X POST "$ALERT_WEBHOOK_URL" \
-    -H 'Content-Type: application/json' \
-    -d "{\"text\":\"${safe}\"}" || true
-}
-
-send_email_alert() {
-  local subject="$1" body="$2"
-  if [ -n "${ALERT_EMAIL:-}" ] && command -v mail >/dev/null 2>&1; then
-    printf '%s\n' "$body" | mail -s "$subject" "$ALERT_EMAIL" || true
-  fi
-}
-
-send_brevo_alert() {
-  local subject="$1" body="$2"
-  if [ -z "${BREVO_API_KEY:-}" ] || [ -z "${ALERT_EMAIL:-}" ]; then
-    return 0
-  fi
-  local sender="${BREVO_SENDER:-noreply@mediasart.com}"
-  local sender_name="${BREVO_SENDER_NAME:-mediasart}"
-  local esc_body esc_subject
-  esc_body=$(printf '%s' "$body" | sed 's/\\/\\\\/g; s/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
-  esc_subject=$(printf '%s' "$subject" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  curl -s -o /dev/null --max-time 15 \
-    -X POST "https://api.brevo.com/v3/smtp/email" \
-    -H "api-key: ${BREVO_API_KEY}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"sender\":{\"email\":\"${sender}\",\"name\":\"${sender_name}\"},\"to\":[{\"email\":\"${ALERT_EMAIL}\"}],\"subject\":\"${esc_subject}\",\"textContent\":\"${esc_body}\"}" || true
-}
-
 send_revert_alerts() {
   local details="$1"
   local host msg
   host="$(hostname)"
   msg="🔄 JWT Exact-Revert + Auto Re-cut — ${host}\n\n${details}\n\n"
   send_webhook_alert "$msg"
+  send_gotify_alert "JWT Revert + Auto Re-cut — ${host}" "$msg" "${GOTIFY_PRIORITY:-8}"
   send_email_alert "[Revert Alert] JWT Secret Re-cut — ${host}" "$msg"
   send_brevo_alert "[Revert Alert] JWT Secret Re-cut — ${host}" "$msg"
 }
@@ -130,6 +112,7 @@ build_registry() {
   if [ -z "$identity_secret" ]; then
     echo "$(timestamp) FATAL: could not read identity JWT_SECRET from $IDENTITY_ENV" >> "$LOG"
     send_revert_alerts "Could not read identity JWT_SECRET from $IDENTITY_ENV — registry build failed."
+    HEARTBEAT_VERDICT="fatal"
     exit 1
   fi
   identity_fp="$(fingerprint "$identity_secret")"
@@ -273,6 +256,7 @@ Log:        $(readlink -f "$LOG")"
 if [ ! -f "$IDENTITY_ENV" ]; then
   echo "$(timestamp) FATAL identity .env not found at $IDENTITY_ENV" >> "$LOG"
   send_revert_alerts "Identity .env not found at $IDENTITY_ENV — cannot determine reference JWT_SECRET."
+  HEARTBEAT_VERDICT="fatal"
   exit 1
 fi
 
@@ -328,9 +312,11 @@ done
 # Summary
 if [ "$reverted" -eq 1 ]; then
   echo "$(timestamp) DONE: at least one exact revert was auto-re-cut" >> "$LOG"
+  HEARTBEAT_VERDICT="recut"
   exit 1
 elif [ "$reverted" -eq 2 ]; then
   echo "$(timestamp) DONE: revert detected but re-cut FAILED — manual intervention required" >> "$LOG"
+  HEARTBEAT_VERDICT="failed"
   exit 2
 fi
 

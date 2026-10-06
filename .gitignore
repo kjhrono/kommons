@@ -11,6 +11,13 @@ pubspec.lock
 .vscode/
 *.iml
 
+# Python caches
+__pycache__/
+*.pyc
+
+# Freebuff agent metadata
+.freebuff/
+
 # OS
 .DS_Store
 

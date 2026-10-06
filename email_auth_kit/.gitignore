@@ -19,6 +19,7 @@ teststack/supabase/functions/
 teststack/supabase/snippets/
 teststack/supabase/migrations/
 teststack/supabase/.temp/
+teststack/supabase/.branches/
 
 # OS / editor noise
 .DS_Store

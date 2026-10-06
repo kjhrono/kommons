@@ -7,17 +7,44 @@
 # BREVO_API_KEY is set.
 # Run from cron every 15 min.
 #
+# Every run writes one "HEARTBEAT drift-check <verdict>" line, whichever way
+# it ends.  The clean result is only logged when no alert channel is
+# configured, so without the heartbeat a monitor that had stopped running
+# would look identical to one with nothing to report.
+# jwt-secret-liveness-check.sh alerts on a heartbeat that goes stale.
+#
 # Alert configuration (set in crontab environment or export):
 #   ALERT_WEBHOOK_URL  — incoming-webhook URL for real-time alerts
 #   ALERT_EMAIL        — recipient for mail(1) or Brevo API alerts
 #   BREVO_API_KEY      — Brevo (Sendinblue) API key for email alerts via REST API
 #   BREVO_SENDER       — sender email (default: noreply@mediasart.com)
 #   BREVO_SENDER_NAME  — sender name (default: mediasart)
+#   GOTIFY_URL         — Gotify server base URL (e.g. https://notify.mediasart.com)
+#   GOTIFY_APP_TOKEN   — Gotify application token for the alert app
 #   mail(1) must be installed for local mail() alerts.
 set -euo pipefail
 
+# Source shared alert helpers (send_webhook_alert, send_gotify_alert,
+# send_email_alert, send_brevo_alert, timestamp, json_escape) from tool/alert.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=alert.sh
+. "${SCRIPT_DIR}/alert.sh"
+
 LOG="$HOME/logs/jwt-secret-drift.log"
 IDENTITY_ENV="$HOME/Projects/kommons/supabase-identity/docker/.env"
+
+mkdir -p "$(dirname "$LOG")"
+
+# --------------------------------------------------------------------------- #
+# Liveness heartbeat
+# --------------------------------------------------------------------------- #
+
+MONITOR_ID="drift-check"
+HEARTBEAT_VERDICT="ok"
+heartbeat() { echo "$(timestamp) HEARTBEAT ${MONITOR_ID} ${HEARTBEAT_VERDICT}" >> "$LOG"; }
+# On EXIT rather than at the end, so every path — including an unexpected
+# `set -e` abort — leaves exactly one heartbeat behind.
+trap heartbeat EXIT
 
 ENV_PATHS=(
   "kommons|${IDENTITY_ENV}"
@@ -28,8 +55,6 @@ ENV_PATHS=(
   "kollectio|${HOME}/Projects/kollectio/database/docker/.env"
   "kapaxinfiniti|${HOME}/Projects/kapaxinfiniti/database/docker/.env"
 )
-
-timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
 
 get_secret() {
   local env_file="$1" val=""
@@ -46,45 +71,6 @@ get_secret() {
   printf '%s\n' "$val"
 }
 
-# --- alert helpers ---
-
-send_webhook_alert() {
-  local message="$1"
-  [ -n "${ALERT_WEBHOOK_URL:-}" ] || return 0
-  local safe
-  safe=$(printf '%s\n' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  curl -s -o /dev/null --max-time 10 \
-    -X POST "$ALERT_WEBHOOK_URL" \
-    -H 'Content-Type: application/json' \
-    -d "{\"text\":\"${safe}\"}" || true
-}
-
-send_email_alert() {
-  local subject="$1" body="$2"
-  if [ -n "${ALERT_EMAIL:-}" ] && command -v mail >/dev/null 2>&1; then
-    printf '%s\n' "$body" | mail -s "$subject" "$ALERT_EMAIL" || true
-  fi
-}
-
-send_brevo_alert() {
-  local subject="$1" body="$2"
-  if [ -z "${BREVO_API_KEY:-}" ] || [ -z "${ALERT_EMAIL:-}" ]; then
-    return 0
-  fi
-  local sender="${BREVO_SENDER:-noreply@mediasart.com}"
-  local sender_name="${BREVO_SENDER_NAME:-mediasart}"
-  # Escape body for JSON: backslash, double-quotes, newlines -> \n
-
-  local esc_body esc_subject
-  esc_body=$(printf '%s' "$body" | sed 's/\\/\\\\/g; s/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
-  esc_subject=$(printf '%s' "$subject" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  curl -s -o /dev/null --max-time 15 \
-    -X POST "https://api.brevo.com/v3/smtp/email" \
-    -H "api-key: ${BREVO_API_KEY}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"sender\":{\"email\":\"${sender}\",\"name\":\"${sender_name}\"},\"to\":[{\"email\":\"${ALERT_EMAIL}\"}],\"subject\":\"${esc_subject}\",\"textContent\":\"${esc_body}\"}" || true
-}
-
 send_drift_alerts() {
   local details="$1"
   local host msg
@@ -94,6 +80,7 @@ ${details}
 Action: re-cut affected stacks to match identity-secret and force-recreate their containers.
 Log:   $(readlink -f "$LOG")"
   send_webhook_alert "$msg"
+  send_gotify_alert "JWT Secret Drift Detected — ${host}" "$msg" 8
   send_email_alert "[Drift Alert] JWT Secret Mismatch — ${host}" "$msg"
   send_brevo_alert "[Drift Alert] JWT Secret Mismatch — ${host}" "$msg"
 }
@@ -104,6 +91,7 @@ if [ ! -f "$IDENTITY_ENV" ]; then
   line="$(timestamp) FATAL identity .env not found at $IDENTITY_ENV"
   echo "$line" >> "$LOG"
   send_drift_alerts "identity .env not found at $IDENTITY_ENV"
+  HEARTBEAT_VERDICT="fatal"
   exit 1
 fi
 
@@ -112,6 +100,7 @@ if [ -z "$REF" ]; then
   line="$(timestamp) FATAL could not read reference JWT_SECRET from identity .env"
   echo "$line" >> "$LOG"
   send_drift_alerts "could not read reference JWT_SECRET from identity .env"
+  HEARTBEAT_VERDICT="fatal"
   exit 1
 fi
 
@@ -137,6 +126,7 @@ for entry in "${ENV_PATHS[@]}"; do
 done
 
 if [ "$mismatch" -eq 1 ]; then
+  HEARTBEAT_VERDICT="drift"
   send_drift_alerts "$drift_details"
 elif [ -z "${ALERT_WEBHOOK_URL:-}" ] && [ -z "${ALERT_EMAIL:-}" ] && [ -z "${BREVO_API_KEY:-}" ]; then
   echo "$(timestamp) OK all stacks match identity JWT_SECRET" >> "$LOG"
