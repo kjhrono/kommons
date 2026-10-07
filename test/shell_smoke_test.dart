@@ -119,8 +119,15 @@ void main() {
     // Version chip renders (package_info answers synchronously in tests).
     expect(find.text('PROBE'), findsOneWidget);
 
-    // The theme toggle flips the shared notifier (dark mode offers light).
-    await tester.tap(find.byIcon(Icons.light_mode_outlined));
+    // The toggle cycles the shared notifier through all three modes
+    // (light → dark → system → light), and its icon shows the NEXT step.
+    // The fresh state is dark, so the top bar offers the system step first.
+    expect(find.byIcon(Icons.brightness_auto_outlined), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('theme-toggle')));
+    await tester.pumpAndSettle();
+    expect(appTheme.mode, ThemeMode.system);
+
+    await tester.tap(find.byKey(const ValueKey('theme-toggle')));
     await tester.pumpAndSettle();
     expect(appTheme.mode, ThemeMode.light);
 
@@ -137,8 +144,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('host-section')), findsOneWidget);
 
-    // The toggle followed along: light mode now offers the way back.
-    expect(find.byIcon(Icons.dark_mode_outlined), findsNothing);
+    // The settings screen carries the same toggle, and it followed along:
+    // in light mode it offers the dark step. The top bar that opened this
+    // route is offstage now, so this is the settings instance.
+    expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
 
     appTheme.mode = ThemeMode.dark; // don't leak into the next test
   });

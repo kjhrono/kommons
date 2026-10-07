@@ -14,10 +14,12 @@
 #   send_gotify_alert()  — POST a message to the Gotify /message endpoint
 #   send_email_alert()   — send a local mail(1) notification
 #   send_brevo_alert()   — send an email via the Brevo REST API
+#   send_telegram_alert() — POST a message to the Telegram Bot API
 #   preferred_email_channel() — the single channel routine reports use
 #   send_email_report()  — deliver a routine report through that one channel
 #
-# Alert configuration (set in crontab environment or export):
+# Alert configuration (see the deployment block below — normally set in
+# ~/etc/alerts.env, mode 0600, never in the crontab; an exported value wins):
 #   ALERT_WEBHOOK_URL  — incoming-webhook URL for real-time alerts
 #   ALERT_EMAIL        — recipient for mail(1) or Brevo API alerts
 #   BREVO_API_KEY      — Brevo (Sendinblue) API key for email alerts via REST API
@@ -26,8 +28,38 @@
 #   GOTIFY_URL         — Gotify server base URL (e.g. https://notify.mediasart.com)
 #   GOTIFY_APP_TOKEN   — Gotify application token for the alert app
 #   GOTIFY_PRIORITY    — default priority for Gotify alerts (default: 5)
+#   TELEGRAM_BOT_TOKEN — Telegram bot token for the alert bot
+#   TELEGRAM_CHAT_ID   — Telegram chat to deliver to (user id, group id, or
+#                        @channelusername); a group is how several people
+#                        share one alert feed
+#
+# Gotify and mail run on (or beside) the monitored host, so they go blind when
+# the host itself is unreachable.  Telegram's API lives off-host, which makes
+# it the decision's external leg; the critical monitors fan a copy out to it
+# in addition to their on-host channels, never instead of them.
 #
 # All functions are no-ops when their required env vars are absent.
+
+# --- deployment configuration ------------------------------------------------ #
+#
+# Alert credentials and endpoints live OUTSIDE the crontab, in a mode-0600 env
+# file the operator owns.  A crontab is readable by anyone who can run
+# `crontab -l`, and it is edited in place by prose and schedules alike, so a
+# Brevo key or Gotify token sitting in it is one accidental paste away from
+# disclosure.  This file is sourced HERE, at the single point every consumer
+# already passes through (each monitor sources alert.sh), so one file
+# configures them all.
+#
+# The file is a plain KEY=value file sourced with `.`, so it is the single
+# source of truth for these values: edit it, do not export shadows of it.
+# Hermetic suites run under `env -i HOME=<sandbox>`, so they see no file and
+# stay configured by their own fixtures.  Point ALERT_ENV_FILE elsewhere to
+# test against another file.
+ALERT_ENV_FILE="${ALERT_ENV_FILE:-${HOME:-/home/ubuntu}/etc/alerts.env}"
+if [ -f "$ALERT_ENV_FILE" ]; then
+  # shellcheck source=/dev/null
+  . "$ALERT_ENV_FILE"
+fi
 
 # --- shared utilities ---
 
@@ -101,6 +133,35 @@ send_brevo_alert() {
     -H "api-key: ${BREVO_API_KEY}" \
     -H 'Content-Type: application/json' \
     -d "{\"sender\":{\"email\":\"${sender}\",\"name\":\"${sender_name}\"},\"to\":[{\"email\":\"${ALERT_EMAIL}\"}],\"subject\":\"${esc_subject}\",\"textContent\":\"${esc_body}\"}" || true
+}
+
+# send_telegram_alert <subject> <body>
+#   POSTs a message (subject, blank line, body) to the Telegram Bot API.
+#   Telegram is the external push channel: it still rings when the VM is
+#   unreachable or the Gotify container is down, which is exactly when the
+#   on-host channels cannot speak.  Sends plain text (no parse_mode) so
+#   alert bodies full of Markdown metacharacters cannot break the request,
+#   and truncates before Telegram's 4096-character limit.  No-op when
+#   TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is empty.
+#
+#   Note: a bot cannot open a conversation, so whoever owns the chat must
+#   have pressed Start (or the bot must be a member of the group) first.
+send_telegram_alert() {
+  local subject="$1" body="$2"
+  [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || return 0
+  [ -n "${TELEGRAM_CHAT_ID:-}" ] || return 0
+  local text="${subject}
+${body}"
+  if [ "${#text}" -gt 4000 ]; then
+    text="${text:0:4000}
+… (truncated)"
+  fi
+  local safe
+  safe="$(json_escape "$text")"
+  curl -s -o /dev/null --max-time 10 \
+    -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -H 'Content-Type: application/json' \
+    -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${safe}\",\"disable_web_page_preview\":true}" || true
 }
 
 # --- routine reports: one copy, not several ---

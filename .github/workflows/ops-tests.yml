@@ -10,7 +10,9 @@
 #
 # The suite list is explicit rather than a glob, because two ops scripts in
 # tool/ are deliberately NOT hermetic and must stay manual, on the VM, where
-# the state they exercise actually exists:
+# the state they exercise actually exists (test_identity_allowlist_sync.sh IS
+# hermetic: it drives the tool in --local mode against a sandbox stack with
+# stub docker/ssh):
 #   tool/test_watchdog.sh        — inspects the real ~/Projects tree
 #   tool/test_watchdog_revert.sh — rewrites a real stack's .env to exercise
 #                                  the live watchdog against ~/bin
@@ -47,11 +49,14 @@ jobs:
             tool/gotify-messages.sh
             tool/gotify-report-digest.sh
             tool/gotify-retention-sweep.sh
+            tool/identity_allowlist_sync.sh
             tool/jwt-secret-daily-summary.sh
             tool/jwt-secret-delivery-watchdog.sh
             tool/jwt-secret-drift-check.sh
             tool/jwt-secret-liveness-check.sh
+            tool/jwt-secret-monitor.sh
             tool/jwt-secret-revert-watchdog.sh
+            tool/oauth_handoff_probe.sh
           "
           bad=""
           for f in $deployed; do
@@ -67,6 +72,10 @@ jobs:
       - name: Run hermetic ops suites
         run: |
           suites=(
+            test_alert_env.sh
+            test_identity_allowlist_sync.sh
+            test_oauth_handoff_probe.sh
+            test_jwt_secret_watch.sh
             test_watchdog_identity_skip.sh
             test_liveness_check.sh
             test_daily_summary.sh
@@ -75,6 +84,7 @@ jobs:
             test_gotify_retention_sweep.sh
             test_delivery_watchdog.sh
             test_cleanup_notify.sh
+            test_telegram_alert.sh
           )
 
           # Run every suite even after a failure, so one run reports the whole

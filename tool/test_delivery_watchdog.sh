@@ -97,6 +97,7 @@ MAX_AGE_HOURS=26; EXPECT_TITLE="JWT Daily Summary"
 GOTIFY_URL="https://gotify.invalid"; GOTIFY_APP_TOKEN="test-token"
 ALERT_WEBHOOK_URL="https://webhook.invalid/hook"; BREVO_API_KEY="brevo-key"
 ALERT_EMAIL="ops@example.invalid"
+TELEGRAM_BOT_TOKEN=""; TELEGRAM_CHAT_ID=""
 
 # run_watchdog <tag> — runs the watchdog with a fresh set of capture files.
 run_watchdog() {
@@ -113,7 +114,9 @@ run_watchdog() {
     MAX_AGE_HOURS="$MAX_AGE_HOURS" EXPECT_TITLE="$EXPECT_TITLE" \
     GOTIFY_URL="$GOTIFY_URL" GOTIFY_APP_TOKEN="$GOTIFY_APP_TOKEN" \
     ALERT_WEBHOOK_URL="$ALERT_WEBHOOK_URL" BREVO_API_KEY="$BREVO_API_KEY" \
-    ALERT_EMAIL="$ALERT_EMAIL" CURL_LOG="$CURL_LOG" MAIL_LOG="$MAIL_LOG" \
+    ALERT_EMAIL="$ALERT_EMAIL" \
+    TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" TELEGRAM_CHAT_ID="$TELEGRAM_CHAT_ID" \
+    CURL_LOG="$CURL_LOG" MAIL_LOG="$MAIL_LOG" \
     "$WATCHDOG" < /dev/null
 }
 
@@ -125,6 +128,7 @@ reset_case() {
   GOTIFY_URL="https://gotify.invalid"; GOTIFY_APP_TOKEN="test-token"
   ALERT_WEBHOOK_URL="https://webhook.invalid/hook"; BREVO_API_KEY="brevo-key"
   ALERT_EMAIL="ops@example.invalid"
+  TELEGRAM_BOT_TOKEN=""; TELEGRAM_CHAT_ID=""
 }
 
 echo "Watchdog: $WATCHDOG"
@@ -169,6 +173,7 @@ assert_present "the alert posts to Gotify" "$CURL_LOG" "/message?token=test-toke
 assert_present "the Gotify alert is high priority" "$CURL_LOG" "priority=8"
 assert_present "the alert posts to the webhook" "$CURL_LOG" "https://webhook.invalid/hook"
 assert_present "the alert sends Brevo email" "$CURL_LOG" "api.brevo.com"
+assert_absent "no Telegram call is made without credentials" "$CURL_LOG" "api.telegram.org"
 assert_present "local mail is also attempted" "$MAIL_LOG" "mail call"
 assert_present "the alert is titled with the host" "$CURL_LOG" "JWT Alert Delivery Stalled — testhost"
 assert_present "the alert explains the staleness and threshold" "$CURL_LOG" "1d 06h old, past the 26h threshold"
@@ -279,6 +284,27 @@ env -i PATH="$BASE_PATH" HOME="$SANDBOX/home" AUDIT="$STUB_AUDIT" \
   LOG="$SANDBOX/cfg2.log" MAX_AGE_HOURS="soon" "$WATCHDOG" > "$SANDBOX/cfg2.out" 2>&1 < /dev/null || rc=$?
 assert_eq "a non-numeric threshold exits 2" "$rc" "2"
 assert_present "the bad threshold is explained" "$SANDBOX/cfg2.out" "MAX_AGE_HOURS must be a non-negative integer"
+
+# --------------------------------------------------------------------------- #
+# Phase 8: the external Telegram leg survives Gotify being down
+# --------------------------------------------------------------------------- #
+
+echo
+echo "Phase 8: the external Telegram leg fires when Gotify is down"
+
+reset_case
+STUB_HB=108000; STUB_ANY=108000
+GOTIFY_URL=""; GOTIFY_APP_TOKEN=""
+TELEGRAM_BOT_TOKEN="tg-token"; TELEGRAM_CHAT_ID="424242"
+rc=0
+run_watchdog telegram || rc=$?
+
+assert_eq "run exits 1 with Telegram configured" "$rc" "1"
+assert_eq "the external channels all fire (webhook, Brevo, Telegram)" "$(curl_calls)" "3"
+assert_absent "no Gotify push is attempted" "$CURL_LOG" "/message?token="
+assert_present "the alert posts to the Telegram Bot API" "$CURL_LOG" "api.telegram.org/bottg-token/sendMessage"
+assert_present "the Telegram payload names the chat" "$CURL_LOG" "424242"
+assert_present "the Telegram leg carries the stall verdict" "$CURL_LOG" "JWT Alert Delivery Stalled"
 
 # --------------------------------------------------------------------------- #
 # Summary

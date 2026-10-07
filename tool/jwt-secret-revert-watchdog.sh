@@ -24,13 +24,16 @@
 #   BREVO_API_KEY      — Brevo REST API key for email alerts
 #   BREVO_SENDER       — sender email (default: noreply@mediasart.com)
 #   BREVO_SENDER_NAME  — sender name (default: mediasart)
+#   GOTIFY_URL / GOTIFY_APP_TOKEN — Gotify push (unset → silent)
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — Telegram push (unset → silent)
 #   GOTIFY_URL         — Gotify server base URL (e.g. https://notify.mediasart.com)
 #   GOTIFY_APP_TOKEN   — Gotify application token for the alert app
 #   GOTIFY_PRIORITY    — default priority for Gotify alerts (default: 5)
 set -euo pipefail
 
 # Source shared alert helpers (send_webhook_alert, send_gotify_alert,
-# send_email_alert, send_brevo_alert, timestamp, json_escape) from tool/alert.sh
+# send_email_alert, send_brevo_alert, send_telegram_alert, timestamp,
+# json_escape) from tool/alert.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=alert.sh
 . "${SCRIPT_DIR}/alert.sh"
@@ -100,6 +103,7 @@ send_revert_alerts() {
   send_gotify_alert "JWT Revert + Auto Re-cut — ${host}" "$msg" "${GOTIFY_PRIORITY:-8}"
   send_email_alert "[Revert Alert] JWT Secret Re-cut — ${host}" "$msg"
   send_brevo_alert "[Revert Alert] JWT Secret Re-cut — ${host}" "$msg"
+  send_telegram_alert "[Revert Alert] JWT Secret Re-cut — ${host}" "$msg"
 }
 
 # --------------------------------------------------------------------------- #

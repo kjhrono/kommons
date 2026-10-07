@@ -99,6 +99,19 @@ printf '%s\n' "${STUB_AGE:-3600}"
 STUB
 chmod +x "$STUB_AUDIT"
 
+# The digest reports incidents only for stacks the watch still contains, and it
+# asks the monitor for that list via `--stacks`.  A stub keeps the watch list
+# the test's to choose; MONITOR_MISSING points the summary at nothing at all, to
+# prove the filter switches itself off rather than guessing.
+STUB_MONITOR="$SANDBOX/bin/jwt-secret-monitor.sh"
+cat > "$STUB_MONITOR" <<'STUB'
+#!/usr/bin/env bash
+# Test stub for jwt-secret-monitor.sh: --stacks answered from WATCHED_STACKS.
+[ "${1:-}" = "--stacks" ] || exit 2
+printf '%s\n' ${WATCHED_STACKS:-katalogus kalcio kognitio kollectio kapaxinfiniti kommons}
+STUB
+chmod +x "$STUB_MONITOR"
+
 BASE_PATH="$SANDBOX/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 pass=0
@@ -140,6 +153,7 @@ GOTIFY_URL_TEST=""
 GOTIFY_TOKEN_TEST=""
 BREVO_KEY=""
 ALERT_EMAIL_TEST=""
+MONITOR_MISSING=0
 
 # Live pipeline reading the stub audit helper will report: 3600s (1h) is a
 # current heartbeat, so the default is agreement with a healthy log.
@@ -154,7 +168,8 @@ reset_channels() {
 # run_summary <tag> — run the real script in the sandbox with the channels
 # configured by the current globals.
 run_summary() {
-  local tag="$1"
+  local tag="$1" monitor="$STUB_MONITOR"
+  [ "$MONITOR_MISSING" = 1 ] && monitor="$SANDBOX/no-such-dir/jwt-secret-monitor.sh"
   CURL_LOG="$SANDBOX/$tag.curl.log"
   : > "$CURL_LOG"
   MAIL_LOG="$SANDBOX/$tag.mail.log"
@@ -162,6 +177,7 @@ run_summary() {
   env -i \
     PATH="$BASE_PATH" HOME="$SANDBOX/home" \
     LOG="$DRIFT_LOG" DELIVERY_LOG="$DELIVERY_LOG" \
+    MONITOR="$monitor" WATCHED_STACKS="${WATCHED:-}" \
     WINDOW_HOURS="$WINDOW_HOURS" \
     ALERT_WEBHOOK_URL="$WEBHOOK" \
     GOTIFY_URL="$GOTIFY_URL_TEST" GOTIFY_APP_TOKEN="$GOTIFY_TOKEN_TEST" \
@@ -950,6 +966,72 @@ run_summary phase14_fallback > /dev/null 2>&1 || rc=$?
 awk '/^-d$/{getline; print; exit}' "$CURL_LOG" > "$SANDBOX/phase14f.json"
 assert_py "a DONE whose reverts fell outside the window stays host-level" \
   "$SANDBOX/phase14f.json" fallback
+
+# --------------------------------------------------------------------------- #
+# Phase 15: a retired stack's lingering lines are ignored, not reported
+# --------------------------------------------------------------------------- #
+
+echo
+echo "Phase 15: incidents from a stack the watch no longer contains are ignored"
+
+T15="$(ts_ago '2 hours')"
+WATCHED="katalogus kalcio kognitio"
+MONITOR_MISSING=0
+
+# A retired stack that was still being written to until it was dropped: its
+# .env is gone, so every run produced a WARN — the exact shape of the staging
+# noise (137 lines, most of them duplicates) that surfaced in the digest.
+{
+  printf '%s OK all stacks match identity JWT_SECRET\n' "$T15"
+  printf '%s WARN katalogus-staging: .env not found at /home/ubuntu/Projects/katalogus/staging/docker/.env\n' "$T15"
+  printf '%s WARN katalogus-staging: .env not found at /home/ubuntu/Projects/katalogus/staging/docker/.env — skipping\n' "$T15"
+} > "$DRIFT_LOG"
+printf '%s OK delivery heartbeat: %s last delivered 1h 00m ago (threshold 26h)\n' \
+  "$T15" "$HEARTBEAT_TITLE" > "$DELIVERY_LOG"
+
+reset_channels
+WEBHOOK="https://webhook.invalid/hook"
+rc=0
+run_summary phase15_retired || rc=$?
+
+assert_eq "a retired stack does not fail the digest" "$rc" "0"
+assert_absent "the retired stack is not reported as an incident" \
+  "$CURL_LOG" "katalogus-staging — 2 event(s):"
+assert_absent "the retired stack's WARN text is not in the incident list" \
+  "$CURL_LOG" "Incidents by stack:"
+assert_present "the digest says nothing was wrong with the watched stacks" \
+  "$CURL_LOG" "(none — all stacks were green)"
+assert_present "the skipped lines are named rather than dropped silently" \
+  "$CURL_LOG" "Ignored — retired stack(s) the watch no longer contains (2 event(s)):"
+assert_present "the retired stack is named with its count" \
+  "$CURL_LOG" "katalogus-staging — 2 event(s), last"
+
+# A WATCHED stack failing is still an incident: the filter must not over-reach.
+{
+  printf '%s OK all stacks match identity JWT_SECRET\n' "$T15"
+  printf '%s DRIFT kognitio: fingerprints differ (identity=aaaa… stack=bbbb…)\n' "$T15"
+} > "$DRIFT_LOG"
+rc=0
+run_summary phase15_watched || rc=$?
+assert_present "a watched stack's incident is still reported" \
+  "$CURL_LOG" "kognitio — 1 event(s):"
+assert_absent "nothing is filed as ignored when only watched stacks appear" \
+  "$CURL_LOG" "Ignored — retired stack(s)"
+
+# No monitor to ask: filtering is disabled, so the digest reports exactly what
+# it always did rather than dropping incidents it cannot prove are retired.
+{
+  printf '%s OK all stacks match identity JWT_SECRET\n' "$T15"
+  printf '%s WARN katalogus-staging: .env not found at /home/ubuntu/Projects/katalogus/staging/docker/.env\n' "$T15"
+} > "$DRIFT_LOG"
+MONITOR_MISSING=1
+rc=0
+run_summary phase15_nomonitor || rc=$?
+MONITOR_MISSING=0
+assert_present "with no monitor to consult, the incident is reported as before" \
+  "$CURL_LOG" "katalogus-staging — 1 event(s):"
+assert_absent "and nothing is claimed to have been ignored" \
+  "$CURL_LOG" "Ignored — retired stack(s)"
 
 # --------------------------------------------------------------------------- #
 # Summary

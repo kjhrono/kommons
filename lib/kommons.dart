@@ -26,7 +26,15 @@ export 'src/shell_app.dart';
 
 /// Email identity subpackage (RegisterLink, RegistrationFlow, SignInFlow...)
 /// — import as `package:kommons/email_auth_kit.dart`.
-export 'email_auth_kit.dart';
+///
+/// `AuthSession` is hidden here: the kit and this shell each define their
+/// own `AuthSession` (the kit's is the email-auth session slice; this
+/// package's is the shell session in `src/auth_service.dart`). Re-exporting
+/// both under one library made `package:kommons/kommons.dart` ambiguous.
+/// Consumers that want the kit's session type import
+/// `package:mediasart_auth_client/mediasart_auth_client.dart` (or
+/// `package:kommons/email_auth_kit.dart`) directly.
+export 'email_auth_kit.dart' hide AuthSession;
 
 // Multiplayer core: seat model, sync transport contracts and implementations,
 // room registry, server connection dialog, banner color picker.

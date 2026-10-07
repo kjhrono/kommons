@@ -114,10 +114,17 @@ separator humans scan by, and greps should not need to guess.
 | `GOTIFY_PRIORITY` | default priority for sends that do not pass one | `5` |
 | `GOTIFY_DB` | path to the history database, for the *reader* tools | `$HOME/gotify/data/gotify.db` |
 
-Keep `GOTIFY_APP_TOKEN` out of the repo — put it in the crontab environment
-or an env file, exactly like any other secret. The token is per-application,
-so a project usually has one for "reports" and one for "alerts"; rotating a
-leaked token means creating a new application, which is a two-click job.
+Keep `GOTIFY_APP_TOKEN` out of the repo AND out of the crontab: `crontab -l`
+prints every line, so a crontab is a poor home for a secret. Put it in a
+mode-0600 env file that the senders source — on the monitoring VM that is
+`~/etc/alerts.env`, sourced by `tool/alert.sh` (installed/verified by
+`tool/install_alert_env.sh`). The token is per-application, so a project
+usually has one for "reports" and one for "alerts".
+
+Rotating a leaked token means creating a new application and deleting the old
+one — the API cannot re-issue a token in place. Gotify deletes an application's
+messages along with it (in code, not via a foreign key), so re-point the
+history first if it matters.
 
 ## Reading the history (why not the HTTP API)
 
@@ -203,6 +210,41 @@ Two details that bite:
   produces a visible alarm everywhere else. This is the one place
   *redundancy* beats *pick-one-channel*.
 
+## The external leg: a channel that isn't on the host
+
+The heartbeat only helps if its alert can get out when the host is the thing
+that broke. Every channel above — Gotify, local `mail` — runs on or beside
+the monitored machine, so they fail together. Keep at least one **off-host**
+channel for the critical alerts. kommons' is a Telegram bot
+(`send_telegram_alert` in `tool/alert.sh`):
+
+| Variable | Meaning |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | bot token from @BotFather |
+| `TELEGRAM_CHAT_ID` | the chat to post to — a user id, a group id, or `@channel` |
+
+```bash
+curl -s -o /dev/null --max-time 10 \
+  -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  -H 'Content-Type: application/json' \
+  -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"Backup finished\"}"
+```
+
+Two rules this pattern keeps:
+
+- **Off-host is for alerts, not reports.** Critical alerts fan a copy out to
+  *every* configured channel — including this one — because the broken
+  channel may be the one reporting. Routine reports still pick exactly one
+  channel, so the external leg never becomes a second copy of a digest.
+- **A bot cannot start a conversation.** Whoever owns the chat must message
+  the bot (or add it to the group) first, or every send fails. Send plain
+  text (no `parse_mode`): alert bodies are full of Markdown metacharacters
+  that would otherwise turn into a 400.
+
+Telegram is one implementation, not the only one — ntfy, Slack or plain SMS
+play the same role. What matters is that the leg the watchdog uses does not
+share the host it is watching.
+
 ## Retention
 
 Nothing in Gotify deletes old messages, so `messages` grows forever. Bound it
@@ -259,9 +301,10 @@ tool) that you can rerun for a new subdomain.
 - [ ] **Create a client** and log a phone into it (Clients → Create Client;
       in the mobile app, enter the server URL + client token). This is the
       only step that is about receiving.
-- [ ] **Put `GOTIFY_URL` and `GOTIFY_APP_TOKEN` in the environment** (crontab
-      or env file) — never in the repo. Add `GOTIFY_PRIORITY` if the default
-      `5` is not what you want.
+- [ ] **Put `GOTIFY_URL` and `GOTIFY_APP_TOKEN` in a mode-0600 env file** that
+      the senders source — never in the repo, and not in the crontab, whose
+      `crontab -l` prints every line. Add `GOTIFY_PRIORITY` if the default `5`
+      is not what you want.
 - [ ] **Send a test:** the `curl -X POST … /message?token=…` above. Confirm
       it appears in the web UI *and* on the phone.
 - [ ] **Adopt a title convention** (`<thing> — <host>`) and a priority

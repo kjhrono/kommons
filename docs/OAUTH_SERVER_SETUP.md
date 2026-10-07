@@ -74,16 +74,57 @@ GoTrue only redirects to targets it knows. Both of these must be listed
 
 Notes:
 
-- An unlisted target fails at the very end of the flow with
-  GoTrue's *redirect URI not allowed* error page — a confusing dead end,
-  so add every origin a real deployment uses (production, staging, and the
-  dev origins) before turning the provider buttons live.
+- An unlisted target fails at the very end of the flow — either with
+  GoTrue's *redirect URI not allowed* error page, or, as observed on the
+  central identity stack, **silently rewritten to `GOTRUE_SITE_URL`**:
+  `/authorize` still answers 302, so nothing looks wrong until the member
+  lands on the website instead of back in the app. Both are confusing dead
+  ends, so add every origin a real deployment uses (production, staging, and
+  the dev origins) before turning the provider buttons live.
 - The scheme half of a mobile target (`mygame://`) is chosen by the game,
   not by kommons; whatever the game picks, the same value must appear in
   the app's platform manifest and in this allow-list, and the host sets
   `account.oauthRedirectUri = Uri.parse('mygame://auth')`.
 - The allow-list is per server. A game's staging server and production
   server have separate lists.
+- The **central identity stack** — the one every sibling project signs in
+  against — is the exception: its list is not typed into the stack `.env` by
+  hand. It is declared in `tool/identity-redirect-allowlist.txt` and converged
+  by `tool/identity_allowlist_sync.sh`, because that `.env` gets rewritten for
+  other reasons (secrets, providers, host ports) and a rebuild would otherwise
+  take the native `scheme://` entry with it. Add or change an entry in the
+  declaration, never in the file the stack runs from. A `*/30` guard on the VM
+  runs the tool's `--heal` mode, so a rewrite that does drop an entry is
+  converged and the running auth re-verified within the half hour instead of
+  waiting for a member to notice a sign-in landing on the website.
+- **The fallback origin is asserted too.** `GOTRUE_SITE_URL` is where every
+  unlisted target is rewritten, and GoTrue allows that origin implicitly — so a
+  site URL pointing somewhere that cannot finish a sign-in is a silent failure
+  of the same shape, and it is the destination of every other silent failure.
+  The declaration therefore names it (`site_url=https://…` — a *directive*, not
+  an entry), and the nightly `tool/oauth_handoff_probe.sh` compares that value
+  against both the fallback it observes in flight and the running container's
+  `GOTRUE_SITE_URL`, and reports the two separately so a process running a
+  value the stack no longer holds is distinguishable from a mis-set one. It is
+  not only asserted: `tool/identity_allowlist_sync.sh` **converges** `SITE_URL`
+  from that same directive (rewriting the key and recreating only auth, then
+  re-verifying the running container), and refuses a malformed value outright —
+  that origin is also the root of every confirmation and recovery link the
+  stack mails, so it is never guessed at. **Change it in the declaration, never
+  in the stack `.env`**; a manual `.env` edit is converged away within the half
+  hour, and until then the nightly probe calls it out.
+- **The two mail links are asserted end to end.** A signup confirmation and a
+  password recovery are the only mails that carry a LINK a member clicks, and
+  both are built as `<GOTRUE_SITE_URL> + one path`. They are not rendered by
+  GoTrue's templates at all: the stack's `auth-email` send-email hook assembles
+  them from the `site_url` GoTrue hands it, so a wrong origin or path there is a
+  code-level drift that no configuration check would see. The declaration names
+  the two paths (`mail_confirmation_path`, `mail_recovery_path`) and the nightly
+  probe holds each one to the running auth's `MAILER_URLPATHS_*`, to a real
+  request at the link's own URL, and to the hook's own rendering — and fails when
+  the action is not armed at all, because a link nobody is sent cannot be
+  asserted. Add or change a mail path in the declaration, in the hook, and in the
+  stack's `MAILER_URLPATHS_*` together.
 
 ## The recovery email template: `{{ .Token }}` vs a link
 
@@ -100,8 +141,18 @@ typed (or pasted) to `/auth/v1/verify?type=recovery` unchanged:
 
 Both templates now complete the flow in-app (COMMONS.md's *Lost & changed
 passwords*). `{{ .Token }}` remains the recommendation — one fewer hop, and
-it works on any device — but a link template is no longer a dead end. Two
-operational notes:
+it works on any device — but a link template is no longer a dead end.
+
+Whichever token the template carries, the LINK (where a template has one)
+always points at `<GOTRUE_SITE_URL>` + the path the mailer uses — never at a
+host typed into the template. That is asserted nightly, per action:
+`mail_confirmation_path` and `mail_recovery_path` in the declaration name the
+two paths, and `oauth_handoff_probe.sh` follows each link's own URL and holds
+the hook that renders it to them, so a recovery link that would land somewhere
+that cannot finish the flow is reported instead of being discovered by a
+player.
+
+Two operational notes:
 
 - **Link generations differ.** Newer Supabase/GoTrue links carry
   `token_hash` in the query string — self-addressing, they sign the player

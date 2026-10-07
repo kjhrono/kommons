@@ -12,11 +12,36 @@ import 'oauth_popup_launcher.dart' as oauth_launcher;
 import 'oauth_revoke.dart';
 import 'recovery_link.dart';
 import 'shell_preferences.dart';
-import 'shell_strings.dart';
+import 'shell_strings.dart';  // ---------------------------------------------------------------------------
+  // -- OS brightness observer --------------------------------------------------
+  /// A thin widget that listens to OS brightness changes and keeps the shared
+  /// [appTheme] in step when its mode is `ThemeMode.system`. Hosted once at the
+  /// root (e.g. inside `ShellApp`) rather than inside the toggle widget itself,
+  /// so a single observer covers the whole widget tree.
+  class SystemThemeObserver extends WidgetsBindingObserver {
+    SystemThemeObserver() {
+      WidgetsBinding.instance.addObserver(this);
+    }
 
-/// A game-server (auth-backend) connection an app hands to the account
-/// controller: where the GoTrue-compatible auth service lives and which
-/// anon key fronts it.
+    @override
+    void didChangePlatformBrightness() {
+      if (appTheme.isSystem) {
+        appTheme.value = ThemeMode.system;
+        appTheme.observeSystemBrightness();
+      }
+    }
+
+    // Not an override: WidgetsBindingObserver has no dispose(). Called by the
+    // owner when the observer goes away.
+    void dispose() {
+      WidgetsBinding.instance.removeObserver(this);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  /// A game-server (auth-backend) connection an app hands to the account
+  /// controller: where the GoTrue-compatible auth service lives and which
+  /// anon key fronts it.
 class ServerConnection {
   const ServerConnection({required this.url, this.apiKey});
 
@@ -51,24 +76,54 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
   /// Whether the current mode renders the light palette.
   bool get isLight => value == ThemeMode.light;
 
+  /// Whether the current mode follows the OS brightness.
+  bool get isSystem => value == ThemeMode.system;
+
+  /// The OS brightness when this device is set to follow the system theme.
+  Brightness get systemBrightness => _systemBrightness;
+  Brightness _systemBrightness = Brightness.light;
+
+
   /// Convenience read of the current mode.
   ThemeMode get mode => value;
+
+  /// The next mode in the three-way cycle (light \u2192 dark \u2192 system
+  /// \u2192 light). Used by the shared [ThemeToggleButton] so both the
+  /// top-bar header and the settings screen cycle identically.
+  ThemeMode get nextMode {
+    return switch (value) {
+      ThemeMode.light => ThemeMode.dark,
+      ThemeMode.dark => ThemeMode.system,
+      ThemeMode.system => ThemeMode.light,
+    };
+  }
+
+  /// The label the toggle shows when the OS theme is active
+  /// (“System”). Replaced once the cycle lands on system mode.
+  static const systemLabel = 'System';
 
   set mode(ThemeMode mode) {
     value = mode;
     _persist();
     // Sync write-through: a session on any game sharing the auth server
     // inherits this choice (quiet no-op when not signed in / offline).
-    unawaited(account.preferenceEdited(
-        ShellPrefKey.theme, mode == ThemeMode.light ? 'light' : 'dark'));
+    final key = ShellPrefKey.theme;
+    final pref = _prefString(mode);
+    unawaited(account.preferenceEdited(key, pref));
+    notifyListeners();
   }
 
   /// Restores the remembered choice at startup (before the first frame
   /// reads the mode).
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    value =
-        prefs.getString(_prefKey) == 'light' ? ThemeMode.light : ThemeMode.dark;
+    final saved = prefs.getString(_prefKey);
+    value = switch (saved) {
+      'light'  => ThemeMode.light,
+      'dark'   => ThemeMode.dark,
+      'system' => ThemeMode.system,
+      _        => ThemeMode.dark,
+    };
   }
 
   /// Applies a synced value (from another device, via the account
@@ -79,6 +134,18 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
     await _persist();
   }
 
+  /// Re-reads the OS brightness so the label on a system-mode toggle stays
+  /// correct across the app's lifetime. A settings screen can call this
+  /// after the first frame so the button on a freshly-opened dialog
+  /// already knows the current brightness.
+  @visibleForTesting
+  void observeSystemBrightness() {
+    if (WidgetsBinding.instance.rootElement != null) {
+      _systemBrightness =
+          MediaQuery.platformBrightnessOf(WidgetsBinding.instance.rootElement!);
+    }
+  }
+
   /// Clears in-memory state for tests (see [AccountController.resetForTest]).
   @visibleForTesting
   void resetForTest() {
@@ -87,8 +154,16 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _prefKey, value == ThemeMode.light ? 'light' : 'dark');
+    await prefs.setString(_prefKey, _prefString(value));
+  }
+
+  /// Persisted token for one of the three theme modes.
+  static String _prefString(ThemeMode mode) {
+    return switch (mode) {
+      ThemeMode.light  => 'light',
+      ThemeMode.dark   => 'dark',
+      ThemeMode.system => 'system',
+    };
   }
 
   static const _prefKey = 'prefs.app.themeMode';
@@ -1042,6 +1117,12 @@ class AccountController extends ValueNotifier<Account?> {
   /// token works too — same endpoint). On success the account is signed
   /// in exactly as a password sign-in would have; a wrong code rethrows
   /// and the parked state survives for another try.
+  ///
+  /// The typed code is normalized to digits only before it leaves the
+  /// device (the emailed code is a short numeric token, and paste/paste
+  /// noise like spaces, hyphens or newlines should not make a correct
+  /// code fail). The server's own message is still the primary surface
+  /// for why a code was rejected.
   Future<void> confirmSignupCode(String code) async {
     final email = _pendingSignupEmail;
     if (email == null) {
@@ -1053,12 +1134,23 @@ class AccountController extends ValueNotifier<Account?> {
       throw const AuthException('no_server',
           'Configure the game server first (host or join an online room once).');
     }
+    final normalized = code.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    if (normalized.isEmpty) {
+      throw const AuthException(
+          'empty_code', 'Enter the code from the email.');
+    }
     AuthSession session;
     try {
-      session = await service.verifySignup(email: email, token: code.trim());
+      session = await service.verifySignup(
+          email: email, token: normalized);
     } on AuthException catch (error) {
-      if (error.code == 'banned') await _markBanned(error);
-      rethrow;
+      if (error.code == 'banned') {
+        await _markBanned(error);
+      }
+      throw AuthException(
+          error.code,
+          appLocale.strings.confirmationCodeFailed(email, normalized),
+          error.detail); // keep the raw server response for debugging
     }
     await _landSession(session, fallbackEmail: email);
   }

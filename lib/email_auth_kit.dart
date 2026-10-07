@@ -11,6 +11,6 @@
 ///   • [generateCodeVerifier], [generateCodeChallenge] — PKCE helpers
 ///   • [RegisterLink] / [RegistrationFlow] / [ForgotPasswordLink] /
 ///     [ForgotPasswordFlow] / [SignInFlow] / [SignUpWithGoogleButton]
-library email_auth_kit;
+library;
 
 export 'package:mediasart_auth_client/mediasart_auth_client.dart';

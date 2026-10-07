@@ -7,6 +7,7 @@ import 'auth_service.dart';
 import 'shell_preferences.dart';
 import 'recovery_link.dart';
 import 'shell_strings.dart';
+import 'theme_toggle_button.dart';
 
 /// A handler an app registers for an OAuth provider button ('google',
 /// 'github', …). The shell renders the button and calls this on tap; the
@@ -704,6 +705,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ],
+            // -- Theme ----------------------------------------------------------
+            ThemeToggleButton(),
+            const SizedBox(height: 8),
+
             // -- Player name ---------------------------------------------------
             Card(
               child: Padding(
@@ -913,11 +918,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Confirms the parked registration with the emailed code (or link token).
+  ///
+  /// The typed code is normalized to digits only before it is sent — the
+  /// confirmation token is a short numeric code, and a paste can carry
+  /// stray spaces, hyphens or newlines that should not make a correct code
+  /// fail. On failure the snackbar names the email the shell sent the code
+  /// to and the exact code it sent, so a wrong / expired / already-used
+  /// code is diagnosable instead of mysterious.
   Future<void> _verifyCode() async {
-    final code = _codeController.text.trim();
-    if (code.isEmpty) {
+    final raw = _codeController.text.trim();
+    if (raw.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(appLocale.strings.enterCode)));
+      return;
+    }
+    final code = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${appLocale.strings.enterCode} (digits only)')));
       return;
     }
     setState(() => _cloudBusy = true);
@@ -931,8 +950,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } on AuthException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: AuthFailureSnack(
+              key: const ValueKey('confirm-code-failure'),
+              summary: appLocale.strings.confirmationCodeFailed(
+                  _pendingSignupEmail ?? '', code),
+              detail: error.detail,
+              request: 'POST /auth/v1/verify',
+              sent: '{email: ${_pendingSignupEmail ?? ""}, token: $code}',
+            ),
+            duration: const Duration(minutes: 3),
+            behavior: SnackBarBehavior.floating));
       }
     } finally {
       if (mounted) setState(() => _cloudBusy = false);
@@ -1167,3 +1196,133 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 }
+
+/// A snackbar for an auth failure that shows the usual one-line summary,
+/// plus an expandable body with the raw server response when one was
+/// captured. The body is what lets a player (or a dev reading the device)
+/// match the failure against the server log.
+///
+/// Keep this in the settings screen for now: it is the place that
+/// surfaces confirm-code and password-recovery failures, which are the
+/// flows where a raw server response is most useful to a human.
+class AuthFailureSnack extends StatefulWidget {
+  const AuthFailureSnack({
+    super.key,
+    required this.summary,
+    this.detail,
+    required this.request,
+    required this.sent,
+  });
+
+  final String summary;
+  final AuthFailureDetail? detail;
+  final String request;
+  final String sent;
+
+  @override
+  State<AuthFailureSnack> createState() => _AuthFailureSnackState();
+}
+
+class _AuthFailureSnackState extends State<AuthFailureSnack> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final detail = widget.detail;
+    final hasDetail = detail != null &&
+        (detail.isParsedJsonError || detail.rawBody?.isNotEmpty == true);
+
+    Widget body = Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.summary,
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (hasDetail && _expanded) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            _mono('Server response', detail.statusCode.toString()),
+            if (detail.errorCode != null) _mono('error_code', detail.errorCode!),
+            if (detail.message != null) _mono('msg', detail.message!),
+            const SizedBox(height: 6),
+            _mono('Request', widget.request),
+            _mono('Sent', widget.sent),
+            if (detail.rawBody != null) _mono('Raw body', detail.rawBody!),
+          ],
+        ],
+      ),
+    );
+
+    Widget action = hasDetail && !_expanded
+        ? InkWell(
+            onTap: () => setState(() => _expanded = true),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Show technical details',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_drop_down,
+                  size: 16,
+                  color: theme.textTheme.bodySmall?.color,
+                ),
+              ],
+            ),
+          )
+        : (hasDetail && _expanded)
+            ? TextButton(
+                onPressed: () => setState(() => _expanded = false),
+                child: const Text('Hide technical details'),
+              )
+            : const SizedBox.shrink();
+
+    return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(child: body),
+              const SizedBox(width: 8),
+              action,
+            ],
+          ),
+        ],
+      );
+  }
+
+  Widget _mono(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

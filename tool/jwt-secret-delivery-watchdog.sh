@@ -29,7 +29,8 @@
 #
 # Alert configuration (from alert.sh; unset → that channel stays silent):
 #   ALERT_WEBHOOK_URL, ALERT_EMAIL, BREVO_API_KEY, GOTIFY_URL,
-#   GOTIFY_APP_TOKEN, GOTIFY_PRIORITY (default 8)
+#   GOTIFY_APP_TOKEN, GOTIFY_PRIORITY (default 8), TELEGRAM_BOT_TOKEN,
+#   TELEGRAM_CHAT_ID
 #
 # Usage:
 #   jwt-secret-delivery-watchdog.sh
@@ -39,7 +40,8 @@
 set -euo pipefail
 
 # Source shared alert helpers (send_webhook_alert, send_gotify_alert,
-# send_email_alert, send_brevo_alert, timestamp) from tool/alert.sh
+# send_email_alert, send_brevo_alert, send_telegram_alert, timestamp) from
+# tool/alert.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=alert.sh
 . "${SCRIPT_DIR}/alert.sh"
@@ -129,6 +131,7 @@ Log:     ${LOG}"
   send_gotify_alert "JWT Alert Delivery Stalled — ${HOST}" "$msg" "${GOTIFY_PRIORITY:-8}"
   send_email_alert "[Delivery Alert] JWT alert pipeline stalled — ${HOST}" "$msg"
   send_brevo_alert "[Delivery Alert] JWT alert pipeline stalled — ${HOST}" "$msg"
+  send_telegram_alert "[Delivery Alert] JWT alert pipeline stalled — ${HOST}" "$msg"
 }
 
 # --------------------------------------------------------------------------- #

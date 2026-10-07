@@ -39,6 +39,14 @@
 # is wrong, which is not the same thing as either of them being bad, and it is
 # what tells a stalled pipeline apart from a stalled watchdog.
 #
+# Incidents are reported only for stacks the watch still contains.  A retired
+# stack (its .env gone, its entry dropped from the monitor) stops being written
+# to, but its incident lines stay in the shared log until they age out of the
+# window — so a digest run inside that gap reported a stack that no longer
+# exists as if it were still failing, every day.  The watched set comes from the
+# monitor itself (`jwt-secret-monitor.sh --stacks`); the skipped lines are
+# counted and named under "Ignored" rather than dropped silently.
+#
 # Delivered via incoming-webhook (when ALERT_WEBHOOK_URL is set) and by email
 # — same alert env-var scheme as drift-check.sh and
 # jwt-secret-revert-watchdog.sh.
@@ -64,6 +72,9 @@
 #                        pipeline-health section
 #                        (default: ~/logs/jwt-secret-delivery.log)
 #   WINDOW_HOURS       — summary window in hours (default: 24; set to 4 for testing)
+#   MONITOR            — path to jwt-secret-monitor.sh, consulted via `--stacks`
+#                        for the watched-stack list (default: beside this script).
+#                        Absent, incidents are never filtered.
 #
 # Live pipeline-check env vars — these must match the delivery watchdog's, so
 # that the two readings describe the same heartbeat and can be compared:
@@ -111,6 +122,9 @@ GOTIFY_DB="${GOTIFY_DB:-$HOME/gotify/data/gotify.db}"
 AUDIT="${AUDIT:-${SCRIPT_DIR}/gotify-messages.sh}"
 EXPECT_TITLE="${EXPECT_TITLE:-JWT Daily Summary}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-26}"
+# The monitor is the authority on which stacks the watch still contains; it is
+# consulted via `--stacks` (see load_watch_list).  Absent, nothing is filtered.
+MONITOR="${MONITOR:-${SCRIPT_DIR}/jwt-secret-monitor.sh}"
 
 case "$MAX_AGE_HOURS" in
   ''|*[!0-9]*)
@@ -202,6 +216,59 @@ REGISTRY_LINES=()
 FATAL_LINES=()
 TOTAL_OK=0
 
+# The stacks the watch still contains, and the incident lines skipped because
+# they name a stack it no longer does.  A retired stack (its .env gone, its
+# entry dropped from the monitor) stops being written to, but its lines stay in
+# the shared log until they age out of the window — so a digest run inside that
+# gap reported a stack that no longer exists as if it were still failing, every
+# single day, with dozens of duplicate WARNs.  RETIRED_LINES holds
+# "<stack>\t<line>" so the skip stays visible instead of silent.
+WATCHED_STACKS=()
+WATCH_LIST_SOURCE=""
+RETIRED_LINES=()
+
+# load_watch_list — ask the monitor which stacks are watched.  A missing or
+# unreadable monitor leaves the list empty, which disables filtering entirely:
+# the digest then reports exactly what it always did rather than dropping
+# incidents it cannot prove are retired.
+load_watch_list() {
+  local out stack
+  [ -f "$MONITOR" ] || return 0
+  out="$("$MONITOR" --stacks 2>/dev/null)" || return 0
+  while IFS= read -r stack || [ -n "$stack" ]; do
+    [ -n "$stack" ] || continue
+    WATCHED_STACKS+=("$stack")
+  done <<<"$out"
+  [ "${#WATCHED_STACKS[@]}" -gt 0 ] && WATCH_LIST_SOURCE="$MONITOR"
+  return 0
+}
+
+# spec_is_watched <stack-spec> — true when the spec names no stack at all (a
+# host-level incident is never retired), names a watched one, or when there is
+# no watch list to consult.  A spec may hold several stacks joined by "|"; one
+# watched stack is enough to keep the line.
+#
+# The answer travels on the exit status, not stdout, so it is safe inside the
+# parse loop's `if !`.
+spec_is_watched() {
+  local spec="$1" stack
+  [ "${#WATCHED_STACKS[@]}" -gt 0 ] || return 0
+  [ -n "$spec" ] || return 0
+  while IFS= read -r stack || [ -n "$stack" ]; do
+    [ -n "$stack" ] || continue
+    local w
+    for w in "${WATCHED_STACKS[@]}"; do [ "$w" = "$stack" ] && return 0; done
+  done < <(printf '%s' "$spec" | tr '|' '\n')
+  return 1
+}
+
+# retired_add <line> — remember a skipped incident so the digest can say how
+# many it ignored and for which retired stack.
+retired_add() {
+  local spec; spec="$(stack_of_line "${1#* }")"
+  RETIRED_LINES+=("${spec:-?}"$'\t'"$1")
+}
+
 # Every incident line in log order, with the stack it is attributed to (empty
 # for a genuinely host-level event).  Kept in log order rather than by category
 # so grouping can also see which run a DONE: summary belongs to.
@@ -245,6 +312,19 @@ parse_log() {
     [ "$epoch" -ge "$CUTOFF_EPOCH" ] || continue     # filter to window
 
     rest="${line#* }"         # everything after timestamp
+
+    # Incident lines are reported only for stacks the watch still contains (see
+    # RETIRED_LINES above).  OK and REGISTRY lines are never filtered: they are
+    # not incidents, and dropping them would misreport the run count.
+    case "$rest" in
+      OK*|REGISTRY*) ;;
+      *)
+        if ! spec_is_watched "$(stack_of_line "$rest")"; then
+          retired_add "$line"
+          continue
+        fi
+        ;;
+    esac
 
     case "$rest" in
       OK*)              OK_LINES+=("$line"); TOTAL_OK=$((TOTAL_OK + 1)) ;;
@@ -532,6 +612,22 @@ build_summary_body() {
     done
   fi
 
+  # Incidents from a stack the watch no longer contains were skipped as they
+  # were parsed.  Saying so keeps the skip visible: silence here would be
+  # indistinguishable from a filter that swallowed a live incident.
+  if [ "${#RETIRED_LINES[@]}" -gt 0 ]; then
+    local r_stack r_count r_newest
+    lines+=("")
+    lines+=("Ignored — retired stack(s) the watch no longer contains (${#RETIRED_LINES[@]} event(s)):")
+    for r_stack in $(printf '%s\n' "${RETIRED_LINES[@]}" | cut -f1 | sort -u); do
+      r_count="$(printf '%s\n' "${RETIRED_LINES[@]}" \
+        | awk -F'\t' -v s="$r_stack" '$1 == s { n++ } END { print n+0 }')"
+      r_newest="$(printf '%s\n' "${RETIRED_LINES[@]}" \
+        | awk -F'\t' -v s="$r_stack" '$1 == s { split($2, a, " "); print a[1] }' | tail -1)"
+      lines+=("  ${r_stack} — ${r_count} event(s), last $(short_ts "$r_newest")")
+    done
+  fi
+
   # --- pipeline health: a live reading, cross-checked against the watchdog ---
   lines+=("")
   lines+=("Pipeline health:")
@@ -603,6 +699,7 @@ build_summary_body() {
 # Main
 # --------------------------------------------------------------------------- #
 
+load_watch_list
 parse_log
 parse_delivery_log
 classify_pipeline

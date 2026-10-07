@@ -31,11 +31,13 @@ enum ShellLanguage {
 /// only carries its own vocabulary. Interpolated strings are methods so the
 /// word order can differ per language.
 @immutable
-class ShellStrings {
-  const ShellStrings({
+class ShellStrings {  const ShellStrings({
     // Top bar.
     this.switchThemeTooltip = 'Switch day/night theme',
     this.settingsTooltip = 'Settings',
+    this.themeSystemLabel = 'System',
+    
+
     // Splash.
     this.newGame = 'NEW GAME',
     this.continueDefault = 'CONTINUE',
@@ -85,6 +87,8 @@ class ShellStrings {
     this.invalidEmail = 'Enter a valid email address',
     this.shortPassword = 'Choose a password of at least 6 characters.',
     this.enterCode = 'Enter the code from the email.',
+    this.confirmationCodeFailedPattern =
+        'Wrong code for {email}. The server received: {code}',
     this.confirmationResent = 'Confirmation email sent again.',
     this.forgotPassword = 'Forgot password?',
     this.resetTitle = 'RESET PASSWORD',
@@ -233,6 +237,7 @@ class ShellStrings {
       {String? code,
       String? nativeName,
       String? switchThemeTooltip,
+      String? systemThemeLabelValue,
       String? settingsTooltip,
       String? newGame,
       String? continueDefault,
@@ -275,6 +280,7 @@ class ShellStrings {
       String? invalidEmail,
       String? shortPassword,
       String? enterCode,
+      String? confirmationCodeFailedPattern,
       String? confirmationResent,
       String? forgotPassword,
       String? resetTitle,
@@ -396,6 +402,7 @@ class ShellStrings {
       String? reopenSeat})
       : switchThemeTooltip = switchThemeTooltip ?? 'Cambia tema giorno/notte',
         settingsTooltip = settingsTooltip ?? 'Impostazioni',
+                themeSystemLabel = systemThemeLabelValue ?? 'Sistema',
         newGame = newGame ?? 'NUOVA PARTITA',
         continueDefault = continueDefault ?? 'CONTINUA',
         noSavedGames = noSavedGames ?? 'NESSUNA PARTITA SALVATA',
@@ -445,6 +452,9 @@ class ShellStrings {
         shortPassword =
             shortPassword ?? 'Scegli una password di almeno 6 caratteri.',
         enterCode = enterCode ?? 'Inserisci il codice dalla mail.',
+        confirmationCodeFailedPattern =
+            confirmationCodeFailedPattern ??
+                'Codice errato per {email}. Il server ha ricevuto: {code}',
         confirmationResent =
             confirmationResent ?? 'Email di conferma inviata di nuovo.',
         forgotPassword = forgotPassword ?? 'Password dimenticata?',
@@ -653,6 +663,7 @@ class ShellStrings {
   // -- Top bar ------------------------------------------------------------
   final String switchThemeTooltip;
   final String settingsTooltip;
+  final String themeSystemLabel;
 
   // -- Splash -------------------------------------------------------------
   final String newGame;
@@ -703,6 +714,7 @@ class ShellStrings {
   final String invalidEmail;
   final String shortPassword;
   final String enterCode;
+  final String confirmationCodeFailedPattern;
   final String confirmationResent;
 
   // -- Password reset + change --------------------------------------------
@@ -946,6 +958,14 @@ class ShellStrings {
   /// The reset-email-sent line with the address spelled out.
   String resetSent(String email) =>
       resetSentPattern.replaceAll('{email}', email);
+
+  /// The confirm-code failure line with the address and the code the
+  /// server actually received, so a wrong / expired / already-used code is
+  /// diagnosable instead of mysterious.
+  String confirmationCodeFailed(String email, String code) =>
+      confirmationCodeFailedPattern
+          .replaceAll('{email}', email)
+          .replaceAll('{code}', code);
 
   /// The account-suspension line with the window spelled out ('—' when the
   /// server sent none).

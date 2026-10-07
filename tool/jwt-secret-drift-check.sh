@@ -19,13 +19,18 @@
 #   BREVO_API_KEY      — Brevo (Sendinblue) API key for email alerts via REST API
 #   BREVO_SENDER       — sender email (default: noreply@mediasart.com)
 #   BREVO_SENDER_NAME  — sender name (default: mediasart)
+#   GOTIFY_URL         — Gotify server base URL (unset → no push)
+#   GOTIFY_APP_TOKEN   — Gotify application token (unset → no push)
+#   TELEGRAM_BOT_TOKEN — Telegram bot token (external push; unset → silent)
+#   TELEGRAM_CHAT_ID   — Telegram chat to deliver to (unset → silent)
 #   GOTIFY_URL         — Gotify server base URL (e.g. https://notify.mediasart.com)
 #   GOTIFY_APP_TOKEN   — Gotify application token for the alert app
 #   mail(1) must be installed for local mail() alerts.
 set -euo pipefail
 
 # Source shared alert helpers (send_webhook_alert, send_gotify_alert,
-# send_email_alert, send_brevo_alert, timestamp, json_escape) from tool/alert.sh
+# send_email_alert, send_brevo_alert, send_telegram_alert, timestamp,
+# json_escape) from tool/alert.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=alert.sh
 . "${SCRIPT_DIR}/alert.sh"
@@ -83,6 +88,7 @@ Log:   $(readlink -f "$LOG")"
   send_gotify_alert "JWT Secret Drift Detected — ${host}" "$msg" 8
   send_email_alert "[Drift Alert] JWT Secret Mismatch — ${host}" "$msg"
   send_brevo_alert "[Drift Alert] JWT Secret Mismatch — ${host}" "$msg"
+  send_telegram_alert "[Drift Alert] JWT Secret Mismatch — ${host}" "$msg"
 }
 
 # --- main ---

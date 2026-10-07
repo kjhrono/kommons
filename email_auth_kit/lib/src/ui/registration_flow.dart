@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -163,10 +165,12 @@ class _RegistrationFlowState extends State<RegistrationFlow> {
         password: password,
       );
       setState(() => _step = _RegStep.confirmationCode);
-    } on AuthCodeException catch (e) {
-      _setError(_humanize(e));
+    // Most specific first: AuthBannedException extends AuthCodeException, so
+    // catching the parent first would swallow the suspension message.
     } on AuthBannedException {
       _setError('This account has been suspended.');
+    } on AuthCodeException catch (e) {
+      _setError(_humanize(e));
     }
     setState(() => _busy = false);
   }
@@ -186,10 +190,12 @@ class _RegistrationFlowState extends State<RegistrationFlow> {
       if (mounted) {
         Navigator.of(context).popUntil((r) => r.isFirst);
       }
-    } on AuthCodeException catch (e) {
-      _setError(_humanize(e));
+    // Most specific first: AuthBannedException extends AuthCodeException, so
+    // catching the parent first would swallow the suspension message.
     } on AuthBannedException {
       _setError('This account has been suspended.');
+    } on AuthCodeException catch (e) {
+      _setError(_humanize(e));
     }
     setState(() => _busy = false);
   }
@@ -478,10 +484,12 @@ class _ForgotPasswordFlowState extends State<ForgotPasswordFlow> {
         _step = _ResetStep.code;
         _token = widget.initialToken ?? '';
       });
-    } on AuthCodeException catch (e) {
-      _setError(_humanize(e));
+    // Most specific first: AuthBannedException extends AuthCodeException, so
+    // catching the parent first would swallow the suspension message.
     } on AuthBannedException {
       _setError('This account has been suspended.');
+    } on AuthCodeException catch (e) {
+      _setError(_humanize(e));
     }
     setState(() => _busy = false);
   }
@@ -503,10 +511,12 @@ class _ForgotPasswordFlowState extends State<ForgotPasswordFlow> {
         _token = token;
         _step = _ResetStep.credentials;
       });
-    } on AuthCodeException catch (e) {
-      _setError(_humanize(e));
+    // Most specific first: AuthBannedException extends AuthCodeException, so
+    // catching the parent first would swallow the suspension message.
     } on AuthBannedException {
       _setError('This account has been suspended.');
+    } on AuthCodeException catch (e) {
+      _setError(_humanize(e));
     }
     setState(() => _busy = false);
   }
@@ -535,10 +545,12 @@ class _ForgotPasswordFlowState extends State<ForgotPasswordFlow> {
       if (mounted) {
         Navigator.of(context).popUntil((r) => r.isFirst);
       }
-    } on AuthCodeException catch (e) {
-      _setError(_humanize(e));
+    // Most specific first: AuthBannedException extends AuthCodeException, so
+    // catching the parent first would swallow the suspension message.
     } on AuthBannedException {
       _setError('This account has been suspended.');
+    } on AuthCodeException catch (e) {
+      _setError(_humanize(e));
     }
     setState(() => _busy = false);
   }
@@ -1026,6 +1038,15 @@ class _SignInFlowState extends State<SignInFlow> {
 /// ----------------------------------------------------------------------------
 /// SignUpWithGoogleButton — hosted-authorize OAuth with PKCE
 /// ----------------------------------------------------------------------------
+
+/// The deep-link URI stream the Google hand-off listens on.
+///
+/// On native the OS delivers the OAuth redirect (`myapp://oauth/callback…`)
+/// through app_links; on web there is no OS deep link — the app's own route
+/// handles the redirect — so the stream is empty and this button is a no-op
+/// there.
+Stream<Uri?> get uriEventHandler =>
+    kIsWeb ? const Stream<Uri?>.empty() : AppLinks().uriLinkStream;
 
 /// A "Sign in/up with Google" button backed by the identity stack's
 /// hosted-authorize OAuth flow using PKCE (S256).

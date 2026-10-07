@@ -7,7 +7,331 @@ pre-1.0, minor versions carry the features.
 
 ## Unreleased
 
-(none)
+## 0.9.0 — 2026-10-07
+
+### The nightly probe asserts the mail links too, not only the OAuth hand-off
+
+The probe proved every declared redirect target was honoured, and that the site
+URL they fall back to is the declared one — but the two mails that hand a member
+a link were never followed.  A signup confirmation and a password recovery are
+built as `<GOTRUE_SITE_URL> + one path`, so a wrong origin or path there breaks a
+registration or a password reset at the last step, in exactly the shape this
+probe exists for.
+
+That half needs its own assertion because the link is not built where the rest of
+the configuration is: GoTrue delegates every mail to the `auth-email` send-email
+hook, which renders the link from the `site_url` GoTrue hands it plus a path
+compiled into its own source.  A wrong origin or path can therefore hide in
+CODE, where no configuration check would ever see it.
+
+- **`tool/identity-redirect-allowlist.txt`** gains two directives,
+  `mail_confirmation_path` and `mail_recovery_path`.  The ORIGIN is deliberately
+  not declared a second time: it IS `site_url`, and naming it again would create
+  a second place to edit for one fact.  Only the per-action path is named, and
+  each is asserted — by the probe, not converged by the guard, because writing
+  the stack's own mail settings would not change what a member receives.
+- **`tool/oauth_handoff_probe.sh`** holds each action's declared path to four
+  independent readings: the running auth's own `GOTRUE_MAILER_URLPATHS_<ACTION>`,
+  a real GET of `<site URL><path>` (which must be answered by GoTrue, not by the
+  web app, and must land on the declared origin), the hook's rendering as
+  deployed on disk (the path it appends, and that its base comes from `site_url`
+  rather than a hardcoded host), and the fact that the action is armed at all —
+  `GOTRUE_MAILER_AUTOCONFIRM=true` means no confirmation mail is ever sent and
+  `GOTRUE_EXTERNAL_EMAIL_ENABLED=false` no recovery, so an assertion about those
+  links would be vacuous there.  A rate-limited or unobservable link fails rather
+  than passing, and a mail directive with no `site_url` to root it at is refused
+  outright.  The mail half costs two plain GETs and no `auth.flow_state` row.
+- **`tool/test_oauth_handoff_probe.sh`** grew from 64 to 113 checks: the healthy
+  mail half per action, each drift class (a disagreeing urlpath, a landing on
+  another origin, a path the origin does not serve to GoTrue, auto-confirm, a
+  disabled provider, a renderer rendering another path, a renderer with an
+  origin of its own, an unreadable renderer, a hook with no URI, an unreadable
+  auth, a rate-limited link), the footprint (no extra `/authorize` flow), and the
+  back-compat case — a declaration with no mail directives leaves the half
+  entirely out of the way.  Eight mutations of the new behaviour, all caught.
+- **`tool/install_identity_oauth_probe.sh`** states the mail half and its cost in
+  its header and in the crontab block it manages on the VM.
+
+### The allow-list guard heals a dropped entry instead of only reporting it
+
+The scheduled guard ran `--check --alert`: it made a dropped identity redirect
+entry visible, but the entry stayed missing until a human converged it — and the
+finding is precisely that a real sign-in is broken until then, so the damage sat
+there between runs. The scheduled entry now converges and then re-verifies.
+
+- **`tool/identity_allowlist_sync.sh`** gains **`--heal`**: when a declared entry
+  is missing (from the `.env`, or from the running auth), it converges the stack
+  exactly as `--apply` does, then **re-verifies the running auth from scratch** —
+  a second, independent reading of both the `.env` and the live process, taken
+  after the recreate has settled, because "the write succeeded" is not the same
+  claim as "the running auth now honours it". It never returns 1: drift it can
+  fix is fixed (0); drift it cannot fix is a failure (2), with the previous
+  `.env` restored. `--apply`/`--check`/`--heal` are mutually exclusive.
+- **Alerting follows the outcome, not the finding.** A heal that worked sends
+  one informational notice per distinct drop — suppressed while the same drop
+  recurs, and cleared as soon as the stack is back in sync so a later recurrence
+  still notifies. The loud, transition-guarded drift alarm is reserved for a heal
+  that FAILED, and it keeps its recovery notice. Heal state lives in its own
+  file (`IDENTITY_ALLOWLIST_HEAL_STATE`), so a self-heal never makes the next
+  clean run announce a recovery for an outage nobody was told about.
+- **`tool/install_identity_allowlist_check.sh`** now schedules
+  `--local --heal --alert`, and its `--check` asserts the scheduled entry
+  actually self-heals — a detect-only entry left by an older installer no longer
+  passes as installed. The managed block's comment is rewritten to describe the
+  self-heal and its cost.
+- **Cost, stated plainly:** a heal recreates ONLY the auth container, which is
+  shared, so it interrupts sign-in for every project for a few seconds (existing
+  JWT sessions stay valid). It never fires on a stack that is in sync, and it
+  never removes an undeclared entry (the scheduled entry does not pass
+  `--prune`).
+- **`tool/test_identity_allowlist_sync.sh`** grew from 85 to 124 checks: the
+  converge + re-verify round trip, `--heal` never exiting 1, an in-sync heal
+  writing and recreating nothing, one notice per heal with repeat suppression
+  that clears after a clean run, a failed heal restoring the `.env` and raising
+  the loud alarm, the recovery notice, mode exclusivity, remote forwarding, and
+  the installer scheduling `--heal`. All three behaviours mutation-tested.
+
+### The nightly probe asserts the site URL, not only the entries
+
+An entry that is not honoured is silently rewritten to `GOTRUE_SITE_URL` — so
+that origin is where EVERY dropped entry lands, and GoTrue allows it implicitly
+without ever validating it. A site URL pointing somewhere that cannot finish a
+sign-in therefore fails in exactly the shape this probe was built for, and until
+now nothing looked at it: the probe proved the declared targets were honoured
+while the destination of their failure went unexamined.
+
+- **`tool/identity-redirect-allowlist.txt`** now carries the site URL as a
+  DIRECTIVE — `site_url=https://katalogus.mediasart.com` — not as an entry. It
+  is converged from there (see the next section), so it is changed here and
+  nowhere else, and only to an origin that can complete or relay a sign-in.
+- **`tool/oauth_handoff_probe.sh`** compares it against two independent readings
+  of the RUNNING auth: the fallback it observes in flight (where an unlisted
+  target actually landed — a second target, kept distinct from the control, so
+  one cannot mask the other) and the container's own `GOTRUE_SITE_URL` read with
+  `printenv` when docker is reachable. Each disagreement fails the probe with
+  its own text, so a process running a value the stack no longer holds is
+  distinguishable from a mis-set one. When the directive is present but neither
+  reading can be taken the probe FAILS, rather than reporting the site URL as
+  checked: an assertion that could not be made is not a pass. `site_url` is the
+  only directive recognised — any other `key=value` line fails too, so a typo
+  cannot silently switch the assertion off.
+- **`tool/identity_allowlist_sync.sh`** reads directives as configuration and
+  never as entries, so the value cannot be written into
+  `ADDITIONAL_REDIRECT_URLS` — see the next section for how it IS converged.
+  **`tool/test_identity_allowlist_sync.sh`** grew from 124 to 130 checks for it:
+  the directive is present in the declaration, is never counted as an entry, and
+  never reaches the key the stack reads.
+- **`tool/test_oauth_handoff_probe.sh`** grew from 35 to 64 checks (a site URL
+  that passes, a mis-set fallback, a stale container reading, an unobservable
+  site URL, an unrecognised directive, and the cost of the extra `/authorize`).
+  All four behaviours mutation-tested.
+
+### The allow-list guard converges the site URL too
+
+Naming the site URL in the declaration made it ASSERTED; leaving it maintained
+by hand made it a second, silent authority for the same contract.  `SITE_URL` in
+the stack `.env` — which `docker-compose.yml` hands to GoTrue as
+`GOTRUE_SITE_URL` — is now converged from the same declaration, for the same
+reason the allow list is: nothing warns when it disagrees, it is where every
+dropped entry lands, GoTrue allows that origin implicitly for ANY path, and it
+roots every confirmation and recovery link the stack mails.
+
+- **`tool/identity_allowlist_sync.sh`** reads the `site_url` directive and
+  compares it against BOTH sides — `SITE_URL` in the `.env` and the running
+  container's `GOTRUE_SITE_URL` — so an edit that has not been recreated yet and
+  a process running a value the stack no longer holds are reported separately.
+  `--apply`/`--heal` rewrite both keys in ONE pass (one backup, one recreate,
+  one verification), so a failure halfway cannot leave a converged allow list
+  beside a stale site URL, and the running value is verified after the recreate
+  exactly as the list is.
+- **Refusals, because a site URL is not just another entry.** One that is not
+  `<scheme>://<host>`, or that carries `,`/`#`, is a DECLARATION error (exit 3)
+  and nothing is written: converging a broken value would rewrite the root of
+  every mail link.  A duplicated `SITE_URL=` key is refused the same way a
+  duplicated allow-list key is.  A declaration with no `site_url` directive
+  behaves exactly as before — the site half stays entirely out of the way.
+- **One verdict, one alert.** The `--check` verdict line, the ops log, and the
+  drift / self-heal / recovery alerts all name the site URL, so an operator
+  never has to read a second place to learn the stack is mis-set.
+- **`tool/test_identity_allowlist_sync.sh`** grew from 130 to 168 checks: the
+  `.env`-only case, the running-auth-only case, the pair converged by `--apply`
+  and re-verified, the scheduled `--heal` healing a site-URL drift (and failing
+  loudly with the previous `.env` restored when the result cannot be verified),
+  the malformed and duplicated refusals, and the no-directive back-compat.  Six
+  mutations of the new behaviour, all caught.
+
+### The digest stops reporting retired stacks
+
+The 09:00 digest escalated to `secret incidents` every day over a stack that no
+longer exists. When a project is retired its `.env` is removed and its entry
+dropped from the monitor, but the WARN lines it produced while it was still
+being watched stay in the shared log until they age out of the 24h window — and
+because the retired watchdog emitted the same two-line WARN on every 15-minute
+run, that was 137 lines of noise attributed to a stack that is gone.
+
+The digest now reports incidents only for the stacks the watch still contains,
+and says what it skipped instead of dropping it silently:
+
+- **`tool/jwt-secret-monitor.sh`** gains **`--stacks`**, printing the watched
+  stack names one per line and exiting — the one authority on what is still
+  watched, which the digest consults rather than guessing.
+- **`tool/jwt-secret-daily-summary.sh`** loads that list (env override
+  `MONITOR`; default beside itself) and skips incident lines naming an unwatched
+  stack at parse time, so neither the incident groups nor the `secret incidents`
+  subject reason fire for them. The skipped lines are counted and named under a
+  new "Ignored — retired stack(s) the watch no longer contains" section. With no
+  monitor to consult the filter switches itself off and the digest reports
+  exactly what it always did, rather than dropping incidents it cannot prove
+  are retired. OK and REGISTRY lines are never filtered.
+- **`tool/test_daily_summary.sh`** — a new phase (10 checks) pins it: a retired
+  stack is ignored and named with its count, a watched stack's incident is still
+  reported, and a missing monitor disables filtering. `test_jwt_secret_watch.sh`
+  asserts the `--stacks` output shape.
+
+### The JWT-secret watch, reproducible from one checkout
+
+The VM's secret watch was split across two repos and only half of it was
+installable. `tool/jwt-secret-monitor.sh`, its canonical-source library and the
+installer that deployed them lived in the katalogus repo, while `alert.sh`,
+`gotify-messages.sh` and the digest lived here with no installer that wrote
+their schedule — so a fresh checkout produced a monitor that could not source
+its helpers, and no repo file wrote the daily-summary cron entry at all. The
+watch now has one home and one install path.
+
+- **`tool/jwt-secret-monitor.sh`** — moved here from katalogus
+  `tool/vm/jwt_secret_monitor.sh` (installed name unchanged,
+  `~/bin/jwt-secret-monitor.sh`). The single program behind the watch.
+- **`tool/canonical_secret.sh`** — moved here too; the one definition of the
+  canonical JWT-secret source, read by the monitor and prepended to the
+  katalogus repair's remote payload.
+- **`tool/install_jwt_secret_watch.sh`** — the one installer for the WHOLE
+  watch. `--apply` delegates `alert.sh` + the credential file to
+  `install_alert_env.sh` (that logic keeps one owner), retires any of the four
+  old watchdogs still present into `~/bin/retired-jwt-watchdogs-<ts>/` with a
+  self-contained rollback bundle, installs `jwt-secret-monitor.sh`,
+  `canonical_secret.sh`, `gotify-messages.sh` and `jwt-secret-daily-summary.sh`
+  (previous copies kept as `.bak`), then rewrites the crontab to a single
+  managed block of three entries — `*/15` monitor, `0,30` meta, `0 9`
+  daily-summary. It runs the monitor once to plant the heartbeat and smoke-tests
+  both modes read-only. plan / `--apply` / `--check`.
+- **`tool/test_jwt_secret_watch.sh`** — the moved hermetic suite (109 checks),
+  now asserting the three-entry managed block: the daily-summary entry is moved
+  INSIDE it, the legacy header lines are gone, all three entries sit between the
+  markers, and a second pass is idempotent.
+- **katalogus** now points at this repo for the watch: `README.md`, the
+  `repair_jwt_secret_drift.sh` `CANON_LIB` (resolved from a sibling kommons
+  checkout, override with `KAT_KOMMONS_DIR`) and its self-test all read
+  `kommons/tool/canonical_secret.sh`.
+
+### Alert credentials out of the crontab
+
+`crontab -l` prints every line, so the Brevo API key and the Gotify app token
+the monitors read were visible to anyone who could list the schedule, and one
+accidental copy away from leaving the host. They now live in a mode-0600 env
+file the alert helpers source; the crontab holds only schedules and tuning.
+
+- **`tool/alert.sh`** — sources `~/etc/alerts.env` (override with
+  `ALERT_ENV_FILE`) at the single point every consumer already passes through,
+  so one file configures them all. The file is a plain `KEY=value` file and is
+  the source of truth; a hermetic suite running under `env -i HOME=<sandbox>`
+  sees no file at all.
+- **`tool/install_alert_env.sh`** — migrates the `ALERT_*`/`BREVO_*`/`GOTIFY_*`
+  assignments out of the crontab into a 0600 file in a 0700 dir, swaps the
+  comment block that documented them for a pointer, and installs the updated
+  `alert.sh`. A re-run never overwrites an existing file, so a rotated token
+  survives it. plan / `--apply` / `--check`.
+- **`tool/test_alert_env.sh`** — hermetic suite (33 checks) that runs the
+  installer's payload against a sandbox crontab and a real `alert.sh`: plan
+  masking, the 0600/0700 modes, the single-quote round-trip, the crontab
+  rewrite (secrets gone, jwt header and tuning kept), and — the point — that a
+  clean shell sourcing `alert.sh` sees the values. Wired into `ops-tests.yml`.
+- **`docs/GOTIFY.md`** no longer tells operators to keep the token "in the
+  crontab environment", and notes that rotating a leaked token means creating a
+  new application and deleting the old one (which takes its messages with it).
+
+### The central identity allow list, declared
+
+The identity stack serves every sibling project's auth, and GoTrue does not
+reject an unlisted redirect — it silently rewrites `redirect_to` to
+`GOTRUE_SITE_URL`. `/authorize` still answers 302, so the loss of an entry is
+invisible until the very end of a real sign-in, when the member lands on the
+website instead of back in the app. That made the allow list the wrong thing
+to keep only in a hand-edited `.env`, which is rewritten for other reasons
+(secrets, Google wiring, host ports) and takes the list with it.
+
+- **`tool/identity-redirect-allowlist.txt`** — the declaration and single
+  source of truth for `ADDITIONAL_REDIRECT_URLS` (the key
+  `docker-compose.yml` hands to GoTrue as `GOTRUE_URI_ALLOW_LIST`). Entries are
+  matched verbatim — GoTrue cuts the URL at `#` before matching, so a fragment
+  is dead weight, and a trailing slash is significant. Order is preserved;
+  duplicates are rejected.
+- **`tool/identity_allowlist_sync.sh`** — the only thing that writes the key.
+  Default plan (verbose, exit 1 on drift), `--check` (one verdict line for
+  cron/CI, `--alert` notifies on a transition and on recovery), `--apply`
+  (back up the `.env`, rewrite the one key, recreate *only* auth, wait for
+  health and assert the running process carries every entry byte for byte,
+  then restore and recreate again on any failure), and `--deploy` (install the
+  tool + declaration into `~/bin`). A declared entry missing from the stack,
+  or a running auth that predates the `.env`, is DRIFT; an undeclared live
+  entry is a WARN and is kept unless `--prune`.
+- **`tool/install_identity_allowlist_check.sh`** — puts a DETECT-ONLY guard on
+  the VM's crontab: one managed entry running `--check --alert`
+  (`*/30 * * * *` by default), so a later `.env` rewrite cannot drop an entry
+  silently. It never applies — converging recreates the shared auth container,
+  so it stays a human action — and it rewrites only its own managed block, so
+  re-running is a no-op and no other cron entry is touched.
+- **`tool/oauth_handoff_probe.sh`** — proves the entry is not just PRESENT but
+  HONOURED, which is the half the allow-list guard cannot see. GoTrue validates
+  `redirect_to` deep in the flow and silently rewrites an unlisted target to
+  `GOTRUE_SITE_URL`; the probe starts a real `/authorize` flow per declared
+  target and reads where GoTrue resolves it at `/callback`, so a dropped entry
+  shows up as a fall back to the site URL instead of a member finding a broken
+  sign-in months later. No credentials are used and no code is exchanged. It
+  folds in the presence check (delegating to the allow-list tool) and asserts a
+  CONTROL — a deliberately undeclared target must not be honoured — so a pass
+  cannot be a false negative. Detect-only; `--alert` is transition-only.
+- **`tool/install_identity_oauth_probe.sh`** — deploys the probe and puts a
+  nightly `--check --alert` entry on the VM's crontab (its own managed block, so
+  re-running is a no-op). One `auth.flow_state` row per declared entry plus the
+  control, per night — a handful, swept by GoTrue.
+- **`tool/test_oauth_handoff_probe.sh`** — hermetic suite (35 checks) whose stub
+  `curl` IS GoTrue's validation: `/authorize` remembers the requested target and
+  `/callback` resolves it only if it is on the stub's allow list. It asserts the
+  equality-not-prefix match, the silent-rewrite finding, the control firing and
+  `--no-control`, the folded-in presence half, an unreachable API, and the
+  once-per-outage + recovery alerting. Wired into `ops-tests.yml`.
+- **`tool/test_identity_allowlist_sync.sh`** — hermetic suite (85 checks) over
+  stubbed `docker`/`ssh`/`scp`/`alert`: the declaration's well-formedness,
+  missing/undeclared/live-behind-`.env` findings, apply's converge + per-entry
+  live verification, the backup, key-absent insertion beside `SITE_URL`, the
+  empty/duplicate-key refusals, and rollback on compose or verification
+  failure. Added to `ops-tests.yml`; `docs/OAUTH_SERVER_SETUP.md` and
+  `README.md` now point operators at the declaration.
+
+### Telegram, the alert pipeline's external leg
+
+Gotify and mail run on (or beside) the monitored host, so every one of them
+goes blind at once when the host itself is unreachable — precisely the moment
+a dead-man's switch has to speak. The critical alerts now fan a copy out to
+Telegram as well, whose API lives off-host.
+
+- **`tool/alert.sh`** — `send_telegram_alert <subject> <body>` POSTs to the
+  Telegram Bot API (`/bot<token>/sendMessage`), sending plain text so alert
+  bodies full of Markdown metacharacters cannot break the request, and
+  truncating below Telegram's 4096-character cap. It is a no-op when
+  `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` is empty, the same contract as
+  every other channel. (The bot must already share a chat with the target —
+  a group is how several people get one alert feed.)
+- **The critical monitors** — drift-check, the revert watchdog, the liveness
+  check and the delivery watchdog each add the Telegram copy to their
+  existing fan-out. Routine reports are deliberately untouched: they still
+  pick a single channel, because only *alerts* need the redundancy.
+- **`tool/test_telegram_alert.sh`** — hermetic suite (24 checks): the no-op
+  contract, the exact endpoint and chat id, real JSON round-tripping of
+  quotes/backslashes/newlines, the length cap, no whitespace-only curl
+  argument, and a wiring guard that each critical monitor still calls the
+  helper. `test_delivery_watchdog.sh` gains a phase proving the external leg
+  fires when Gotify itself is unconfigured (now 52 checks).
 
 ## 0.8.0 — 2026-10-06
 

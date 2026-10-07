@@ -19,12 +19,22 @@ import 'oauth_default_native.dart'
 
 export 'oauth_default_native.dart'
     if (dart.library.js_interop) 'oauth_default_web.dart'
-    show collectOAuthFragmentPlatform;
+    show collectOAuthFragmentPlatform, collectOAuthCodePlatform;
 export 'oauth_redirect_core.dart'
-    show OauthRedirectCallbacks, oauthDeepLinkTimeout;
+    show OauthRedirectCallbacks, oauthDeepLinkTimeout, oauthCodeFromUri;
 export 'oauth_redirect_mobile.dart'
-    show collectOAuthFragmentDeepLink, collectOAuthFragmentNative;
+    show
+        collectOAuthFragmentDeepLink,
+        collectOAuthFragmentNative,
+        collectOAuthCodeDeepLink,
+        collectOAuthCodeNative;
 
 /// The default collector for the compiled platform.
 Future<String?> collectOAuthFragment(String authorizeUrl) =>
     platform.collectOAuthFragmentPlatform(authorizeUrl);
+
+/// The default PKCE collector for the compiled platform: opens the authorize
+/// URL and resolves with the returned authorization `code`, for exchange via
+/// `MediasartAuth.signInWithGoogleCode`.
+Future<String?> collectOAuthCode(String authorizeUrl) =>
+    platform.collectOAuthCodePlatform(authorizeUrl);

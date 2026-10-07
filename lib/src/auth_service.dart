@@ -118,13 +118,36 @@ class AuthSession {
 /// 'invalid_login_credentials', 'email_not_confirmed', …) so callers can
 /// branch without parsing messages.
 class AuthException implements Exception {
-  const AuthException(this.code, this.message);
+  const AuthException(this.code, this.message, [this.detail]);
 
   final String code;
   final String message;
+  final AuthFailureDetail? detail;
 
   @override
   String toString() => message;
+}
+
+/// A capture of the raw server response behind a typed [AuthException],
+/// so a failure is debuggable against the server log even when [code]
+/// and [message] are already enough for the user.
+class AuthFailureDetail {
+  const AuthFailureDetail({
+    required this.statusCode,
+    this.errorCode,
+    this.message,
+    this.rawBody,
+  });
+
+  final int statusCode;
+  final String? errorCode;
+  final String? message;
+  final String? rawBody;
+
+  /// True when this is a GoTrue-style JSON error the shell already parsed
+  /// into [code]/[message] (has an `error_code`/`msg`), versus a raw
+  /// status/text fallback the shell could not parse.
+  bool get isParsedJsonError => errorCode != null;
 }
 
 /// Supabase auth (GoTrue) over plain REST — the same no-SDK approach as the
@@ -522,7 +545,14 @@ class AuthService {
     final message =
         json?['msg'] as String? ?? json?['message'] as String? ?? response.body;
     return AuthException(
-        code, message.isEmpty ? '$fallback (${response.statusCode})' : message);
+        code,
+        message.isEmpty ? '$fallback (${response.statusCode})' : message,
+        AuthFailureDetail(
+          statusCode: response.statusCode,
+          errorCode: json?['error_code'] as String?,
+          message: json?['msg'] as String? ?? json?['message'] as String?,
+          rawBody: response.body,
+        ));
   }
 
   /// Best-effort server-side revocation; sessions also simply expire, so
@@ -543,7 +573,10 @@ class AuthService {
     try {
       response = await _client.post(url, headers: _headers, body: body);
     } catch (error) {
-      throw AuthException('network', 'Could not reach the auth server: $error');
+      throw AuthException(
+          'network',
+          'Could not reach the auth server: $error',
+          const AuthFailureDetail(statusCode: 0, rawBody: ''));
     }
 
     Map<String, dynamic>? json;
@@ -561,12 +594,22 @@ class AuthService {
       final message = json?['msg'] as String? ??
           json?['message'] as String? ??
           response.body;
-      throw AuthException(code,
-          message.isEmpty ? 'Auth failed (${response.statusCode})' : message);
+      throw AuthException(
+          code,
+          message.isEmpty ? 'Auth failed (${response.statusCode})' : message,
+          AuthFailureDetail(
+            statusCode: response.statusCode,
+            errorCode: json?['error_code'] as String?,
+            message: json?['msg'] as String? ?? json?['message'] as String?,
+            rawBody: response.body,
+          ));
     }
     if (json == null) {
       throw AuthException(
-          'http_${response.statusCode}', 'Unexpected empty auth response');
+          'http_${response.statusCode}',
+          'Unexpected empty auth response',
+          const AuthFailureDetail(
+              statusCode: 0, rawBody: ''));
     }
 
     final access = json['access_token'];
@@ -585,7 +628,12 @@ class AuthService {
         confirmed
             ? 'The server accepted the account but issued no session'
             : 'Confirm the email (inbox link) before signing in',
-      );
+        AuthFailureDetail(
+          statusCode: response.statusCode,
+          errorCode: json['error_code'] as String?,
+          message: json['msg'] as String? ?? json['message'] as String?,
+          rawBody: response.body,
+        ));
     }
 
     final user = json['user'] as Map<String, dynamic>?;

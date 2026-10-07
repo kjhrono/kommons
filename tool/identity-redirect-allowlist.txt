@@ -1,0 +1,98 @@
+# The CENTRAL identity stack's GoTrue redirect allow list — DECLARATIVE.
+#
+# This file is the source of truth for `ADDITIONAL_REDIRECT_URLS` in
+# `~/Projects/kommons/supabase-identity/docker/.env`, which
+# `docker-compose.yml` hands to GoTrue as `GOTRUE_URI_ALLOW_LIST`:
+#
+#   GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
+#
+# Edit THIS file, then converge the stack:
+#
+#   bash tool/identity_allowlist_sync.sh --check    # what would change
+#   bash tool/identity_allowlist_sync.sh --apply    # converge + verify
+#
+# Why it has to be declarative: the identity stack serves every sibling
+# project's auth, and a target that is not on the list is not rejected — it is
+# SILENTLY rewritten to GOTRUE_SITE_URL. /authorize still answers 302, so
+# nothing looks wrong until the very end of a real sign-in, when the member
+# lands on the website instead of back in the app. The `.env` is also rewritten
+# by hand for other reasons (secrets, Google wiring, host ports), and a
+# regenerated `.env` takes the allow list with it. A missing entry therefore
+# fails at the least observable moment, which is exactly why it is declared
+# here rather than typed in once.
+#
+# Format
+# ------
+# * one entry per line; blank lines and lines starting with `#` are ignored
+# * entries are matched VERBATIM — GoTrue glob-matches the URL with everything
+#   from `#` CUT OFF, so a fragment here would be dead weight, and a trailing
+#   slash is significant: `https://host/path/` does not admit `https://host/path`
+# * order is preserved into the value; duplicates are an error
+# * the file must hold every entry the stack needs — entries found live but
+#   missing here are reported (and only removed by `--prune`)
+# * a line of the form `key=value` is a DIRECTIVE, not an entry: it configures
+#   the stack around the list and is never written into
+#   ADDITIONAL_REDIRECT_URLS. There are exactly three — `site_url`,
+#   `mail_confirmation_path` and `mail_recovery_path`, each explained where it
+#   appears below. Any other `key=value` line is reported as a directive nothing
+#   asserts and fails the nightly probe, so a typo cannot quietly disable a
+#   check. The guard itself only converges the list and `site_url`; the two mail
+#   paths are ASSERTED by the probe, never written, because what a member
+#   receives is rendered by the send-email hook, not by these settings.
+
+# -- the site URL the stack must fall back to --------------------------------
+# GoTrue does not reject a redirect that is not allow-listed — it rewrites it to
+# GOTRUE_SITE_URL, and allows that origin implicitly. So the site URL is the one
+# origin that always works and the one every unmatched sign-in lands on:
+# `docker-compose.yml` takes it from `SITE_URL` in the stack `.env`
+# (`GOTRUE_SITE_URL: ${SITE_URL}`). It is declared here so the guard can
+# CONVERGE it and the nightly probe can assert the RUNNING auth still agrees with
+# it. A site URL mis-set to somewhere that cannot finish a sign-in is invisible
+# in exactly the same way a dropped entry is — and it is the destination of every
+# dropped entry, so it gets the same treatment.
+#
+# Change it HERE, never in the stack `.env`: the guard rewrites `SITE_URL` from
+# this line and recreates only auth, so a hand edit there is undone within the
+# half hour. Choose an origin that can actually complete or relay a sign-in —
+# this is also the root of every confirmation and recovery link the stack mails,
+# which is why a malformed value is refused outright rather than written. The
+# probe goes red the moment the running auth disagrees.
+site_url=https://katalogus.mediasart.com
+#
+# The trailing-slash question, concretely: the two https callbacks below are
+# the allow-listed twins of the web app's `/en/oauth-callback` routes. The
+# redirect GoTrue is handed carries the slash, so that is the spelling that
+# admits it; the slash-less form falls back to the site URL by design.
+#
+# The native entry is the fragile one. `katalogus://auth-callback` is how the
+# OS hands the OAuth code back to the desktop/mobile app; without it a native
+# sign-in completes at Google, then quietly returns to the web origin.
+
+# --- web: the app's own OAuth callback origins -----------------------------
+https://mediasart.com/en/oauth-callback/
+https://mediasart.com/it/oauth-callback/
+
+# --- native: custom scheme handed back by the OS (katalogus desktop/mobile) -
+katalogus://auth-callback
+
+# -- the mail links: signup confirmation and password recovery ---------------
+# These are the two mails that carry a LINK a member clicks, and both links are
+# built as <site_url> + one path. The ORIGIN is therefore declared once, above —
+# never a second time here — so the two halves cannot be changed apart in this
+# file. Only the per-action path is named, once per action.
+#
+# Why they need asserting at all: the link is not built by GoTrue's templates.
+# GoTrue delegates every mail to the `auth-email` send-email hook
+# (`GOTRUE_HOOK_SEND_EMAIL_*`), which renders <email_data.site_url> + its own
+# path from the SAME GOTRUE_SITE_URL — so a wrong origin or path could hide in
+# code rather than in configuration, where nothing else would notice until a
+# member's confirmation landed somewhere that cannot finish it. The nightly
+# probe therefore asserts, per action, the running auth's GOTRUE_SITE_URL, the
+# live request the link itself makes, the stack's MAILER_URLPATHS_* value, and
+# the hook's own rendering — and that the action is armed at all (a stack that
+# auto-confirms never mails a confirmation link, whatever this file says).
+#
+# Change one HERE, in the hook, and in the stack's MAILER_URLPATHS_* together:
+# the probe goes red the moment any of the three disagrees.
+mail_confirmation_path=/auth/v1/verify
+mail_recovery_path=/auth/v1/verify

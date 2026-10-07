@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_settings.dart';
 import 'settings_screen.dart';
+import 'theme_toggle_button.dart';
 
 /// The reusable top bar for the shell screens (splash, saved games, lobby).
 ///
@@ -95,23 +96,7 @@ class _AppTopBarState extends State<AppTopBar> {
         // "button" in a freshly pumped tree (caught at runtime by the
         // route-semantics walk, katalogus
         // test/route_semantics_walk_test.dart).
-        IconButton(
-          key: const ValueKey('theme-toggle'),
-          tooltip: appLocale.strings.switchThemeTooltip,
-          icon: Semantics(
-            label: appLocale.strings.switchThemeTooltip,
-            child: Icon(
-              appTheme.mode == ThemeMode.light
-                  ? Icons.dark_mode_outlined
-                  : Icons.light_mode_outlined,
-              size: 20,
-            ),
-          ),
-          onPressed: () => setState(() => appTheme.mode =
-              appTheme.mode == ThemeMode.light
-                  ? ThemeMode.dark
-                  : ThemeMode.light),
-        ),
+        ThemeToggleButton(),
         IconButton(
           key: const ValueKey('settings-button'),
           tooltip: appLocale.strings.settingsTooltip,
@@ -159,22 +144,7 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
       ),
       // Labels on the icons, not just the tooltips — see AppTopBar.
-      IconButton(
-        tooltip: appLocale.strings.switchThemeTooltip,
-        icon: Semantics(
-          label: appLocale.strings.switchThemeTooltip,
-          child: Icon(
-            appTheme.mode == ThemeMode.light
-                ? Icons.dark_mode_outlined
-                : Icons.light_mode_outlined,
-            size: 20,
-          ),
-        ),
-        onPressed: () => setState(() => appTheme.mode =
-            appTheme.mode == ThemeMode.light
-                ? ThemeMode.dark
-                : ThemeMode.light),
-      ),
+      ThemeToggleButton(),
       IconButton(
         tooltip: appLocale.strings.settingsTooltip,
         icon: Semantics(

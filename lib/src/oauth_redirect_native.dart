@@ -15,3 +15,16 @@ Future<String?> collectOAuthFragmentNative(String authorizeUrl) {
     ),
   );
 }
+
+/// Native implementation of the PKCE code collector: the code-aware flow
+/// over the same app_links plumbing, returning the authorization `code`.
+Future<String?> collectOAuthCodeNative(String authorizeUrl) {
+  final links = AppLinks();
+  return collectOAuthCodeDeepLink(
+    authorizeUrl,
+    callbacks: OauthRedirectCallbacks(
+      initial: links.getInitialLink,
+      stream: links.uriLinkStream,
+    ),
+  );
+}

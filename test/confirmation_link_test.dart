@@ -142,6 +142,64 @@ void main() {
       expect(posts.single.body, contains('654321'));
     });
 
+    test('a wrong typed code surfaces the email and the code that was sent',
+        () async {
+      givenServer();
+      await account.parkPendingSignup('fresh@shell.test');
+      // Make the verify endpoint reject so we exercise the failure branch
+      // and assert the diagnostic message the shell now surfaces.
+      account.authService = AuthService(
+        serverUrl: 'https://shell.test',
+        apiKey: 'k',
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/v1/verify')) {
+            return http.Response(
+                jsonEncode({
+                  'error_code': 'invalid_token',
+                  'msg': 'Token is invalid or has already been used',
+                }),
+                400);
+          }
+          return http.Response('unexpected', 404);
+        }),
+      );
+      await expectLater(
+        account.confirmSignupCode('123456'),
+        throwsA(isA<AuthException>()
+            .having((e) => e.code, 'code', 'invalid_token')
+            .having(
+                (e) => e.message,
+                'message',
+                allOf([contains('fresh@shell.test'),
+                    contains('123456')]))
+            .having(
+                (e) => e.detail,
+                'detail',
+                isNotNull)
+            .having(
+                (e) => e.detail?.statusCode,
+                'detail.statusCode',
+                400)
+            .having(
+                (e) => e.detail?.errorCode,
+                'detail.errorCode',
+                'invalid_token')
+            .having(
+                (e) => e.detail?.message,
+                'detail.message',
+                'Token is invalid or has already been used')
+            .having(
+                (e) => e.detail?.rawBody,
+                'detail.rawBody',
+                allOf([
+                  contains('"error_code":"invalid_token"'),
+                  contains('"msg":"Token is invalid or has already been used"'),
+                ]))),
+      );
+      // A wrong code leaves the parked state alive for another try.
+      expect(account.pendingSignupEmail, 'fresh@shell.test');
+    });
+
     test('the emailed link completes via the parked email', () async {
       givenServer();
       await account.parkPendingSignup('fresh@shell.test');
