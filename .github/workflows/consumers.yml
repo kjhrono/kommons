@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout commons
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: kommons
 
@@ -31,7 +31,7 @@ jobs:
       - name: Checkout kalcio (consumer)
         id: kalcio
         continue-on-error: true
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: kjhrono/kalcio
           ref: main
@@ -43,7 +43,7 @@ jobs:
         run: |
           echo "::warning::kalcio was NOT checked out — the consumer gate skips it this run. Give KOMMONS_NOTIFY_TOKEN 'Contents: read' on kjhrono/kalcio (repo Settings → Secrets and variables → Actions) and this gate starts running."
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
