@@ -27,8 +27,8 @@ class ThemeToggleButton extends StatelessWidget {
             label: tooltip ?? appLocale.strings.switchThemeTooltip,
             child: Icon(
               switch (mode) {
-                ThemeMode.light  => Icons.dark_mode_outlined,
-                ThemeMode.dark   => Icons.brightness_auto_outlined,
+                ThemeMode.light => Icons.dark_mode_outlined,
+                ThemeMode.dark => Icons.brightness_auto_outlined,
                 ThemeMode.system => Icons.light_mode_outlined,
               },
               size: 20,

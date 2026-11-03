@@ -12,36 +12,37 @@ import 'oauth_popup_launcher.dart' as oauth_launcher;
 import 'oauth_revoke.dart';
 import 'recovery_link.dart';
 import 'shell_preferences.dart';
-import 'shell_strings.dart';  // ---------------------------------------------------------------------------
-  // -- OS brightness observer --------------------------------------------------
-  /// A thin widget that listens to OS brightness changes and keeps the shared
-  /// [appTheme] in step when its mode is `ThemeMode.system`. Hosted once at the
-  /// root (e.g. inside `ShellApp`) rather than inside the toggle widget itself,
-  /// so a single observer covers the whole widget tree.
-  class SystemThemeObserver extends WidgetsBindingObserver {
-    SystemThemeObserver() {
-      WidgetsBinding.instance.addObserver(this);
-    }
+import 'shell_strings.dart'; // ---------------------------------------------------------------------------
 
-    @override
-    void didChangePlatformBrightness() {
-      if (appTheme.isSystem) {
-        appTheme.value = ThemeMode.system;
-        appTheme.observeSystemBrightness();
-      }
-    }
+// -- OS brightness observer --------------------------------------------------
+/// A thin widget that listens to OS brightness changes and keeps the shared
+/// [appTheme] in step when its mode is `ThemeMode.system`. Hosted once at the
+/// root (e.g. inside `ShellApp`) rather than inside the toggle widget itself,
+/// so a single observer covers the whole widget tree.
+class SystemThemeObserver extends WidgetsBindingObserver {
+  SystemThemeObserver() {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
-    // Not an override: WidgetsBindingObserver has no dispose(). Called by the
-    // owner when the observer goes away.
-    void dispose() {
-      WidgetsBinding.instance.removeObserver(this);
+  @override
+  void didChangePlatformBrightness() {
+    if (appTheme.isSystem) {
+      appTheme.value = ThemeMode.system;
+      appTheme.observeSystemBrightness();
     }
   }
 
-  // ---------------------------------------------------------------------------
-  /// A game-server (auth-backend) connection an app hands to the account
-  /// controller: where the GoTrue-compatible auth service lives and which
-  /// anon key fronts it.
+  // Not an override: WidgetsBindingObserver has no dispose(). Called by the
+  // owner when the observer goes away.
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+  }
+}
+
+// ---------------------------------------------------------------------------
+/// A game-server (auth-backend) connection an app hands to the account
+/// controller: where the GoTrue-compatible auth service lives and which
+/// anon key fronts it.
 class ServerConnection {
   const ServerConnection({required this.url, this.apiKey});
 
@@ -83,7 +84,6 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
   Brightness get systemBrightness => _systemBrightness;
   Brightness _systemBrightness = Brightness.light;
 
-
   /// Convenience read of the current mode.
   ThemeMode get mode => value;
 
@@ -119,10 +119,10 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_prefKey);
     value = switch (saved) {
-      'light'  => ThemeMode.light,
-      'dark'   => ThemeMode.dark,
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
       'system' => ThemeMode.system,
-      _        => ThemeMode.dark,
+      _ => ThemeMode.dark,
     };
   }
 
@@ -160,8 +160,8 @@ class AppThemeNotifier extends ValueNotifier<ThemeMode> {
   /// Persisted token for one of the three theme modes.
   static String _prefString(ThemeMode mode) {
     return switch (mode) {
-      ThemeMode.light  => 'light',
-      ThemeMode.dark   => 'dark',
+      ThemeMode.light => 'light',
+      ThemeMode.dark => 'dark',
       ThemeMode.system => 'system',
     };
   }
@@ -247,6 +247,57 @@ final appLocale = AppLocaleNotifier();
 
 /// The app-wide theme notifier. The root MaterialApp listens to it.
 final appTheme = AppThemeNotifier();
+
+/// Whether the player asked for the high-contrast presentation, persisted and
+/// read by the root widget. A global [ValueNotifier] for the same reason as
+/// [appTheme]: one toggle repaints the whole app without inherited-widget
+/// plumbing, and every game hosted in this shell shares the preference.
+///
+/// Device-local on purpose. A display preference answers to the screen it is
+/// read on — a low-vision player's phone needs it even when their desktop,
+/// with a large monitor and different glasses, does not — so it is not pushed
+/// into the account's synced preferences the way theme and language are.
+class AppContrastNotifier extends ValueNotifier<bool> {
+  AppContrastNotifier() : super(false);
+
+  /// Whether the high-contrast presentation is on.
+  bool get enabled => value;
+
+  /// Turns it on or off; persists the choice for the next launch.
+  set enabled(bool on) {
+    if (value == on) return;
+    value = on;
+    unawaited(_persist());
+  }
+
+  /// Flips it — what the toggle button does.
+  void toggle() => enabled = !enabled;
+
+  /// Restores the remembered choice at startup (before the first frame reads
+  /// it).
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    value = prefs.getBool(_prefKey) ?? false;
+  }
+
+  /// Clears in-memory state for tests.
+  @visibleForTesting
+  void resetForTest() {
+    value = false;
+  }
+
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefKey, value);
+  }
+
+  static const _prefKey = 'prefs.app.highContrast';
+}
+
+/// The app-wide high-contrast notifier. The root MaterialApp listens to it
+/// (along [appTheme] and [appLocale]) and applies [highContrastTheme] to
+/// whichever theme it built when it is on.
+final appContrast = AppContrastNotifier();
 
 /// The signed-in account, when there is one. Backed by a persisted local
 /// record for now — the auth service (Google, GitHub, email+cloud) plugs
@@ -1136,13 +1187,11 @@ class AccountController extends ValueNotifier<Account?> {
     }
     final normalized = code.trim().replaceAll(RegExp(r'[^0-9]'), '');
     if (normalized.isEmpty) {
-      throw const AuthException(
-          'empty_code', 'Enter the code from the email.');
+      throw const AuthException('empty_code', 'Enter the code from the email.');
     }
     AuthSession session;
     try {
-      session = await service.verifySignup(
-          email: email, token: normalized);
+      session = await service.verifySignup(email: email, token: normalized);
     } on AuthException catch (error) {
       if (error.code == 'banned') {
         await _markBanned(error);
@@ -1347,8 +1396,8 @@ class AccountController extends ValueNotifier<Account?> {
   /// The `banned_until` window, when the service message carries one
   /// ("… suspended until `2026-10-10T10:00:00Z`.").
   static String _bannedUntilOf(String message) {
-    final match = RegExp(r'until (.+?)\.?$', caseSensitive: false)
-        .firstMatch(message);
+    final match =
+        RegExp(r'until (.+?)\.?$', caseSensitive: false).firstMatch(message);
     return match?.group(1) ?? '';
   }
 

@@ -81,6 +81,61 @@ void main() {
     expect(body['code'], '123456');
   });
 
+  test('signup posts the chosen password and the product key', () async {
+    poster.responses.add(const _Res(200, {'sent': true}));
+    poster.responses.add(const _Res(200, {'verified': true}));
+    final katalogus = MediasartAuth(
+      supabaseUrl: url,
+      anonKey: key,
+      product: 'katalogus',
+    );
+
+    await katalogus.signUpWithConfirmation(
+      email: 'new@example.com',
+      password: 'secret123',
+    );
+    await katalogus.verifyCode('new@example.com', '123456');
+
+    final signup = jsonDecode(poster.calls[0].body) as Map<String, dynamic>;
+    expect(signup['action'], 'signup');
+    expect(signup['password'], 'secret123');
+    expect(signup['product'], 'katalogus');
+    // The welcome mail that follows a first confirmation is chosen by the
+    // product name, so the verify call has to carry it too.
+    final verify = jsonDecode(poster.calls[1].body) as Map<String, dynamic>;
+    expect(verify['action'], 'verify');
+    expect(verify['product'], 'katalogus');
+  });
+
+  test('no product key is sent when the client declares none', () async {
+    poster.responses.add(const _Res(200, {'sent': true}));
+
+    await auth.signUpWithConfirmation(
+      email: 'new@example.com',
+      password: 'secret123',
+    );
+
+    final body = jsonDecode(poster.calls.single.body) as Map<String, dynamic>;
+    expect(body.containsKey('product'), isFalse);
+  });
+
+  test('signup on an existing address surfaces account_exists', () async {
+    // The kit refuses (409) instead of mailing a code for an account
+    // whose password this flow may not set.
+    poster.responses.add(const _Res(409, {'error': 'account_exists'}));
+
+    await expectLater(
+      auth.signUpWithConfirmation(
+        email: 'taken@example.com',
+        password: 'secret123',
+      ),
+      throwsA(
+        isA<AuthCodeException>()
+            .having((e) => e.reason, 'reason', 'account_exists'),
+      ),
+    );
+  });
+
   test('verifyCode maps invalid code with attempts left', () async {
     poster.responses.add(const _Res(400, {'error': 'code_invalid', 'attempts_left': 3}));
 

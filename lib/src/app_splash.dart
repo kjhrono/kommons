@@ -450,12 +450,14 @@ class _AppSplashState extends State<AppSplash>
                                       child: Text(_scene.line,
                                           key: ValueKey(
                                               'splash-scene-$_sceneIndex'),
+                                          // The tagline is the shell's own
+                                          // accent: the host's tertiary, which
+                                          // contrast mode strengthens instead
+                                          // of leaving a fixed amber on it.
                                           style: TextStyle(
                                               color: Theme.of(context)
-                                                          .brightness ==
-                                                      Brightness.dark
-                                                  ? Colors.amber.shade200
-                                                  : Colors.amber.shade800,
+                                                  .colorScheme
+                                                  .tertiary,
                                               fontStyle: FontStyle.italic),
                                           textAlign: TextAlign.center),
                                     ),

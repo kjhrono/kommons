@@ -38,7 +38,22 @@ class MediasartAuth {
   /// Supabase anon (publishable) key — safe to embed in the app.
   final String anonKey;
 
-  MediasartAuth({required this.supabaseUrl, required this.anonKey});
+  /// The product this app registers as (e.g. `katalogus`). The identity
+  /// stack is shared by every mediasart project, so the welcome mail that
+  /// follows a first confirmation takes its links from the SERVER's
+  /// configuration by this name — the client never supplies URLs. An
+  /// unknown (or absent) name falls back to the server's `default` set.
+  final String? product;
+
+  MediasartAuth({
+    required this.supabaseUrl,
+    required this.anonKey,
+    this.product,
+  });
+
+  /// The product key to attach to the register/confirm calls, when set.
+  Map<String, dynamic> get _productKey =>
+      product == null ? const <String, dynamic>{} : {'product': product};
 
   static const _emailVerificationPath = '/functions/v1/email-verification';
   static const _passwordResetPath = '/functions/v1/password-reset';
@@ -62,7 +77,11 @@ class MediasartAuth {
   /// function and sends the 6-digit code — no GoTrue signup mail, no
   /// session. The device is NOT signed in; [verifyCode] completes the
   /// activation and the app then offers a normal sign-in. Throws
-  /// `weak_password` when the password is under the server's minimum.
+  /// `weak_password` when the password is under the server's minimum,
+  /// and `account_exists` when the address already HAS an account: this
+  /// flow can only set a password on create, so it refuses rather than
+  /// promise an account it cannot give — send the member to sign in, or
+  /// to the password reset (the one flow allowed to replace a password).
   Future<void> signUpWithConfirmation({
     required String email,
     required String password,
@@ -71,14 +90,20 @@ class MediasartAuth {
       'action': 'signup',
       'email': email,
       'password': password,
+      ..._productKey,
     });
   }
 
   /// Verifies the [code] previously sent to [email]. Throws
   /// [AuthCodeException] with reason `invalid` ([attemptsLeft] set),
   /// `locked`, `expired`, `no_pending`, or `rate_limited`.
-  Future<void> verifyCode(String email, String code) =>
-      _post(_emailVerificationPath, {'action': 'verify', 'email': email, 'code': code});
+  ///
+  /// When this is the address's first confirmation the server also mails
+  /// the product's welcome message (see [product]).
+  Future<void> verifyCode(String email, String code) => _post(
+        _emailVerificationPath,
+        {'action': 'verify', 'email': email, 'code': code, ..._productKey},
+      );
 
   // ------------------------------------------------------------------
   // Session — sign in / refresh against the IDENTITY stack
@@ -383,6 +408,8 @@ class MediasartAuth {
         throw const AuthCodeException('no_pending');
       case 'weak_password':
         throw const AuthCodeException('weak_password');
+      case 'account_exists':
+        throw const AuthCodeException('account_exists');
       case 'signup_failed':
         throw const AuthCodeException('server', detail: 'signup_failed');
       case 'missing_bearer':

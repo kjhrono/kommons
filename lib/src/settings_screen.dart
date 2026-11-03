@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'app_settings.dart';
+import 'shell_inks.dart';
 import 'auth_service.dart';
 import 'shell_preferences.dart';
 import 'recovery_link.dart';
@@ -278,38 +279,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ? strings.guest
                                   : account.value!.provider,
                               style: TextStyle(
-                                  color: Colors.grey.shade500, fontSize: 12),
+                                  color: Theme.of(context).colorScheme.mutedInk,
+                                  fontSize: 12),
                             ),
                           ]),
                           const SizedBox(height: 12),
                           if (account.banned) ...[
                             // -- Centrally suspended account --------------------------------
                             Row(
-                              key: const ValueKey('account-suspended-banner'),
-                              children: [
-                              const Icon(Icons.block, color: Colors.redAccent),
-                              const SizedBox(width: 8),
-                              Text(strings.accountSuspended,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.2,
-                                      color: Colors.redAccent)),
-                            ]),
+                                key: const ValueKey('account-suspended-banner'),
+                                children: [
+                                  Icon(Icons.block,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .dangerInk),
+                                  const SizedBox(width: 8),
+                                  Text(strings.accountSuspended,
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.2,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .dangerInk)),
+                                ]),
                             const SizedBox(height: 8),
                             Text(
                               strings.accountSuspendedUntil(
                                   account.bannedUntil.isEmpty
                                       ? '—'
                                       : account.bannedUntil),
-                              style: TextStyle(color: Colors.grey.shade400),
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.mutedInk),
                             ),
                             const SizedBox(height: 12),
                           ],
                           if (_pendingSignupEmail != null) ...[
                             // -- Awaiting email confirmation ---------------------------------
                             Row(children: [
-                              const Icon(Icons.mark_email_unread_outlined,
-                                  color: Colors.amber),
+                              Icon(Icons.mark_email_unread_outlined,
+                                  color:
+                                      Theme.of(context).colorScheme.warningInk),
                               const SizedBox(width: 8),
                               Text(strings.checkYourInbox,
                                   style: const TextStyle(
@@ -319,7 +329,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             const SizedBox(height: 8),
                             Text(
                               strings.confirmationSent(_pendingSignupEmail!),
-                              style: TextStyle(color: Colors.grey.shade400),
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.mutedInk),
                             ),
                             const SizedBox(height: 12),
                             TextField(
@@ -364,7 +376,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               account.value == null) ...[
                             // -- Password reset in progress ----------------------------------
                             Row(children: [
-                              const Icon(Icons.lock_reset, color: Colors.amber),
+                              Icon(Icons.lock_reset,
+                                  color:
+                                      Theme.of(context).colorScheme.warningInk),
                               const SizedBox(width: 8),
                               Text(strings.resetTitle,
                                   style: const TextStyle(
@@ -374,7 +388,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             const SizedBox(height: 8),
                             Text(
                               strings.resetSent(_resetEmail!),
-                              style: TextStyle(color: Colors.grey.shade400),
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.mutedInk),
                             ),
                             const SizedBox(height: 12),
                             TextField(
@@ -415,7 +431,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ] else if (account.value == null) ...[
                             Text(strings.signInPitch,
-                                style: TextStyle(color: Colors.grey.shade400)),
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .mutedInk)),
                             const SizedBox(height: 12),
                             TextField(
                               key: const ValueKey('email-field'),
@@ -475,7 +494,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Icon(Icons.dns_outlined,
-                                        size: 16, color: Colors.amber.shade300),
+                                        size: 16,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .warningInk),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
@@ -545,7 +567,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 account.passwordResetPending
                                     ? strings.changePasswordHint
                                     : strings.changePasswordSectionHint,
-                                style: TextStyle(color: Colors.amber.shade300),
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .warningInk),
                               ),
                               const SizedBox(height: 12),
                               if (!account.passwordResetPending &&
@@ -656,7 +681,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     ? strings.cloudAccountReady
                                     : strings.deviceLocalAccount,
                                 style: TextStyle(
-                                    color: Colors.grey.shade500, fontSize: 12),
+                                    color:
+                                        Theme.of(context).colorScheme.mutedInk,
+                                    fontSize: 12),
                               ),
                               if (account.value!.provider == 'github') ...[
                                 const SizedBox(height: 8),
@@ -664,7 +691,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   strings.githubGrantNote,
                                   key: const ValueKey('github-grant-note'),
                                   style: TextStyle(
-                                      color: Colors.amber.shade300,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .warningInk,
                                       fontSize: 12),
                                 ),
                               ],
@@ -707,6 +736,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             // -- Theme ----------------------------------------------------------
             ThemeToggleButton(),
+            const SizedBox(height: 8),
+
+            // -- Contrast -------------------------------------------------------
+            // A switch, not just the bar's icon button: settings is where a
+            // player looks for accessibility, and the subtitle says what the
+            // mode changes rather than leaving it to inference from the tint.
+            Card(
+              child: ListenableBuilder(
+                listenable: appContrast,
+                builder: (context, _) => SwitchListTile(
+                  key: const ValueKey('contrast-tile'),
+                  secondary: Icon(appContrast.enabled
+                      ? Icons.contrast
+                      : Icons.contrast_outlined),
+                  title: Text(strings.highContrastTooltip),
+                  subtitle: Text(strings.highContrastHint),
+                  value: appContrast.enabled,
+                  onChanged: (on) => appContrast.enabled = on,
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
 
             // -- Player name ---------------------------------------------------
@@ -769,13 +819,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               builder: (context, _) => Text(
                 _provenanceLine(),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.mutedInk,
+                    fontSize: 11),
               ),
             ),
             Text(
               strings.settingsFooter,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.mutedInk, fontSize: 11),
             ),
           ]),
     );
@@ -935,8 +988,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final code = raw.replaceAll(RegExp(r'[^0-9]'), '');
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              '${appLocale.strings.enterCode} (digits only)')));
+          content: Text('${appLocale.strings.enterCode} (digits only)')));
       return;
     }
     setState(() => _cloudBusy = true);
@@ -954,8 +1006,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: AuthFailureSnack(
               key: const ValueKey('confirm-code-failure'),
-              summary: appLocale.strings.confirmationCodeFailed(
-                  _pendingSignupEmail ?? '', code),
+              summary: appLocale.strings
+                  .confirmationCodeFailed(_pendingSignupEmail ?? '', code),
               detail: error.detail,
               request: 'POST /auth/v1/verify',
               sent: '{email: ${_pendingSignupEmail ?? ""}, token: $code}',
@@ -1248,7 +1300,8 @@ class _AuthFailureSnackState extends State<AuthFailureSnack> {
             const Divider(height: 1),
             const SizedBox(height: 6),
             _mono('Server response', detail.statusCode.toString()),
-            if (detail.errorCode != null) _mono('error_code', detail.errorCode!),
+            if (detail.errorCode != null)
+              _mono('error_code', detail.errorCode!),
             if (detail.message != null) _mono('msg', detail.message!),
             const SizedBox(height: 6),
             _mono('Request', widget.request),
@@ -1286,17 +1339,17 @@ class _AuthFailureSnackState extends State<AuthFailureSnack> {
             : const SizedBox.shrink();
 
     return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Expanded(child: body),
-              const SizedBox(width: 8),
-              action,
-            ],
-          ),
-        ],
-      );
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(child: body),
+            const SizedBox(width: 8),
+            action,
+          ],
+        ),
+      ],
+    );
   }
 
   Widget _mono(String label, String value) {
@@ -1325,4 +1378,3 @@ class _AuthFailureSnackState extends State<AuthFailureSnack> {
     );
   }
 }
-

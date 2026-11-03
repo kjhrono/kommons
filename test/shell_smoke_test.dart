@@ -30,9 +30,16 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('email-field')), findsOneWidget);
+    // The lower cards (the contrast switch among them) sit below the fold in
+    // the default 800×600 test surface; scroll them into view before asserting.
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey('player-name-field')),
+      find.byKey(const ValueKey('settings-list')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('player-name-field')), findsOneWidget);
-    // The lower cards sit below the fold in the default 800×600 test
-    // surface; scroll them into view before asserting.
+    expect(find.byKey(const ValueKey('contrast-tile')), findsOneWidget);
     await tester.dragUntilVisible(
       find.byKey(const ValueKey('language-tile')),
       find.byKey(const ValueKey('settings-list')),

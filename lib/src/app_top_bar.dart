@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_settings.dart';
+import 'shell_inks.dart';
 import 'settings_screen.dart';
 import 'theme_toggle_button.dart';
 
@@ -73,7 +74,8 @@ class _AppTopBarState extends State<AppTopBar> {
               ? ''
               : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
           key: const ValueKey('app-version-chip'),
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          style: TextStyle(
+              color: Theme.of(context).colorScheme.mutedInk, fontSize: 12),
         ),
         if (widget.title != null) ...[
           const SizedBox(width: 12),
@@ -141,7 +143,8 @@ class _AppTopBarActionsState extends State<AppTopBarActions> {
         _packageInfo == null
             ? ''
             : 'v${_packageInfo!.version}+${_packageInfo!.buildNumber}',
-        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+        style: TextStyle(
+            color: Theme.of(context).colorScheme.mutedInk, fontSize: 12),
       ),
       // Labels on the icons, not just the tooltips — see AppTopBar.
       ThemeToggleButton(),

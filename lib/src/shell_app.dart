@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'app_settings.dart';
 import 'auth_service.dart' show AuthException;
 import 'confirmation_link.dart';
+import 'high_contrast.dart';
 import 'multiplayer/join_link.dart';
 import 'oauth_session_link.dart';
 import 'recovery_link.dart';
@@ -160,7 +161,12 @@ class _ShellAppState extends State<ShellApp> {
   }
 
   Future<void> _preload() async {
-    await Future.wait([appTheme.load(), appLocale.load(), account.load()]);
+    await Future.wait([
+      appTheme.load(),
+      appLocale.load(),
+      appContrast.load(),
+      account.load(),
+    ]);
     if (mounted) setState(() {});
   }
 
@@ -381,7 +387,10 @@ class _ShellAppState extends State<ShellApp> {
       child: AnimatedBuilder(
         // account included: its load() landing after the first frame repaints
         // the splash welcome with the restored player name.
-        animation: Listenable.merge([appTheme, appLocale, account]),
+        // appContrast too: flipping the setup flow's contrast toggle repaints
+        // the MaterialApp's themes without the host rebuilding anything.
+        animation:
+            Listenable.merge([appTheme, appLocale, account, appContrast]),
         builder: (context, _) {
           final themeBuilder = widget.themeBuilder ??
               (context, brightness) => ThemeData(
@@ -389,12 +398,19 @@ class _ShellAppState extends State<ShellApp> {
                         seedColor: widget.seedColor, brightness: brightness),
                     useMaterial3: true,
                   );
+          // Contrast is applied here, over whatever the host built, so a game
+          // keeps its palette and every screen inherits the stronger edges.
+          ThemeData themeFor(Brightness brightness) {
+            final base = themeBuilder(context, brightness);
+            return appContrast.enabled ? highContrastTheme(base) : base;
+          }
+
           return MaterialApp(
             title: widget.title,
             debugShowCheckedModeBanner: widget.debugShowCheckedModeBanner,
             scaffoldMessengerKey: _messengerKey,
-            theme: themeBuilder(context, Brightness.light),
-            darkTheme: themeBuilder(context, Brightness.dark),
+            theme: themeFor(Brightness.light),
+            darkTheme: themeFor(Brightness.dark),
             themeMode: widget.themeMode ?? appTheme.value,
             locale: widget.locale ?? appLocale.value?.locale,
             supportedLocales: widget.supportedLocales ??

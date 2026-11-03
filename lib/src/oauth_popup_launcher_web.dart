@@ -4,7 +4,6 @@ import 'package:web/web.dart' as web;
 
 import 'oauth_redirect_core.dart';
 
-
 /// Web implementation of the OAuth popup collector.
 ///
 /// Opens [authorizeUrl] in a popup and polls until the game server's

@@ -11,6 +11,9 @@
 ///   * `unauthorized`       — bad/missing JWT where one was required
 ///   * `invalid_credentials`— sign-in with temp password rejected
 ///   * `weak_password`      — new password rejected by the password rules
+///   * `account_exists`     — signup on an address that already has an
+///                            account (sign in, or reset the password:
+///                            only the reset flow may replace one)
 ///   * `banned`             — surfaced as [AuthBannedException]
 ///   * `server`             — anything else (see [detail])
 library;

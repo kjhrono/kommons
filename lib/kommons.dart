@@ -12,6 +12,11 @@ library;
 
 export 'src/app_settings.dart';
 export 'src/app_top_bar.dart';
+export 'src/high_contrast.dart';
+export 'src/high_contrast_toggle_button.dart';
+export 'src/shell_inks.dart';
+export 'src/reveal_highlight.dart';
+export 'src/theme_toggle_button.dart';
 export 'src/auth_service.dart';
 export 'src/settings_screen.dart';
 export 'src/shell_strings.dart';

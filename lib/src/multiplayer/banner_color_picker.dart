@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../shell_inks.dart';
 import 'lobby_seat.dart';
 
 /// A shared palette for banner colors (the same defaults the lobby assigns to
@@ -94,6 +95,10 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
   @override
   Widget build(BuildContext context) {
     final current = _hsv.toColor();
+    final scheme = Theme.of(context).colorScheme;
+    // Ink over the banner's own colour: no theme role can know that colour,
+    // so it is chosen from its luminance — pale banners get dark ink.
+    final onBanner = scheme.inkOn(current);
     return AlertDialog(
       title: Text("${widget.slot.name}'s banner"),
       content: SizedBox(
@@ -109,23 +114,24 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
                 decoration: BoxDecoration(
                   color: current,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white24),
+                  border: Border.all(color: scheme.outlineVariant),
                 ),
                 child: Center(
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.flag, color: Colors.black54, size: 20),
+                    Icon(Icons.flag, color: onBanner, size: 20),
                     const SizedBox(width: 8),
                     Text(widget.slot.name,
-                        style: const TextStyle(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            color: onBanner, fontWeight: FontWeight.bold)),
                   ]),
                 ),
               ),
               const SizedBox(height: 12),
-              const Text('PALETTE',
+              Text('PALETTE',
                   style: TextStyle(
-                      fontSize: 11, letterSpacing: 1.1, color: Colors.grey)),
+                      fontSize: 11,
+                      letterSpacing: 1.1,
+                      color: scheme.mutedInk)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 10,
@@ -142,9 +148,11 @@ class _BannerColorDialogState extends State<_BannerColorDialog> {
                 ],
               ),
               const SizedBox(height: 16),
-              const Text('CUSTOM',
+              Text('CUSTOM',
                   style: TextStyle(
-                      fontSize: 11, letterSpacing: 1.1, color: Colors.grey)),
+                      fontSize: 11,
+                      letterSpacing: 1.1,
+                      color: scheme.mutedInk)),
               _HueSlider(
                 hue: _hsv.hue,
                 saturation: _hsv.saturation,
@@ -231,13 +239,18 @@ class _Swatch extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             border: Border.all(
-                color: selected ? Colors.white : Colors.white24,
+                color: selected
+                    ? Theme.of(context).colorScheme.onSurface
+                    : Theme.of(context).colorScheme.outlineVariant,
                 width: selected ? 3 : 1),
           ),
           child: takenByOther
-              ? const Icon(Icons.person, size: 14, color: Colors.black45)
+              ? Icon(Icons.person,
+                  size: 14, color: Theme.of(context).colorScheme.inkOn(color))
               : (selected
-                  ? const Icon(Icons.check, size: 16, color: Colors.black54)
+                  ? Icon(Icons.check,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.inkOn(color))
                   : null),
         ),
       ),

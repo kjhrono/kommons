@@ -8,10 +8,11 @@
 //   POST { action: "confirm", email, token }
 //     → called by YOUR reset page when the user clicks the link:
 //       generates a 12-char temp password, sets it via the admin API,
-//       revokes the user's other sessions, e-mails the temp password,
-//       returns { temp_password_sent: true, must_change_password: true }.
-//       The temp password is sent ONLY to the inbox — proof of inbox
-//       ownership is the whole reset.
+//       CONFIRMS the address, revokes the user's other sessions,
+//       e-mails the temp password, and returns { temp_password_sent:
+//       true, must_change_password: true }. The temp password is sent
+//       ONLY to the inbox — proof of inbox ownership is the whole reset
+//       (and is why it may also confirm the address, below).
 //
 //   POST { action: "notify", user_id }  (Authorization: caller's JWT)
 //     → optional "your password was changed" mail. Unlike the actions
@@ -189,8 +190,17 @@ Deno.serve(
     if (!userId) return json(404, { error: "user_not_found" });
 
     const temp = tempPassword();
+    // Presenting the reset token IS proof of inbox ownership, so this
+    // also CONFIRMS the address. Without it the reset can hand out a
+    // password that still cannot be used: GoTrue refuses a sign-in on an
+    // unconfirmed address (`email_not_confirmed`), which is exactly the
+    // state an interrupted signup leaves behind (account created, 6-digit
+    // code never entered — and the signup door now refuses a retry, by
+    // design). The reset is the one flow allowed to replace a password,
+    // so it has to be able to finish the job.
     const { error: updErr } = await admin.auth.admin.updateUserById(userId as string, {
       password: temp,
+      email_confirm: true,
       ban_duration: "0s", // unban in case a prior lockout is in force
     });
     if (updErr) return json(500, { error: "password_update_failed" });
@@ -210,7 +220,9 @@ Deno.serve(
       ),
     });
 
-    console.log(`temp password issued for ${email} (delivered=${mail.delivered})`);
+    console.log(
+      `temp password issued for ${email} (address confirmed, delivered=${mail.delivered})`,
+    );
     return json(200, {
       temp_password_sent: mail.delivered,
       must_change_password: true,

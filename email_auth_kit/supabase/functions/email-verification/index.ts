@@ -1,19 +1,25 @@
 // email_auth_kit — email-verification edge function.
 //
-//   POST { action: "signup", email, password }
+//   POST { action: "signup", email, password, product? }
 //     → kit-native signup: creates the auth user UNCONFIRMED via the
 //       admin API (no GoTrue confirmation mail — the kit sends its own
-//       code), then issues the 6-digit code. Identical response for an
-//       existing address (no enumeration); rate limited like request.
+//       code), then issues the 6-digit code. Rate limited like request.
+//
+//       An address that ALREADY has an account is REFUSED with 409
+//       { error: "account_exists" } (see the signup block): this flow
+//       can only set a password ON CREATE, so it must not hand out a
+//       code that leads to an account the member cannot sign into.
 //
 //   POST { action: "request", email }
 //     → 6-digit code mailed via Brevo; identical response shape whether
 //       or not the address has an account (no enumeration). Rate limit:
 //       3 requests / 15 min / email (DB guard).
 //
-//   POST { action: "verify", email, code }
+//   POST { action: "verify", email, code, product? }
 //     → validates the code (hashed, single-use, 15 min, 5 attempts) and
-//       flips auth.users.email_confirmed_at via the admin API.
+//       flips auth.users.email_confirmed_at via the admin API. When that
+//       flip is the address's FIRST confirmation it also mails the
+//       welcome; `product` names the configured link set (below).
 //
 // Deploy with --no-verify-jwt: the registration flow calls this before
 // a session exists. It is safe because the function only ever issues a
@@ -22,6 +28,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { page, sendMail } from "../_shared/brevo.ts";
+import { welcomeLinks, welcomeMail } from "../_shared/welcome.ts";
 
 const CODE_TTL_MIN = 15;
 const MAX_ATTEMPTS = 5;
@@ -60,6 +67,7 @@ Deno.serve(
     email?: string;
     code?: string;
     password?: string;
+    product?: string;
   };
     try {
       body = await req.json();
@@ -68,6 +76,9 @@ Deno.serve(
     }
 
     const email = (body.email ?? "").trim().toLowerCase();
+    // The product whose welcome links apply when this request confirms
+    // the address. Only names a configured set — never a URL (below).
+    const product = (body.product ?? "").trim().toLowerCase();
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
     const ua = req.headers.get("user-agent");
 
@@ -94,18 +105,40 @@ Deno.serve(
       if (rateErr) return json(500, { error: "rate_check_failed" });
       if (!ok) return json(429, { error: "rate_limited" });
 
-      // Create unconfirmed when new; stay silent when the address exists.
-      const { data: existing } = await admin.rpc("auth_kit_find_user_id", { p_email: email });
-      if (!existing) {
-        const { error: createErr } = await admin.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: false,
-        });
-        if (createErr) {
-          console.error(`signup create failed for ${email}: ${createErr.message}`);
-          return json(500, { error: "signup_failed" });
+      // An address that already has an account is REFUSED, not faked.
+      // This flow can only set a password ON CREATE: for an existing
+      // user it would mail a code, confirm the address, and leave the
+      // password the member just chose unapplied — they would then fail
+      // to sign in ("Enter a valid email and a password of at least 6
+      // characters") while the account kept its old password, or, for a
+      // Google-created account, never had one at all. Only the reset
+      // flow may replace a password, so point the member there instead.
+      const { data: existing, error: existingErr } = await admin.rpc(
+        "auth_kit_find_user_id",
+        { p_email: email },
+      );
+      if (existingErr) return json(500, { error: "lookup_failed" });
+      if (existing) {
+        console.log(`signup refused for ${email}: address already has an account`);
+        return json(409, { error: "account_exists" });
+      }
+
+      // New address: create it unconfirmed; the mailed code is the proof.
+      const { error: createErr } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: false,
+      });
+      if (createErr) {
+        // Lost a race with a concurrent signup for the same address —
+        // the account exists now, so answer exactly like any existing
+        // one rather than as a server failure.
+        if (/already|exists|registered/i.test(createErr.message)) {
+          console.log(`signup race for ${email}: ${createErr.message}`);
+          return json(409, { error: "account_exists" });
         }
+        console.error(`signup create failed for ${email}: ${createErr.message}`);
+        return json(500, { error: "signup_failed" });
       }
       // Fall through to the shared code-issuing path below.
       body.action = "request";
@@ -210,13 +243,43 @@ Deno.serve(
         // client bug or a stale tab — report it plainly.
         return json(404, { error: "user_not_found" });
       }
+      // Was the address already confirmed? Read BEFORE the flip: the
+      // welcome belongs to the moment the address BECOMES confirmed, so
+      // a later re-verify stays quiet. A failed read is not fatal — a
+      // duplicate welcome beats blocking a confirmation, so an unknown
+      // state assumes "not confirmed yet".
+      const { data: before, error: beforeErr } = await admin.auth.admin
+        .getUserById(userId as string);
+      if (beforeErr) {
+        console.error(`pre-confirm read failed for ${email}: ${beforeErr.message}`);
+      }
+      const alreadyConfirmed = !!before?.user?.email_confirmed_at;
+
       const { error: updErr } = await admin.auth.admin.updateUserById(userId as string, {
         email_confirm: true,
       });
       if (updErr) return json(500, { error: "confirm_failed" });
 
+      // First confirmation → welcome. Never fails the flow: the address
+      // IS confirmed by now, so a mail error is reported, not raised.
+      let welcomeSent = false;
+      if (!alreadyConfirmed) {
+        const links = welcomeLinks(product);
+        if (links) {
+          try {
+            const mail = await sendMail({ to: email, ...welcomeMail(links) });
+            welcomeSent = mail.delivered;
+            console.log(
+              `welcome sent for ${email} (product ${product || "default"}, delivered=${welcomeSent})`,
+            );
+          } catch (e) {
+            console.error(`welcome mail failed for ${email}: ${(e as Error).message}`);
+          }
+        }
+      }
+
       console.log(`email verified for ${email}`);
-      return json(200, { verified: true });
+      return json(200, { verified: true, welcome_sent: welcomeSent });
     }
 
     return json(400, { error: "unknown_action" });

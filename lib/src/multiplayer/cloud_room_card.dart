@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_settings.dart';
+import '../shell_inks.dart';
 import 'banner_color_picker.dart';
 import 'cloud_room_service.dart';
 import 'game_sync.dart';
@@ -82,7 +83,7 @@ class CloudRoomCard extends StatelessWidget {
       tween: ColorTween(
         begin: Colors.transparent,
         end: flashing
-            ? Colors.amber.withValues(alpha: 0.18)
+            ? Theme.of(context).colorScheme.warningInk.withValues(alpha: 0.18)
             : Colors.transparent,
       ),
       duration: const Duration(milliseconds: 600),
@@ -106,7 +107,7 @@ class CloudRoomCard extends StatelessWidget {
             children: [
               for (final seat
                   in seatsLocalFirst(room, localSeatName: localSeatName))
-                cloudSeatChip(room.code, seat,
+                cloudSeatChip(context, room.code, seat,
                     isLocal: seat.name == localSeatName, room: room),
             ],
           ),
@@ -116,7 +117,8 @@ class CloudRoomCard extends StatelessWidget {
               flashMessage!,
               key: ValueKey('flash-note-${room.code}'),
               style: TextStyle(
-                  color: Colors.amber.shade900, fontWeight: FontWeight.w600),
+                  color: Theme.of(context).colorScheme.warningInk,
+                  fontWeight: FontWeight.w600),
             ),
           const SizedBox(height: 4),
           Text([
@@ -225,8 +227,9 @@ class CloudRoomCard extends StatelessWidget {
 
 /// One seat chip: banner swatch, name, ready marker — plus the host crown
 /// on the room's first seat so a roster mid-handover reads at a glance.
-Widget cloudSeatChip(String roomCode, CloudSeat seat,
+Widget cloudSeatChip(BuildContext context, String roomCode, CloudSeat seat,
     {required bool isLocal, CloudRoom? room}) {
+  final scheme = Theme.of(context).colorScheme;
   final color = bannerColor(seat.colorHex);
   return Row(mainAxisSize: MainAxisSize.min, children: [
     Container(
@@ -237,7 +240,7 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
         color: color,
         shape: BoxShape.circle,
         border: Border.all(
-            color: isLocal ? Colors.white : Colors.black26,
+            color: isLocal ? scheme.onSurface : scheme.outlineVariant,
             width: isLocal ? 2.5 : 1),
       ),
     ),
@@ -247,7 +250,7 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
       style: TextStyle(
         fontSize: 12.5,
         fontWeight: isLocal ? FontWeight.w700 : FontWeight.w400,
-        color: seat.ready ? null : Colors.grey.shade500,
+        color: seat.ready ? null : scheme.mutedInk,
       ),
     ),
     if (room != null && seat.name == room.hostName) ...[
@@ -255,7 +258,7 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
       Tooltip(
         message: appLocale.strings.hostOfThisRoom,
         child:
-            const Icon(Icons.workspace_premium, size: 13, color: Colors.amber),
+            Icon(Icons.workspace_premium, size: 13, color: scheme.warningInk),
       ),
     ],
     const SizedBox(width: 2),
@@ -265,7 +268,7 @@ Widget cloudSeatChip(String roomCode, CloudSeat seat,
       child: Icon(
         seat.ready ? Icons.check_circle : Icons.hourglass_empty,
         size: 13,
-        color: seat.ready ? Colors.green.shade400 : Colors.grey.shade500,
+        color: seat.ready ? scheme.readyInk : scheme.mutedInk,
       ),
     ),
   ]);

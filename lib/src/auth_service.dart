@@ -573,9 +573,7 @@ class AuthService {
     try {
       response = await _client.post(url, headers: _headers, body: body);
     } catch (error) {
-      throw AuthException(
-          'network',
-          'Could not reach the auth server: $error',
+      throw AuthException('network', 'Could not reach the auth server: $error',
           const AuthFailureDetail(statusCode: 0, rawBody: ''));
     }
 
@@ -608,8 +606,7 @@ class AuthService {
       throw AuthException(
           'http_${response.statusCode}',
           'Unexpected empty auth response',
-          const AuthFailureDetail(
-              statusCode: 0, rawBody: ''));
+          const AuthFailureDetail(statusCode: 0, rawBody: ''));
     }
 
     final access = json['access_token'];
@@ -624,16 +621,16 @@ class AuthService {
       final user = json['user'] as Map<String, dynamic>?;
       final confirmed = user?['email_confirmed_at'] != null;
       throw AuthException(
-        confirmed ? 'session_missing' : 'email_not_confirmed',
-        confirmed
-            ? 'The server accepted the account but issued no session'
-            : 'Confirm the email (inbox link) before signing in',
-        AuthFailureDetail(
-          statusCode: response.statusCode,
-          errorCode: json['error_code'] as String?,
-          message: json['msg'] as String? ?? json['message'] as String?,
-          rawBody: response.body,
-        ));
+          confirmed ? 'session_missing' : 'email_not_confirmed',
+          confirmed
+              ? 'The server accepted the account but issued no session'
+              : 'Confirm the email (inbox link) before signing in',
+          AuthFailureDetail(
+            statusCode: response.statusCode,
+            errorCode: json['error_code'] as String?,
+            message: json['msg'] as String? ?? json['message'] as String?,
+            rawBody: response.body,
+          ));
     }
 
     final user = json['user'] as Map<String, dynamic>?;

@@ -31,12 +31,13 @@ enum ShellLanguage {
 /// only carries its own vocabulary. Interpolated strings are methods so the
 /// word order can differ per language.
 @immutable
-class ShellStrings {  const ShellStrings({
+class ShellStrings {
+  const ShellStrings({
     // Top bar.
     this.switchThemeTooltip = 'Switch day/night theme',
+    this.highContrastTooltip = 'High-contrast mode',
     this.settingsTooltip = 'Settings',
     this.themeSystemLabel = 'System',
-    
 
     // Splash.
     this.newGame = 'NEW GAME',
@@ -78,6 +79,8 @@ class ShellStrings {  const ShellStrings({
     this.moreLanguagesComing = 'more languages coming',
     this.settingsFooter =
         'Settings are stored on this device. Signing in prepares them for cloud sync.',
+    this.highContrastHint =
+        'Thicker outlines and full-strength ink: text and structure stop depending on colour alone.',
     this.prefTheme = 'Theme',
     this.prefLanguage = 'Language',
     this.prefPlayerName = 'Player name',
@@ -119,6 +122,8 @@ class ShellStrings {  const ShellStrings({
     // Lobby wizard.
     this.back = 'Back',
     this.continueLabel = 'Continue',
+    this.chosenValues = 'CHOSEN VALUES',
+    this.showAllValues = 'Show every chosen value',
     // Interpolated patterns ({tokens} replaced by the methods below).
     this.welcomePattern = 'Welcome, {name}, to {app}',
     this.welcomeBackPattern = 'Welcome back, {name} — {app} awaits',
@@ -129,6 +134,7 @@ class ShellStrings {  const ShellStrings({
     this.confirmationSentPattern =
         'We sent a confirmation to {email}. Enter the code from the email — or open its link — to finish registering.',
     this.stepHeaderPattern = 'Step {step} of {total} — {title}',
+    this.editStepPattern = 'Edit {step}',
     // Multiplayer core (room card, handover section, server dialog).
     this.hostedHere = ' — hosted here',
     this.claimHost = 'Claim host',
@@ -237,6 +243,7 @@ class ShellStrings {  const ShellStrings({
       {String? code,
       String? nativeName,
       String? switchThemeTooltip,
+      String? highContrastTooltip,
       String? systemThemeLabelValue,
       String? settingsTooltip,
       String? newGame,
@@ -271,6 +278,7 @@ class ShellStrings {  const ShellStrings({
       String? language,
       String? moreLanguagesComing,
       String? settingsFooter,
+      String? highContrastHint,
       String? prefTheme,
       String? prefLanguage,
       String? prefPlayerName,
@@ -307,6 +315,8 @@ class ShellStrings {  const ShellStrings({
       String? preferencesSynced,
       String? back,
       String? continueLabel,
+      String? chosenValues,
+      String? showAllValues,
       String? welcomePattern,
       String? welcomeBackPattern,
       String? signedInAsPattern,
@@ -314,6 +324,7 @@ class ShellStrings {  const ShellStrings({
       String? githubGrantNote,
       String? confirmationSentPattern,
       String? stepHeaderPattern,
+      String? editStepPattern,
       String? hostedHere,
       String? claimHost,
       String? roomOptions,
@@ -401,8 +412,10 @@ class ShellStrings {  const ShellStrings({
       String? editSeatTitle,
       String? reopenSeat})
       : switchThemeTooltip = switchThemeTooltip ?? 'Cambia tema giorno/notte',
+        highContrastTooltip =
+            highContrastTooltip ?? 'Modalità ad alto contrasto',
         settingsTooltip = settingsTooltip ?? 'Impostazioni',
-                themeSystemLabel = systemThemeLabelValue ?? 'Sistema',
+        themeSystemLabel = systemThemeLabelValue ?? 'Sistema',
         newGame = newGame ?? 'NUOVA PARTITA',
         continueDefault = continueDefault ?? 'CONTINUA',
         noSavedGames = noSavedGames ?? 'NESSUNA PARTITA SALVATA',
@@ -442,6 +455,8 @@ class ShellStrings {  const ShellStrings({
         moreLanguagesComing = moreLanguagesComing ?? 'altre lingue in arrivo',
         settingsFooter =
             'Le impostazioni sono salvate su questo dispositivo. L\'accesso le prepara alla sincronizzazione cloud.',
+        highContrastHint = highContrastHint ??
+            'Contorni più spessi e inchiostro a piena intensità: testo e struttura non dipendono più solo dal colore.',
         prefTheme = prefTheme ?? 'Tema',
         prefLanguage = prefLanguage ?? 'Lingua',
         prefPlayerName = prefPlayerName ?? 'Nome giocatore',
@@ -452,9 +467,8 @@ class ShellStrings {  const ShellStrings({
         shortPassword =
             shortPassword ?? 'Scegli una password di almeno 6 caratteri.',
         enterCode = enterCode ?? 'Inserisci il codice dalla mail.',
-        confirmationCodeFailedPattern =
-            confirmationCodeFailedPattern ??
-                'Codice errato per {email}. Il server ha ricevuto: {code}',
+        confirmationCodeFailedPattern = confirmationCodeFailedPattern ??
+            'Codice errato per {email}. Il server ha ricevuto: {code}',
         confirmationResent =
             confirmationResent ?? 'Email di conferma inviata di nuovo.',
         forgotPassword = forgotPassword ?? 'Password dimenticata?',
@@ -491,6 +505,8 @@ class ShellStrings {  const ShellStrings({
             preferencesSynced ?? 'Preferenze caricate dal tuo account',
         back = back ?? 'Indietro',
         continueLabel = continueLabel ?? 'Continua',
+        chosenValues = chosenValues ?? 'VALORI SCELTI',
+        showAllValues = showAllValues ?? 'Mostra ogni valore scelto',
         welcomePattern = welcomePattern ?? 'Benvenuto, {name}, in {app}',
         welcomeBackPattern =
             welcomeBackPattern ?? 'Bentornato, {name} — {app} ti aspetta',
@@ -504,6 +520,7 @@ class ShellStrings {  const ShellStrings({
             'Ti abbiamo inviato una conferma a {email}. Inserisci il codice dalla mail — o apri il suo link — per completare la registrazione.',
         stepHeaderPattern =
             stepHeaderPattern ?? 'Passo {step} di {total} — {title}',
+        editStepPattern = editStepPattern ?? 'Modifica {step}',
         hostedHere = hostedHere ?? ' — host qui',
         claimHost = claimHost ?? 'Diventa host',
         roomOptions = roomOptions ?? 'Opzioni stanza',
@@ -662,6 +679,7 @@ class ShellStrings {  const ShellStrings({
 
   // -- Top bar ------------------------------------------------------------
   final String switchThemeTooltip;
+  final String highContrastTooltip;
   final String settingsTooltip;
   final String themeSystemLabel;
 
@@ -705,6 +723,10 @@ class ShellStrings {  const ShellStrings({
   final String language;
   final String moreLanguagesComing;
   final String settingsFooter;
+
+  /// Settings card subtitle under [highContrastTooltip]: what the mode
+  /// changes, in words rather than a sample tint.
+  final String highContrastHint;
   final String prefTheme;
   final String prefLanguage;
   final String prefPlayerName;
@@ -751,6 +773,19 @@ class ShellStrings {  const ShellStrings({
   // -- Lobby wizard -------------------------------------------------------
   final String back;
   final String continueLabel;
+
+  /// The heading of the compact sheet behind the rail's count pill: every
+  /// step's chosen value in one place, including the chips a narrow rail hid.
+  final String chosenValues;
+
+  /// The count pill's own label. It names the action rather than repeating
+  /// the hidden values, which the rail's nodes already announce.
+  final String showAllValues;
+
+  /// The hover/long-press hint on a wizard summary chip whose owner named
+  /// none: 'Edit {step}'. The step title is host text, so only this frame
+  /// around it is the shell's to translate.
+  final String editStepPattern;
 
   // -- Interpolated patterns ----------------------------------------------
   // Word order differs per language, so these strings carry {tokens} the
@@ -971,6 +1006,9 @@ class ShellStrings {  const ShellStrings({
   /// server sent none).
   String accountSuspendedUntil(String until) =>
       accountSuspendedUntilPattern.replaceAll('{until}', until);
+
+  /// The hint on a summary chip with no tooltip of its own ('Edit Avatar').
+  String editStep(String step) => editStepPattern.replaceAll('{step}', step);
 
   /// The lobby wizard's step header.
   String stepHeader(int step, int total, String title) => stepHeaderPattern

@@ -5,7 +5,326 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
-## Unreleased
+## 0.10.0 — 2026-11-03
+
+### Fixed: a client-chosen product name can no longer fake a welcome mail
+
+`welcomeLinks()` resolved the caller's product with `all[product] ?? all.default`,
+so `"product": "constructor"` — or `toString`, `valueOf`, `hasOwnProperty` —
+answered with a function from `Object.prototype`: truthy, so the fallback never
+ran and the member received a welcome with no links at all instead of no welcome.
+The lookup is now `Object.hasOwn`, a non-object entry is skipped, and a config
+that parses to `null`, `[]` or a bare string is refused rather than read. The
+Play listing in the fixture also moved to the renamed package
+(`com.mediasart.katalogus`), which is the listing that exists.
+
+### Fixed: the rail only checks steps the player actually visited
+
+Without a `canContinue` gate the wizard marked every step behind the current
+one as done, so a rail jump from Avatar to Database ticked off Start, Lobby, Game
+options and World options as if each had been answered. The wizard now keeps the
+set of steps the player has stood on (the opening step included) and, with no
+gate supplied, checks only those; a step jumped over keeps its own glyph. With a
+gate, nothing changes: the gate stays the authority on what was cleared. Two
+rail tests that relied on the old index rule now declare a gate, and a new test
+walks two steps then jumps over two more to pin the fallback.
+
+### Added: the value count opens the whole list
+
+On a very narrow rail the value line keeps two chips and counts the rest behind
+`+2`. That count is a button now: it opens a compact sheet listing every step's
+chosen value in rail order, including the chips the line had to hide. Each row
+is the same shortcut as the chip it stands in for — it closes the sheet, opens
+that step and asks the host to reveal the control behind the value — while
+dismissing the sheet leaves the wizard exactly where it was. The pill announces
+the action ('Show every chosen value', translated with the rest of the wizard's
+strings) rather than re-reading the hidden values, so the count stays a visual
+cue and each value is still spoken once, on its rail node.
+
+### Changed: the shell's faint inks now come from the theme
+
+The sweep: every hardcoded `Colors.grey`/`Colors.white`/`Colors.amber` ink in
+`lib/` that was doing a theme's job now comes from `Theme.of(context).colorScheme`
+through `ShellInk`, a small extension exported from `kommons.dart`:
+
+- `mutedInk` (`onSurfaceVariant`) for captions, helper lines, unready seats and
+  the version chip — the settings screen's grey captions, both top-bar version labels
+  and the cloud room card's unready seat name;
+- `warningInk` (`tertiary`) for attention that is not failure — the pending
+  handover header, the server-onboarding hint, the flash wash and its note, the
+  host crown, the splash tagline (which used to pick amber by brightness), and
+  the settings screen's amber icons and notes;
+- `readyInk` (`primary`) for a confirmed seat, and `dangerInk` (`error`) for the
+  suspended-account banner and the handover error line;
+- `inkOn(colour)` for marks that sit on a colour the player picked — banner
+  swatch ticks, the "taken" person glyph, the banner preview's flag and name.
+  It measures both candidates against that colour and keeps the stronger, so a
+  pale banner gets dark ink and a dark one gets white instead of a fixed
+  `black54` that vanished on one of them.
+
+This is what high-contrast mode could not reach before: it rebuilds surfaces and
+inks, but a literal stays at exactly the contrast it had, so in light contrast
+mode (pure white surface) `Colors.grey.shade500` captions sat at 2.9:1 while the
+mode's own `onSurfaceVariant` sits far above 4.5:1. The `cloud room card` flash
+text had the opposite bug — `amber.shade900` on a dark card.
+
+`test/shell_inks_test.dart` keeps it swept: it scans `lib/` for `Colors.*`
+literals, allows only `Colors.transparent` plus three named exceptions
+(`high_contrast.dart` defines the mode's own black and white, `qr_share.dart`
+and `lobby_step.dart` keep a QR code's white mat), fails on an exception that no
+longer matches anything, checks the scanner against a planted sample, asserts
+every ink clears 4.5:1 on the contrast theme's surface in both brightnesses, and
+pins a cloud room card's painted colours to the scheme.
+
+### Added: a reveal highlight for a shortcut's destination
+
+`RevealHighlight` (exported from `kommons.dart`) is a small stateful wrapper a
+host puts around the control a setup-rail value opens. `play()` — called from
+`LobbyWizard.onRevealControl` once the control has been scrolled in — paints a
+2.5dp ring with a soft bloom around the child for 1.2 s: a quick fade in, a long
+hold, a slower fade out, and `play()` again restarts it. The ring is a
+foreground painter inset by half its stroke, so it never changes the child's
+constraints, size or position (a scroll offset, a card's metrics and a text
+field's caret stay put), and it is never clipped by the list it lives in. Colour
+follows the rail's rule — the scheme's `tertiary`, or `onSurface` in
+high-contrast mode, where a ring is structure rather than a tint. With
+`MediaQuery.disableAnimations` the flash is swapped for a short static
+highlight: the ring appears at full strength (no fade in, no drifting fade out)
+and is held for 400 ms — or the host's shorter `duration`, so a control that
+asked for a quicker ring is not made slower — then clears. The hold is a plain
+flag and a timer rather than an animation, so nothing repaints between the two
+frames: reduced motion gets a still highlight instead of a slower flash, and
+the ring stays information rather than decoration. A flash already under way
+when the setting turns on is cut at once, so its half-finished fade cannot
+resurface behind the still ring. `ringColorOf(context)`
+exposes the colour rule and `RevealHighlightState.isPlaying` says whether a run
+(or the reduced-motion hold) is in flight.
+
+The reason it exists: a rail value already handed its control focus, and focus
+rings only render where the platform reports keyboard highlighting. On a phone
+or tablet the screen simply jumped, so the destination was invisible.
+
+### Added: a visible focus ring on the setup rail
+
+The rail's nodes now paint a dashed ring outside the disc when they hold
+focus, in the scheme's `tertiary` ink (full ink in high-contrast mode), with a
+4dp gap from the step's own circle. The dash is deliberate: contrast mode
+already rings the active step's disc at 3dp in solid ink, so a solid focus ring
+would read as "you are here" whenever focus and the current step landed on
+neighbouring nodes. Focus is tracked per node — the rail listens to its own
+`FocusNode`s and repaints — so the ring follows Tab, the arrow keys and a
+remote's D-pad even while the wizard's current step stays put; a pointer tap
+does not focus a node, so touch players never see it. The disc keeps its exact
+size and position (the ring is drawn in the node's own padding with a
+`Stack`/`Clip.none`), so connectors, labels and the 48dp targets do not shift.
+Covered by `the keyboard focus draws its own ring on its own node` and `in
+contrast mode focus is dashed and the current step rings` in
+`test/lobby_wizard_test.dart`.
+
+### The value chips collapse to two on a very narrow phone
+
+On an icon-only rail the chosen values came back as one chip line that
+scrolled sideways. On a 320dp phone that was six near-identical pills behind a
+scroll handle, so the line now keeps the two a player can act on — the step in
+hand and the next step that has a value (the step after it, in step order, so
+the line still reads left to right) — and counts the rest in a `+N` pill. The
+threshold is the *screen* width below 360dp, not the rail's padded inner
+width, so a 360dp phone with large text still shows the whole line. Nothing is
+hidden from assistive tools: every node's screen-reader sentence already
+carries its own value, so the collapsed chips lose the reader nothing, and the
+count pill is excluded from semantics (`ExcludeSemantics`, tooltip only) so it
+is not read out beside the values it stands for. The chips also gained 8dp of
+spacing instead of abutment. Covered by `a very narrow rail shows two values
+and counts the rest`, `a collapsed chip line still speaks every value` and `a
+360dp rail at large text keeps the whole chip line` in
+`test/lobby_wizard_test.dart`.
+
+### The rail's checks mean "cleared", not "behind you"
+
+`LobbyWizard`'s completed markers used to come from position alone: every node
+left of `current` wore a check and every rule up to it was lit, so a player who
+jumped ahead over the rail — free navigation by design — saw steps ticked whose
+Continue was still disabled. `canContinue` is now the rail's completion source,
+asked about every step rather than only the one on screen: a node checks itself
+(and lights the rule leading out of it) only when it is behind the player *and*
+its gate answered true. A closed gate keeps its own glyph, its quiet disc and a
+dim segment, and the markers follow the gate when it opens. Hosts therefore
+answer the gate for any index, depending on that step's own state; with no
+`canContinue` there is nothing that can fail, and the old positional behaviour
+stands. The gate's doc comment says so, and connectors carry
+`wizard-rail-connector-$i` keys for the new coverage in
+`test/lobby_wizard_test.dart` (`jumping ahead does not check a step whose gate
+never passed`, `the rule into a step is lit by that step being cleared`, `a gate
+that opens later turns its marker into a check`).
+
+### A high-contrast mode, and a setup flow that survives it
+
+`appContrast` persists a new `prefs.app.highContrast` preference, and
+`ShellApp` applies `highContrastTheme()` over whatever the host's
+`themeBuilder` produced: surfaces go to pure black/white, `onSurface` and
+`outline` to full ink, and every structural edge the shell draws (cards,
+dialogs, buttons, fields, dividers, the app bar) becomes a visible 2dp line.
+The scheme is rebuilt from the host's own seed at Material's maximum contrast
+level, so a game keeps its hue; hosts never branch on the setting themselves.
+
+Setup is where the change matters most, because a low-vision player may never
+find Settings first — so `LobbyWizard`'s own app bar now carries
+`HighContrastToggleButton` (a host that places one in `appBarActions` keeps
+just that one), and the rail stops leaning on hue when the mode is on: steps
+are numbered instead of glyphed, the current label is underlined at full ink,
+its disc is inverted and ringed, connectors thicken from 2dp to 4dp, and value
+summaries go to `w700`. The rail listens to `appContrast` directly, so the cues
+repaint the moment the toggle is tapped, even if the host does not rebuild.
+Settings gained a labelled contrast switch (with a subtitle saying what the
+mode changes) beside the theme toggle, and both catalogs carry the new
+`highContrastHint`. The toggle's two states differ by glyph as well as tint
+(`contrast` vs `contrast_outlined`, plus `isSelected`). Covered by
+`test/high_contrast_test.dart`, and the rail's first Tab stop is asserted in
+`test/lobby_wizard_test.dart`.
+
+### The wizard rail fits a phone, and speaks
+
+`LobbyWizard`'s progress rail used to be a fixed row of 32dp dots with 9pt
+labels under each — labels clipped by a fixed-height box the moment text was
+scaled, nodes tinted with hardcoded whites that vanished on a light theme, and
+nothing but a tooltip to say what a node was or whether it was done. It now
+measures the width it is given: step names sit under the nodes at 11pt where
+they fit (a 360dp phone does), the rail goes icon-only on a 320dp phone or past
+~1.4× text scaling instead of clipping a smear, and nodes keep a 48dp target
+either way. Colours come from the theme (`primary` disc, `onSurfaceVariant`
+ink), completed and upcoming connectors read differently, and each node is one
+screen-reader sentence — "Step 2 of 6 — Start, button, selected" — with the
+icon and visible label excluded from semantics so nothing is read twice. A
+rail too narrow to fit scrolls horizontally and keeps the active node centred;
+the "Step X of Y — Title" header is now a live-region heading so a step change
+is announced. Covered by the `rail sizing and accessibility` group in
+`test/lobby_wizard_test.dart` (phone fit and targets, 360/320 label rule, large
+text, semantics, active-node reveal).
+
+It also carries the setup now. `LobbyStepDescriptor.summary` is the value that
+step currently holds — "Elf", "Solo", "Medium · 48291" — and `_ProgressRail`
+prints it as a second, quieter line under the step's name, so the whole
+configuration reads off the progress bar without opening a step or adding a
+row. The value is part of the node's screen-reader sentence ("Step 4 of 6 —
+Game options, Sandbox") and the host owns the wording and updates it as
+choices change. Where the names have to drop away (a 320dp phone, very large
+text) the same strings return as one horizontally scrolling chip line, each
+chip a shortcut to its step — the values never appear twice and never wrap
+into a second row that would push the body down. A step with no value leaves
+its slot empty so the rail stays an even band. (This replaces the earlier
+`LobbyWizard.summary`/`LobbySummaryItem` chip-only seam: one source of truth,
+shown where it fits.) Covered by the `LobbyWizard step summaries` group in
+`test/lobby_wizard_test.dart` (value under its name, even empty slot, chip
+fallback on an icon-only rail, huge-text scrolling, node semantics, and a rail
+with no summaries at all left untouched).
+
+Tapping a step's value is a deeper shortcut than tapping its name: it opens
+the *control* that value came from. `LobbyWizard.onRevealControl` is called
+once the wizard has moved to the step and laid its new body out (the body's
+scroll reset runs first), so the host can scroll its own anchor into view and
+hand the picker focus — the seed field for "Medium · 48291", the mode radios
+for "Sandbox". On a labelled rail the value line is the tap target, grown to
+a 24dp band (the WCAG minimum) rather than the ~14dp of bare text, and it is
+kept out of the semantics tree because the node's sentence already carries the
+value; on an icon-only rail the chip — already a button — goes straight to the
+control too. The step name and node still do plain navigation, and a host that
+does not pass `onRevealControl` keeps exactly the old behaviour. Covered by the
+value-shortcut tests in `test/lobby_wizard_test.dart` (step then control, name
+only navigates, same-step reveal, chip reveal).
+
+`LobbyWizard` is a `StatefulWidget` now — only to remember which step's
+control a tapped value asked for while that step builds; its public API and
+the host's rebuild contract are unchanged.
+
+`LobbyWizard.onDone`/`doneLabel` give the wizard a way out that is not the
+next step: set them and the primary button (still obeying `canContinue`, still
+beside Back) reads `doneLabel` and calls `onDone` on every step, last one
+included. That is what a section opened from a review screen needs — its
+Continue would walk the player through every question again — and it closes the
+gap that made hosts hand-roll their final CTA inside the body. The shell does
+not invent the words: the host names the destination, which keeps the label in
+the host's own translation. Covered by the done-action case in
+`test/lobby_wizard_test.dart` (replaces Continue, respects the gate, survives
+the last step, never advances a step).
+
+### The wizard rail works without a pointer
+
+The rail was tappable and nothing more: a keyboard could Tab onto a node and
+press it, but the arrows — which is exactly what an Android D-pad and a TV
+remote send — wandered off into spatial focus instead of moving through the
+setup. Each node now carries its own focus node, and a non-focusable `Focus`
+above the rail turns Right/Down and Left/Up into one step forward or back,
+Home/End into the ends of the setup, taking focus with the step so the focus
+ring and the highlighted node never disagree. `onGoto` still makes the move,
+so the host's gate and state stay in charge, and the existing reveal keeps a
+keyboard-driven node on screen on a scrolling rail. At either end the key is
+left unhandled rather than swallowed, so an arrow can still leave the rail and
+Tab keeps visiting every node; Enter (or a remote's select/game button) still
+activates the focused step through its own tap target. Focus nodes are
+recreated when a host swaps the step list and disposed with the rail. Covered
+by the `keyboard and D-pad rail` group in `test/lobby_wizard_test.dart` (Tab
+arrival, all four arrows with focus following, Home/End, no wrap at the ends,
+Tab-plus-Enter activation, and a 300dp rail scrolling to the node the keys
+reached).
+
+### The wizard's frame holds on a small screen, in translation, across steps
+
+A review of the shared wizard found four defects every host inherited. The
+Back/Continue row was a `Row` with a `Spacer`, so at 320dp with 2× text it
+overflowed its padding by ~150dp (and the Italian "Indietro"/"Continua" are
+longer than the English) — it is a `Wrap` now: the two edges where they fit,
+stacked where they do not, with each single-button step keeping the edge it
+had. Below the width where even the English pair cannot share a line (~366dp
+at 1× text, 318dp of content) the two buttons become a full-width stack
+instead of hugging the left edge, so the primary action is as easy to hit as
+any other row control. That threshold scales with the reader's text size —
+almost all of those 318dp is label text — so 2× text on a 375dp phone stacks
+the pair rather than wrapping only the primary onto a ragged, left-aligned
+second line, while a lone action keeps its natural width on a wide tablet; and
+a translated label that outgrows even that wraps inside its button rather than
+clipping. The step body shared one scroll view, so a step change kept the last
+step's offset and could open a new step mid-form with its header scrolled away;
+`_StepBody` resets its controller (post-frame, because jumping during build
+fires a scroll notification the AppBar listens to) without remounting the
+host's widgets the way a per-step key would. The subtitle's colour was a
+hardcoded `Colors.grey.shade400` that washed out on a light surface, and is now
+`colorScheme.onSurfaceVariant`. And two strings bypassed the catalog entirely:
+the default bar title (`NEW GAME`) and the summary chip's `Edit <step>` hint
+are now `ShellStrings.newGame` and the new `editStepPattern` ("Modifica {step}"
+in Italian), with `title` becoming nullable so the shell's translation is the
+fallback. Covered by the `LobbyWizard layout resilience` group and the
+`subtitle`/`shell title` cases in `test/lobby_wizard_test.dart` (320dp at 2×
+wrapping, wide-screen edges, offset reset, theme colour, default title).
+
+### The kit stops promising an account it cannot give — and welcomes the member
+
+The kit's signup refused nothing. For an address that already had an account it
+mailed the 6-digit code, confirmed the address, and **silently dropped the
+password** the member had just chosen: they then met `invalid_credentials` at
+the sign-in ("Enter a valid email and a password of at least 6 characters")
+while the account kept its old password — or, for a Google-created account, had
+never had one at all. The flow can only set a password **on create**, so `signup`
+now answers **409 `account_exists`** and issues nothing, and the client raises a
+typed `AuthCodeException('account_exists')` for the UI to send the member to
+sign-in or the reset. Two consequences are deliberate: the reply now discloses
+whether an address has an account (`requestCode` still does not), and an
+interrupted signup — account created, code never entered — is finished through
+the reset, which is the one flow allowed to replace a password.
+
+Which is why the reset now also **confirms** the address. `email_confirm: true`
+rides along with the temp password: presenting the reset token is proof of inbox
+ownership, and without it the reset could hand out a credential that still
+cannot be used, since GoTrue refuses a sign-in on an unconfirmed address
+(`email_not_confirmed`).
+
+And the first confirmation now mails a **welcome**: the web app, the Play
+listing, the App Store listing and mediasart.com, sent only on the transition
+from unconfirmed to confirmed, so a later re-verify stays quiet. The links are
+server configuration, never client input — the request only names its product
+(`KIT_WELCOME_LINKS`, keyed by that name, with a `default` fallback and no mail
+at all when nothing is configured), and the renderer lives in
+`_shared/welcome.ts` so it can be pinned by `deno test` without a stack
+(5 checks, 6 with `--allow-env` for the env path).
 
 ## 0.9.0 — 2026-10-07
 

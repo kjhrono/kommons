@@ -338,12 +338,10 @@ class PostgrestSyncService implements GameSyncService {
       return;
     }
     if (_tokenFailed) return;
-    if (apiKey == null) {
-      // Bare PostgREST: no gateway JWT verification, no role switching —
-      // the claim token would be dead weight.
-      _tokenFailed = true;
-      return;
-    }
+    // Both stacks mint tokens: PostgREST v12 verifies the HS256 signature on
+    // any server configured with a JWT secret (the fallback stack sets
+    // PGRST_JWT_SECRET). Without a token, RLS-backed schemas deny every
+    // non-anon write, so claiming them is never dead weight.
     if (asHost && (hostSecret == null || hostSecret!.isEmpty)) {
       _tokenFailed = true;
       return;
@@ -463,7 +461,10 @@ class PostgrestSyncService implements GameSyncService {
       _seatName = slot.name;
       await _ensureRoleToken(playerName: slot.name);
     }
-    final response = await _client.put(
+    // Upsert via POST + resolution=merge-duplicates (on_conflict query).
+    // A PUT here would be rejected with 405 PGRST105: PostgREST only allows
+    // PUT upsert when the URL filters all-and-only the primary key columns.
+    final response = await _client.post(
       _table('roster', {'on_conflict': 'room_code,player_name'}),
       headers: {..._writeHeaders(), 'Prefer': 'resolution=merge-duplicates'},
       body: jsonEncode([
@@ -629,32 +630,31 @@ class PostgrestSyncService implements GameSyncService {
 
   @override
   Future<List<Map<String, dynamic>>> takeActions() async {
-    final response = await _client.get(
+    await _ensureRoleToken(asHost: createsRoom, playerName: _seatName);
+    // Atomically consume the room's envelopes: DELETE … RETURNING removes
+    // the rows in the same statement that reads them, so no envelope pushed
+    // between a fetch and a delete can be silently dropped (a fetch-then-
+    // delete race would strand a joiner action until the seat re-sent it —
+    // the seat never re-sends, because pushActions clears the outbox).
+    final response = await _client.delete(
       _table('actions', {
         'room_code': 'eq.$roomCode',
-        'select': 'seq,payload',
         'order': 'seq.asc',
       }),
-      headers: _headers,
+      headers: {
+        ..._writeHeaders(),
+        'Prefer': 'return=representation',
+      },
     );
     _ensureOk(response, 'take actions');
     if (response.body.isEmpty || response.body == '[]') return const [];
     final decoded = jsonDecode(response.body);
     if (decoded is! List || decoded.isEmpty) return const [];
-    final envelopes = <Map<String, dynamic>>[
+    return [
       for (final row in decoded)
         if ((row as Map)['payload'] is Map<String, dynamic>)
           (row['payload'] as Map<String, dynamic>),
     ];
-    // Fetch-then-delete leaves a tiny race if two hosts poll one room; only
-    // the host polls, so this stays safe in practice.
-    await _ensureRoleToken(asHost: createsRoom, playerName: _seatName);
-    final delete = await _client.delete(
-      _table('actions', {'room_code': 'eq.$roomCode'}),
-      headers: _writeHeaders(),
-    );
-    _ensureOk(delete, 'clear actions');
-    return envelopes;
   }
 
   @override

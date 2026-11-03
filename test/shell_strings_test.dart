@@ -60,6 +60,8 @@ void main() {
       expect(strings.settingsTitle, 'SETTINGS');
       expect(strings.back, 'Back');
       expect(strings.continueLabel, 'Continue');
+      expect(strings.chosenValues, 'CHOSEN VALUES');
+      expect(strings.showAllValues, 'Show every chosen value');
       expect(strings.stepHeader(2, 3, 'Options'), 'Step 2 of 3 — Options');
       expect(strings.welcome('Marcuz', 'PROBE'), 'Welcome, Marcuz, to PROBE');
       expect(strings.welcomeBack('Marcuz', 'PROBE'),
@@ -72,6 +74,8 @@ void main() {
       expect(strings.continueDefault, 'CONTINUA');
       expect(strings.noSavedGames, 'NESSUNA PARTITA SALVATA');
       expect(strings.stepHeader(1, 3, 'Seats'), isNot(contains('Step')));
+      expect(strings.chosenValues, 'VALORI SCELTI');
+      expect(strings.showAllValues, contains('valore'));
       expect(strings.welcome('Marco', 'PROBE'), contains('Marco'));
       expect(strings.welcomeBack('Marco', 'PROBE'), isNot(contains('awaits')));
     });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_settings.dart';
+import '../shell_inks.dart';
 import 'cloud_room_card.dart';
 import 'cloud_room_service.dart';
 
@@ -48,10 +49,12 @@ class CloudHandoverSection extends StatelessWidget {
             style: TextStyle(
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
-                color: Colors.amber.shade300)),
+                color: Theme.of(context).colorScheme.warningInk)),
         if (error != null)
           Text(error!,
-              style: TextStyle(color: Colors.redAccent.shade100, fontSize: 12)),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.dangerInk,
+                  fontSize: 12)),
         for (final room in rooms)
           CloudRoomCard(
             key: ValueKey('handover-${room.code}'),
