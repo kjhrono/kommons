@@ -1,10 +1,29 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:http/http.dart' as http;
 
 import 'game_sync.dart';
 import 'lobby_seat.dart';
+
+/// Thrown when a joiner's seat name already belongs to another player in
+/// the room (the server refuses to hand out that seat's token). The lobby
+/// asks for a different name instead of reporting a network failure.
+class SeatNameTakenException implements Exception {
+  SeatNameTakenException(this.name, this.roomCode);
+
+  final String name;
+  final String roomCode;
+
+  @override
+  String toString() => 'The name "$name" is already taken in room $roomCode.';
+}
+
+/// Hex SHA-256 of a room credential, as the server's `host_digest` column
+/// and `seat_secrets` table store it ('' stays '').
+String credentialDigest(String secret) =>
+    secret.isEmpty ? '' : sha256.convert(utf8.encode(secret)).toString();
 
 /// PostgREST schema profile for the Supabase (`/rest/v1`) mode.
 ///
@@ -162,11 +181,20 @@ class PostgrestSyncService implements GameSyncService {
     this.apiKey,
     String? hostSecret,
     String? joinPassword,
+    String? seatSecret,
   })  : roomCode = code ?? _generateCode(),
         // Hosts get a room secret (the claim_host credential); pass one to
         // recreate the same room deterministically (tests, reconnection).
         hostSecret =
             createsRoom ? (hostSecret ?? _generateSecret()) : hostSecret,
+        // Joiners get a seat secret: the credential that lets this device
+        // (and only this device) re-claim its seat after a token expires or
+        // when it resumes the room. Pass the stored one when resuming.
+        seatSecret = createsRoom
+            ? ''
+            : ((seatSecret == null || seatSecret.isEmpty)
+                ? _generateSecret()
+                : seatSecret),
         // Hashed once here: the room row stores only this digest, and joiner
         // claims send the same digest (the server compares digests, never
         // seeing the original passphrase).
@@ -206,6 +234,10 @@ class PostgrestSyncService implements GameSyncService {
   /// Host-readable share secret for the room (empty for joiners).
   String get hostSecretForSharing => hostSecret ?? '';
 
+  /// This joiner's seat credential (empty for hosts). Persist it per room
+  /// (`CloudRoomService.recordSeatSecret`) so resumes re-claim the seat.
+  final String seatSecret;
+
   /// The room's join password as a hex digest ('' = open room). Never the
   /// plain passphrase: digests are what the database stores and what joiner
   /// claims present.
@@ -234,11 +266,10 @@ class PostgrestSyncService implements GameSyncService {
   @override
   Future<RoomJoinResult> joinRoom(
       {required String code, String? password}) async {
-    final response = await _client.get(
-      _table('rooms', {
-        'code': 'eq.${code.trim().toUpperCase()}',
-        'select': 'code,password'
-      }),
+    final normalized = code.trim().toUpperCase();
+    var response = await _client.get(
+      _table(
+          'rooms', {'code': 'eq.$normalized', 'select': 'code,has_password'}),
       headers: _headers,
     );
     if (response.statusCode == 404) {
@@ -246,14 +277,46 @@ class PostgrestSyncService implements GameSyncService {
       // schema): accept and let announce surface real errors.
       return RoomJoinResult.ok;
     }
+    if (response.statusCode == 400) {
+      // A server from before has_password: the digest column is readable
+      // there, so compare it locally as older clients did.
+      response = await _client.get(
+        _table('rooms', {'code': 'eq.$normalized', 'select': 'code,password'}),
+        headers: _headers,
+      );
+      _ensureOk(response, 'look up room $code');
+      final rows = jsonDecode(response.body) as List<dynamic>;
+      if (rows.isEmpty) return RoomJoinResult.roomMissing;
+      final stored =
+          (rows.first as Map<String, dynamic>)['password'] as String? ?? '';
+      return stored.isEmpty || stored == _hashPassword(password)
+          ? RoomJoinResult.ok
+          : RoomJoinResult.wrongPassword;
+    }
     _ensureOk(response, 'look up room $code');
     final rows = jsonDecode(response.body) as List<dynamic>;
     if (rows.isEmpty) return RoomJoinResult.roomMissing;
-    final stored =
-        (rows.first as Map<String, dynamic>)['password'] as String? ?? '';
-    final presented = _hashPassword(password);
-    if (stored.isEmpty || stored == presented) return RoomJoinResult.ok;
-    return RoomJoinResult.wrongPassword;
+    final row = rows.first as Map<String, dynamic>;
+    if (!row.containsKey('has_password') && row.containsKey('password')) {
+      // An older server answering with the digest column itself.
+      final stored = row['password'] as String? ?? '';
+      return stored.isEmpty || stored == _hashPassword(password)
+          ? RoomJoinResult.ok
+          : RoomJoinResult.wrongPassword;
+    }
+    if (row['has_password'] != true) return RoomJoinResult.ok;
+    // The digest is not readable: the server compares it.
+    final check = await _client.post(
+      _rpc('room_password_ok'),
+      headers: _headers,
+      body: jsonEncode(
+          {'p_code': normalized, 'p_password': _hashPassword(password)}),
+    );
+    if (check.statusCode == 404) return RoomJoinResult.ok;
+    _ensureOk(check, 'check the room password');
+    return jsonDecode(check.body) == true
+        ? RoomJoinResult.ok
+        : RoomJoinResult.wrongPassword;
   }
 
   /// Cached role token (host or seat, whichever this seat claimed) and its
@@ -321,15 +384,32 @@ class PostgrestSyncService implements GameSyncService {
   Future<bool> _roomIsOurs(String code) async {
     if (hostSecret == null || hostSecret!.isEmpty) return false;
     try {
-      final response = await _client.get(
-        _table('rooms', {'code': 'eq.$code', 'select': 'host_secret'}),
+      var response = await _client.get(
+        _table('rooms', {'code': 'eq.$code', 'select': 'host_digest'}),
         headers: _headers,
       );
+      var column = 'host_digest';
+      var expected = credentialDigest(hostSecret!);
+      if (response.statusCode == 400) {
+        // A server from before host_digest still exposes the raw secret.
+        response = await _client.get(
+          _table('rooms', {'code': 'eq.$code', 'select': 'host_secret'}),
+          headers: _headers,
+        );
+        column = 'host_secret';
+        expected = hostSecret!;
+      }
       if (response.statusCode != 200) return false;
       final rows = jsonDecode(response.body);
       if (rows is! List || rows.isEmpty) return false;
-      final stored = (rows.first as Map)['host_secret'];
-      return stored is String && stored == hostSecret;
+      final row = rows.first as Map;
+      if (!row.containsKey(column) && row.containsKey('host_secret')) {
+        // An older server answering with the raw column.
+        column = 'host_secret';
+        expected = hostSecret!;
+      }
+      final stored = row[column];
+      return stored is String && stored.isNotEmpty && stored == expected;
     } catch (_) {
       return false;
     }
@@ -376,20 +456,31 @@ class PostgrestSyncService implements GameSyncService {
       return;
     }
     try {
-      final response = await _client.post(
-        _rpc(asHost ? 'claim_host' : 'claim_seat'),
-        headers: {
-          ..._headers,
-          if (apiKey != null) 'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode(asHost
-            ? {'p_code': roomCode, 'p_secret': hostSecret}
-            : {
-                'p_code': roomCode,
-                'p_name': playerName,
-                'p_password': _passwordHash
-              }),
-      );
+      Future<http.Response> claim({required bool withSeatSecret}) =>
+          _client.post(
+            _rpc(asHost ? 'claim_host' : 'claim_seat'),
+            headers: {
+              ..._headers,
+              if (apiKey != null) 'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode(asHost
+                ? {'p_code': roomCode, 'p_secret': hostSecret}
+                : {
+                    'p_code': roomCode,
+                    'p_name': playerName,
+                    'p_password': _passwordHash,
+                    if (withSeatSecret) 'p_seat_secret': seatSecret,
+                  }),
+          );
+      var response = await claim(withSeatSecret: !asHost);
+      if (response.statusCode == 404 && !asHost) {
+        // A server whose claim_seat predates seat secrets: same claim,
+        // without the credential it would not recognise.
+        response = await claim(withSeatSecret: false);
+      }
+      if (response.statusCode == 409 && !asHost) {
+        throw SeatNameTakenException(playerName!, roomCode);
+      }
       if (response.statusCode == 404) {
         // Server without the claim RPCs: legacy anon-writable mode.
         _tokenFailed = true;
@@ -546,7 +637,11 @@ class PostgrestSyncService implements GameSyncService {
   Future<List<LobbySeat>> roster() async {
     final response = await _client.get(
       _table('roster',
-          {'room_code': 'eq.$roomCode', 'select': '*', 'order': 'joined_at'}),
+          {
+            'room_code': 'eq.$roomCode',
+            'select': 'player_name,color_hex,interact_every_days,ready',
+            'order': 'joined_at'
+          }),
       headers: _headers,
     );
     _ensureOk(response, 'fetch roster');

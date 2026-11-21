@@ -78,6 +78,8 @@ class CloudRoomService {
   static const legacyHostSecretKey = 'prefs.online.hostSecret';
   static const legacyRoomCodeKey = 'prefs.online.roomCode';
   static const seatNamesPrefKey = 'prefs.online.seatNames';
+  static const seatSecretsPrefKey = 'prefs.online.seatSecrets';
+  static const roomPasswordsPrefKey = 'prefs.online.roomPasswords';
   static const serverUrlPrefKey = 'prefs.online.serverUrl';
 
   final String? _apiKey;
@@ -148,6 +150,55 @@ class CloudRoomService {
 
   Future<Map<String, String>> _seatNames(SharedPreferences prefs) async {
     final raw = prefs.getString(seatNamesPrefKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return {};
+      return decoded.map((k, v) => MapEntry(k, v is String ? v : ''));
+    } on FormatException {
+      return {};
+    }
+  }
+
+  /// Records the seat secret this device claimed its seat in [code] with:
+  /// without it a resume (or a token refresh from another app run) cannot
+  /// re-claim the seat, because the server refuses existing seat names to
+  /// anyone else.
+  Future<void> recordSeatSecret(String code, String secret) async {
+    if (secret.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final map = await _stringMap(prefs, seatSecretsPrefKey);
+    map[code] = secret;
+    await prefs.setString(seatSecretsPrefKey, jsonEncode(map));
+  }
+
+  /// Records the password this device joined [code] with, so the saved-games
+  /// screen can resume (and leave) a password room without asking again.
+  Future<void> recordRoomPassword(String code, String password) async {
+    if (password.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final map = await _stringMap(prefs, roomPasswordsPrefKey);
+    map[code] = password;
+    await prefs.setString(roomPasswordsPrefKey, jsonEncode(map));
+  }
+
+  /// The join password recorded for [code], when there was one.
+  Future<String?> roomPasswordFor(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    final password = (await _stringMap(prefs, roomPasswordsPrefKey))[code];
+    return (password != null && password.isNotEmpty) ? password : null;
+  }
+
+  /// The seat secret recorded for [code], when this device joined it.
+  Future<String?> seatSecretFor(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    final secret = (await _stringMap(prefs, seatSecretsPrefKey))[code];
+    return (secret != null && secret.isNotEmpty) ? secret : null;
+  }
+
+  Future<Map<String, String>> _stringMap(
+      SharedPreferences prefs, String key) async {
+    final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return {};
     try {
       final decoded = jsonDecode(raw);
@@ -231,15 +282,22 @@ class CloudRoomService {
     // `roster` key when the select asks for it, so servers or mocks that
     // do not serve the embed fall back to the legacy second GET below —
     // the listing works against either shape.
-    final roomsResponse = await _client.get(
-      _table('rooms', {
-        'select':
-            'code,clock,session,password,host_secret,designated_host,roster(room_code,player_name,color_hex,ready)',
-        'order': 'updated_at.desc',
-        'roster.order': 'joined_at',
-      }),
-      headers: _headers,
-    );
+    // The credentials themselves are not readable: rooms expose whether a
+    // password is set and a digest of the host secret. Servers from before
+    // that change answer 400 for the new columns and get the old select.
+    Future<http.Response> fetchRooms(String credentials) => _client.get(
+          _table('rooms', {
+            'select':
+                'code,clock,session,$credentials,designated_host,roster(room_code,player_name,color_hex,ready)',
+            'order': 'updated_at.desc',
+            'roster.order': 'joined_at',
+          }),
+          headers: _headers,
+        );
+    var roomsResponse = await fetchRooms('has_password,host_digest');
+    if (roomsResponse.statusCode == 400) {
+      roomsResponse = await fetchRooms('password,host_secret');
+    }
     if (roomsResponse.statusCode != 200) {
       throw Exception(
           'Could not list rooms (HTTP ${roomsResponse.statusCode})');
@@ -298,7 +356,12 @@ class CloudRoomService {
       final seats = seatsByRoom[code];
       if (code == null || seats == null || seats.isEmpty) continue;
       final secret = secrets[code] ?? legacy ?? '';
-      final isLocalHost = secret.isNotEmpty && secret == room['host_secret'];
+      // Each row is read by its shape: new servers send the digest, older
+      // ones the raw secret.
+      final isLocalHost = secret.isNotEmpty &&
+          (room.containsKey('host_digest')
+              ? room['host_digest'] == credentialDigest(secret)
+              : room['host_secret'] == secret);
       // A saved-games list, not a server browser: show rooms the player
       // sits in (under the account name or the seat name this device
       // joined with — resume accepts either), plus rooms this device
@@ -312,7 +375,9 @@ class CloudRoomService {
         code: code,
         clock: room['clock'] is int ? room['clock'] as int : 0,
         hasSnapshot: (room['session'] as String?)?.isNotEmpty ?? false,
-        hasPassword: ((room['password'] as String?) ?? '').isNotEmpty,
+        hasPassword: room.containsKey('has_password')
+            ? room['has_password'] == true
+            : ((room['password'] as String?) ?? '').isNotEmpty,
         seats: seats,
         isLocalHost: isLocalHost,
         designatedHost: (room['designated_host'] as String?) ?? '',
@@ -338,12 +403,16 @@ class CloudRoomService {
   }
 
   /// Builds the sync service that re-opens a room as a seat.
-  GameSyncService joinerResumeService(CloudRoom room, {String? password}) {
+  /// Pass the [seatSecret] recorded when this device joined ([seatSecretFor]):
+  /// the server only lets the seat's own device re-claim an existing seat.
+  GameSyncService joinerResumeService(CloudRoom room,
+      {String? password, String? seatSecret}) {
     return PostgrestSyncService(
       serverUrl: _baseUrl.toString(),
       apiKey: _apiKey,
       code: room.code,
       joinPassword: password,
+      seatSecret: seatSecret,
       client: _client,
     );
   }
@@ -432,5 +501,11 @@ class CloudRoomService {
     map.remove(code);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(seatNamesPrefKey, jsonEncode(map));
+    for (final key in [seatSecretsPrefKey, roomPasswordsPrefKey]) {
+      final map = await _stringMap(prefs, key);
+      if (map.remove(code) != null) {
+        await prefs.setString(key, jsonEncode(map));
+      }
+    }
   }
 }
