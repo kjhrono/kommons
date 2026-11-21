@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_settings.dart';
 import 'game_sync.dart';
 import 'game_sync_service.dart';
 
@@ -231,22 +232,19 @@ class CloudRoomService {
 
   /// True when the game-server connection the lobby persists exists —
   /// without it there is nothing to list.
-  static Future<bool> serverConfigured() async {
-    final prefs = await SharedPreferences.getInstance();
-    return (prefs.getString(serverUrlPrefKey) ?? '').isNotEmpty;
-  }
+  static Future<bool> serverConfigured() async =>
+      await effectiveServerConnection() != null;
 
   /// Builds a service from the connection the lobby persists. Null when the
   /// player never configured a game server on this device. Tests override
   /// [forTestFactory] to inject a MockClient-backed instance.
   static Future<CloudRoomService?> fromStoredConnection() async {
     if (forTestFactory != null) return forTestFactory!();
-    final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString(serverUrlPrefKey) ?? '';
-    if (url.isEmpty) return null;
-    final key = prefs.getString('prefs.online.anonKey');
+    final connection = await effectiveServerConnection();
+    if (connection == null) return null;
     return CloudRoomService(
-        serverUrl: url, apiKey: (key == null || key.isEmpty) ? null : key);
+        serverUrl: connection.url,
+        apiKey: connection.anonKey.isEmpty ? null : connection.anonKey);
   }
 
   /// Test seam replacing [fromStoredConnection] entirely.

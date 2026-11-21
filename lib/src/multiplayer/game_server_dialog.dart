@@ -23,12 +23,10 @@ const gameServerAnonKeyPrefKey = 'prefs.online.anonKey';
 /// because cloud account registration needs a server to register with.
 Future<GameServerConnection?> showGameServerConnectionDialog(
     BuildContext context) async {
-  final prefs = await SharedPreferences.getInstance();
+  final current = await effectiveServerConnection();
   if (!context.mounted) return null;
-  final urlController =
-      TextEditingController(text: prefs.getString(gameServerUrlPrefKey) ?? '');
-  final keyController = TextEditingController(
-      text: prefs.getString(gameServerAnonKeyPrefKey) ?? '');
+  final urlController = TextEditingController(text: current?.url ?? '');
+  final keyController = TextEditingController(text: current?.anonKey ?? '');
   final strings = appLocale.strings;
   final connection = await showDialog<GameServerConnection>(
     context: context,
@@ -89,8 +87,21 @@ Future<void> saveGameServerConnection(GameServerConnection connection) async {
   }
 }
 
-/// The remembered server URL, or '' when none was configured yet.
-Future<String> storedGameServerUrl() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getString(gameServerUrlPrefKey) ?? '';
+/// The server URL in effect (the remembered one, else the app's built-in
+/// server), or '' when there is neither.
+Future<String> storedGameServerUrl() async =>
+    (await effectiveServerConnection())?.url ?? '';
+
+/// The connection the online lobby uses: the effective one without asking
+/// when it is complete (an app with a built-in server never shows the
+/// dialog), else the connect dialog.
+Future<GameServerConnection?> resolveGameServerConnection(
+    BuildContext context) async {
+  final current = await effectiveServerConnection();
+  if (current != null &&
+      (current.anonKey.isNotEmpty || GameServerDefaults.isDefault(current.url))) {
+    return current;
+  }
+  if (!context.mounted) return null;
+  return showGameServerConnectionDialog(context);
 }

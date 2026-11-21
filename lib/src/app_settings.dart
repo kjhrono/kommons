@@ -59,12 +59,48 @@ typedef ServerConnectionResolver = Future<ServerConnection?> Function();
 /// connect-server dialogs write ('prefs.online.serverUrl' /
 /// 'prefs.online.anonKey').
 Future<ServerConnection?> readStandardServerConnection() async {
-  final prefs = await SharedPreferences.getInstance();
-  final url = prefs.getString('prefs.online.serverUrl') ?? '';
-  if (url.isEmpty) return null;
-  final key = prefs.getString('prefs.online.anonKey');
+  final resolved = await effectiveServerConnection();
+  if (resolved == null) return null;
   return ServerConnection(
-      url: url, apiKey: (key == null || key.isEmpty) ? null : key);
+      url: resolved.url,
+      apiKey: resolved.anonKey.isEmpty ? null : resolved.anonKey);
+}
+
+/// The game server an app ships with. Set once at startup (before any
+/// cloud call); empty values mean "no built-in server" and every cloud
+/// feature waits for the player to configure one, as before.
+class GameServerDefaults {
+  GameServerDefaults._();
+
+  /// The built-in server URL, e.g. `https://kapaxinfiniti.mediasart.com`.
+  static String url = '';
+
+  /// The built-in server's public (anon) API key.
+  static String anonKey = '';
+
+  static String _normalize(String url) =>
+      url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+
+  /// True when [url] is the built-in server.
+  static bool isDefault(String url) =>
+      GameServerDefaults.url.isNotEmpty &&
+      _normalize(url) == _normalize(GameServerDefaults.url);
+}
+
+/// The connection every cloud feature should use: the one the player saved,
+/// else the app's built-in server. For the built-in server the built-in key
+/// always wins, so a key saved long ago (say, for a retired machine) can
+/// never lock the player out. Null when neither exists.
+Future<({String url, String anonKey})?> effectiveServerConnection() async {
+  final prefs = await SharedPreferences.getInstance();
+  final stored = prefs.getString('prefs.online.serverUrl') ?? '';
+  final url = stored.isNotEmpty ? stored : GameServerDefaults.url;
+  if (url.isEmpty) return null;
+  final key = GameServerDefaults.isDefault(url) &&
+          GameServerDefaults.anonKey.isNotEmpty
+      ? GameServerDefaults.anonKey
+      : (prefs.getString('prefs.online.anonKey') ?? '');
+  return (url: url, anonKey: key);
 }
 
 /// The app's theme mode, persisted and read by the root widget. A global
