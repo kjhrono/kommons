@@ -6,6 +6,28 @@ import 'package:http/http.dart' as http;
 import 'game_sync.dart';
 import 'lobby_seat.dart';
 
+/// PostgREST schema profile for the Supabase (`/rest/v1`) mode.
+///
+/// A shared Supabase stack hosts several games, each in its own schema; the
+/// game picks its schema with PostgREST's `Accept-Profile` (reads) and
+/// `Content-Profile` (writes and RPCs) headers. Null (the default) sends no
+/// profile header, so PostgREST serves its first exposed schema (`public`) —
+/// the behavior of a dedicated per-game stack. Set once at startup, before
+/// any [PostgrestSyncService] or [CloudRoomService] request.
+class PostgrestProfile {
+  PostgrestProfile._();
+
+  static String? schema;
+
+  /// The profile headers for a request in Supabase mode ([apiKey] non-null);
+  /// empty for a bare PostgREST or when no [schema] is configured.
+  static Map<String, String> headersFor(String? apiKey) {
+    final name = schema;
+    if (apiKey == null || name == null || name.isEmpty) return const {};
+    return {'Accept-Profile': name, 'Content-Profile': name};
+  }
+}
+
 /// Local-only implementation: hot-seat multiplayer and every test. All
 /// futures complete immediately; the roster lives in memory.
 class InMemorySyncService implements GameSyncService {
@@ -271,6 +293,7 @@ class PostgrestSyncService implements GameSyncService {
           'apikey': apiKey!,
           'Authorization': 'Bearer $apiKey',
         },
+       ...PostgrestProfile.headersFor(apiKey),
       };
 
   Uri _table(String name, [Map<String, String>? filters]) => _baseUrl.replace(
@@ -611,15 +634,25 @@ class PostgrestSyncService implements GameSyncService {
     return null;
   }
 
+  /// Low three digits of each action row's seq; starts at a random offset so
+  /// two devices posting in the same millisecond rarely pick the same value.
+  int _seqCounter = Random().nextInt(1000);
+
   @override
   Future<void> pushActions(List<Map<String, dynamic>> actions) async {
     if (actions.isEmpty) return;
     await _ensureRoleToken(asHost: createsRoom, playerName: _seatName);
+    // seq must stay below 2^53: on the web ints are JS doubles, and the old
+    // microseconds*10 (~1.8e16) rounded neighbouring rows onto the same
+    // value, so a batch of two collided on the (room_code, seq) key and was
+    // rejected on every retry. Milliseconds*1000 (~1.8e15) is exact; the
+    // per-device counter keeps rows unique within one millisecond.
+    final millis = DateTime.now().millisecondsSinceEpoch;
     final rows = [
       for (var i = 0; i < actions.length; i++)
         {
           'room_code': roomCode,
-          'seq': DateTime.now().microsecondsSinceEpoch * 10 + i,
+          'seq': millis * 1000 + (_seqCounter++ % 1000),
           'payload': actions[i],
         }
     ];

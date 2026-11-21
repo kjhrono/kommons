@@ -91,6 +91,7 @@ class CloudRoomService {
           'apikey': _apiKey!,
           'Authorization': 'Bearer $_apiKey',
         },
+       ...PostgrestProfile.headersFor(_apiKey),
       };
 
   Uri _table(String name, [Map<String, String>? filters]) => _baseUrl.replace(
