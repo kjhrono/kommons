@@ -10,6 +10,7 @@ class LobbySeat {
     this.interactEveryDays = 1,
     this.ready = false,
     this.isAi = false,
+    this.persona = '',
   });
 
   final String name;
@@ -29,6 +30,11 @@ class LobbySeat {
   /// contracts at world gen and complete them over time as the clock runs.
   bool isAi;
 
+  /// The seat player's avatar setup as the game encodes it (opaque JSON,
+  /// '' = none). Online joiners announce it so the host can spawn their
+  /// hero exactly as they built it on their own device.
+  String persona;
+
   Color get color => Color(
       int.parse(colorHex.length == 6 ? 'FF$colorHex' : colorHex, radix: 16));
 
@@ -38,6 +44,7 @@ class LobbySeat {
         'interactEveryDays': interactEveryDays,
         'ready': ready,
         'isAi': isAi,
+        if (persona.isNotEmpty) 'persona': persona,
       };
 
   static LobbySeat fromMap(Map<String, dynamic> data) => LobbySeat(
@@ -46,5 +53,6 @@ class LobbySeat {
         interactEveryDays: data['interactEveryDays'] as int? ?? 1,
         ready: data['ready'] as bool? ?? false,
         isAi: data['isAi'] as bool? ?? false,
+        persona: data['persona'] as String? ?? '',
       );
 }

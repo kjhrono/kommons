@@ -588,6 +588,9 @@ class PostgrestSyncService implements GameSyncService {
           'color_hex': slot.colorHex,
           'interact_every_days': slot.interactEveryDays,
           'ready': slot.ready,
+          // Sent only when there is one, so hosts (and servers from before
+          // the column) see the same payload as ever.
+          if (slot.persona.isNotEmpty) 'persona': slot.persona,
         }
       ]),
     );
@@ -635,15 +638,20 @@ class PostgrestSyncService implements GameSyncService {
 
   @override
   Future<List<LobbySeat>> roster() async {
-    final response = await _client.get(
-      _table('roster',
-          {
+    Future<http.Response> fetch(String columns) => _client.get(
+          _table('roster', {
             'room_code': 'eq.$roomCode',
-            'select': 'player_name,color_hex,interact_every_days,ready',
+            'select': columns,
             'order': 'joined_at'
           }),
-      headers: _headers,
-    );
+          headers: _headers,
+        );
+    var response =
+        await fetch('player_name,color_hex,interact_every_days,ready,persona');
+    if (response.statusCode == 400) {
+      // A server from before seat personas.
+      response = await fetch('player_name,color_hex,interact_every_days,ready');
+    }
     _ensureOk(response, 'fetch roster');
     if (response.body.isEmpty || response.body == '[]') return [];
     final decoded = jsonDecode(response.body);
@@ -656,6 +664,7 @@ class PostgrestSyncService implements GameSyncService {
         colorHex: row['color_hex'] as String? ?? _defaultColorHex,
         interactEveryDays: row['interact_every_days'] as int? ?? 1,
         ready: row['ready'] as bool? ?? false,
+        persona: row['persona'] as String? ?? '',
       );
 
   @override
