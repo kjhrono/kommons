@@ -281,6 +281,28 @@ void main() {
       expect(delivered, [Uri.parse('join:WARM7')]);
     });
 
+    testWidgets('a handler navigates through the shell navigator key',
+        (tester) async {
+      // Handlers run above the MaterialApp: Navigator.of(context) there
+      // finds nothing, so the invite must push through the key.
+      links.initialLink = Uri.parse('https://herald.game/#join=NAV42');
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(ShellApp(
+        title: 'HERALD',
+        seedColor: const Color(0xff7a5c2e),
+        navigatorKey: navigatorKey,
+        onJoinInvite: (invite) => navigatorKey.currentState!.push(
+            MaterialPageRoute(
+                builder: (_) => Scaffold(body: Text('lobby ${invite.code}')))),
+        home: const Scaffold(body: Text('splash')),
+      ));
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.text('lobby NAV42'), findsOneWidget);
+    });
+
     testWidgets('links without an invite are ignored', (tester) async {
       links.initialLink = Uri.parse('https://herald.game/#ref=news');
       final delivered = <Uri>[];

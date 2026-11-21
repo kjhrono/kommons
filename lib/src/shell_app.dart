@@ -69,12 +69,18 @@ class ShellApp extends StatefulWidget {
     this.debugShowCheckedModeBanner = false,
     this.onJoinInvite,
     this.onRecoveryLink,
+    this.navigatorKey,
     this.showPreferencesSyncedNotice = true,
     this.restoreSessionsFromLinks = true,
   });
 
   /// The app's home — usually the game's [AppSplash].
   final Widget home;
+
+  /// The MaterialApp's navigator. Link handlers ([onJoinInvite],
+  /// [onRecoveryLink]) run above the MaterialApp, where `Navigator.of`
+  /// finds nothing: they navigate through this key's state instead.
+  final GlobalKey<NavigatorState>? navigatorKey;
 
   /// The seed behind the default seeded themes (ignored when a
   /// [themeBuilder] is supplied).
@@ -406,6 +412,7 @@ class _ShellAppState extends State<ShellApp> {
           }
 
           return MaterialApp(
+            navigatorKey: widget.navigatorKey,
             title: widget.title,
             debugShowCheckedModeBanner: widget.debugShowCheckedModeBanner,
             scaffoldMessengerKey: _messengerKey,
