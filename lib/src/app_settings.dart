@@ -96,10 +96,10 @@ Future<({String url, String anonKey})?> effectiveServerConnection() async {
   final stored = prefs.getString('prefs.online.serverUrl') ?? '';
   final url = stored.isNotEmpty ? stored : GameServerDefaults.url;
   if (url.isEmpty) return null;
-  final key = GameServerDefaults.isDefault(url) &&
-          GameServerDefaults.anonKey.isNotEmpty
-      ? GameServerDefaults.anonKey
-      : (prefs.getString('prefs.online.anonKey') ?? '');
+  final key =
+      GameServerDefaults.isDefault(url) && GameServerDefaults.anonKey.isNotEmpty
+          ? GameServerDefaults.anonKey
+          : (prefs.getString('prefs.online.anonKey') ?? '');
   return (url: url, anonKey: key);
 }
 
@@ -412,6 +412,12 @@ class AccountController extends ValueNotifier<Account?> {
   /// the host sets this; on the web it stays null and [Uri.base.origin]
   /// is used.
   Uri? oauthRedirectUri;
+
+  /// The MediaSart hub behind [signInWithMediaSart]: its
+  /// `/<lang>/connect` page is where a player already signed in on
+  /// mediasart.com picks "Continue as …" and comes back with a fresh
+  /// session for this app. Override for a staging hub.
+  Uri mediasartHub = Uri.parse('https://mediasart.com');
 
   /// Where the auth service lives. Defaults to the standard prefs keys;
   /// apps with a different configuration source set this after
@@ -1530,15 +1536,50 @@ class AccountController extends ValueNotifier<Account?> {
       throw const AuthException('no_server',
           'Configure the game server first (host or join an online room once).');
     }
-    final collector =
-        collectOAuthFragment ?? oauth_launcher.collectOAuthFragment;
-
     // The default web collector pops a window back onto this app's origin
     // (null off the web); custom collectors — tests, callback pages, deep
     // links — pick their own target and may ignore the redirect entirely.
     final target = redirectTo ?? oauthRedirectUri ?? _webOrigin() ?? Uri();
     final authorize =
         service.authorizeUrl(provider: provider, redirectTo: target);
+    await _signInViaAuthorize(service, authorize, provider);
+  }
+
+  /// "Sign in with MediaSart": the player signs in (or is already signed
+  /// in) on the MediaSart hub, confirms "Continue as …", and comes back
+  /// with this app's OWN session for the same account — not a copy of
+  /// the hub's, so signing out here never signs them out elsewhere.
+  ///
+  /// Same plumbing as [signInWithProvider] — the popup on the web, the
+  /// system browser plus app-link redirect on Android/iOS — because the
+  /// hub hands the session back in the same implicit-fragment shape a
+  /// provider redirect uses (`#access_token=…&provider=mediasart`). The
+  /// redirect target follows the same rules too ([redirectTo], else
+  /// [oauthRedirectUri], else the web origin) and must be in the identity
+  /// stack's ADDITIONAL_REDIRECT_URLS. Requires the app's game server to
+  /// be the MediaSart identity stack (auth.mediasart.com or a project's
+  /// `<project>.mediasart.com`), which issued the session.
+  Future<void> signInWithMediaSart({Uri? redirectTo}) async {
+    final service = await _ensureService();
+    if (service == null) {
+      throw const AuthException('no_server',
+          'Configure the game server first (host or join an online room once).');
+    }
+    final target = redirectTo ?? oauthRedirectUri ?? _webOrigin() ?? Uri();
+    final connect = AuthService.mediasartConnectUrl(
+      hub: mediasartHub,
+      redirectTo: target,
+      language: appLocale.value?.code,
+    );
+    await _signInViaAuthorize(service, connect, 'mediasart');
+  }
+
+  /// The shared body of the redirect sign-ins: run the collector on
+  /// [authorize], decode the fragment, confirm the account and persist.
+  Future<void> _signInViaAuthorize(
+      AuthService service, Uri authorize, String provider) async {
+    final collector =
+        collectOAuthFragment ?? oauth_launcher.collectOAuthFragment;
 
     // A parked email signup would be overwritten by the provider session —
     // mirror the cancel path: the player chose a different route in.
@@ -1783,6 +1824,7 @@ class AccountController extends ValueNotifier<Account?> {
     _oauthFlowInFlight = false;
     _fragmentConsumedByFlow = null;
     oauthRedirectUri = null;
+    mediasartHub = Uri.parse('https://mediasart.com');
     serverConnection = readStandardServerConnection;
     _syncPushTimer?.cancel();
     _pendingPushes.clear();

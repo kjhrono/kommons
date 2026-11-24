@@ -63,6 +63,7 @@ class ShellStrings {
     this.passwordLabel = 'Password (cloud account)',
     this.passwordHint = '6+ characters — registers on first use',
     this.signInWithEmail = 'Sign in with email',
+    this.signInWithMediaSart = 'Sign in with MediaSart',
     this.serverOnboardingHint =
         'Cloud accounts register on your game server — connect once below (the same connection online multiplayer uses).',
     this.connectGameServer = 'Connect game server',
@@ -266,6 +267,7 @@ class ShellStrings {
       String? passwordLabel,
       String? passwordHint,
       String? signInWithEmail,
+      String? signInWithMediaSart,
       String? serverOnboardingHint,
       String? connectGameServer,
       String? createOrSignInCloud,
@@ -438,6 +440,7 @@ class ShellStrings {
         passwordLabel = passwordLabel ?? 'Password (account cloud)',
         passwordHint = passwordHint ?? '6+ caratteri — registra al primo uso',
         signInWithEmail = signInWithEmail ?? 'Accedi con email',
+        signInWithMediaSart = signInWithMediaSart ?? 'Accedi con MediaSart',
         serverOnboardingHint =
             'Gli account cloud si registrano sul tuo game server — connettilo una volta qui sotto (la stessa connessione che usa il multiplayer online).',
         connectGameServer = connectGameServer ?? 'Connetti game server',
@@ -711,6 +714,9 @@ class ShellStrings {
   final String passwordLabel;
   final String passwordHint;
   final String signInWithEmail;
+
+  /// The hub sign-in button ([AccountController.signInWithMediaSart]).
+  final String signInWithMediaSart;
   final String serverOnboardingHint;
   final String connectGameServer;
   final String createOrSignInCloud;

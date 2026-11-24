@@ -255,6 +255,26 @@ class AuthService {
     );
   }
 
+  /// The MediaSart hub's "Sign in with MediaSart" page:
+  /// `<hub>/<lang>/connect?redirect_to=…`. The hub (mediasart.com) shows
+  /// "Continue as …" (or its sign-in first), mints this app a fresh
+  /// session and redirects to [redirectTo] with it in the fragment —
+  /// the same shape [sessionFromImplicitFragment] decodes for OAuth.
+  /// [language] picks the hub's locale ('en' or 'it'; anything else → en).
+  static Uri mediasartConnectUrl({
+    required Uri hub,
+    required Uri redirectTo,
+    String? language,
+  }) {
+    final lang = language == 'it' ? 'it' : 'en';
+    var path = hub.path;
+    if (path.endsWith('/')) path = path.substring(0, path.length - 1);
+    return hub.replace(
+      path: '$path/$lang/connect/',
+      queryParameters: {'redirect_to': redirectTo.toString()},
+    );
+  }
+
   /// Decodes the implicit fragment the authorize redirect appended
   /// (`#access_token=…&refresh_token=…`), mirroring [AuthSession.fromJson].
   /// Null when the fragment is absent or carries an error instead

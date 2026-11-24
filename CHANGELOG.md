@@ -5,6 +5,31 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
+## Unreleased
+
+### Added: "Sign in with MediaSart"
+
+One account already worked in every project; now one sign-in does too, with
+a click instead of retyping the password. `AccountController.signInWithMediaSart()`
+opens the hub's `https://mediasart.com/<lang>/connect/?redirect_to=…` page (popup
+on the web, system browser + app link on Android/iOS — the same collectors as
+Google). A player already signed in on mediasart.com picks "Continue as …"; a
+signed-out one signs in or registers there first. The hub then mints the app
+its **own** session for that account (new kit edge function `sso-handoff`:
+admin magic link consumed server-side, never mailed) and redirects back with
+it in the provider-fragment shape (`#access_token=…&provider=mediasart`), so
+signing out of one app never signs the player out of another.
+
+- `oauthPopupHandlers()` now includes `'mediasart'` by default, and the
+  settings screen shows a full-width **Sign in with MediaSart** button above
+  the provider row whenever the host registers it.
+- `AuthService.mediasartConnectUrl()` builds the hub URL; `mediasartHub`
+  overrides the hub (staging).
+- `sso-handoff` accepts only a live session from the hub origin
+  (`KIT_SSO_HUB_ORIGINS`), refuses kit-banned accounts, and only redirects to
+  targets in `KIT_SSO_REDIRECTS` — the stack's `ADDITIONAL_REDIRECT_URLS`, so
+  mobile schemes (`kalcio://auth`) must be listed there, as for Google.
+
 ## 0.10.0 — 2026-11-03
 
 ### Fixed: a client-chosen product name can no longer fake a welcome mail

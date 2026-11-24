@@ -19,7 +19,9 @@ typedef OAuthProviderHandler = Future<void> Function();
 /// The reference OAuth wiring for hosts using the shared web flow: maps
 /// each provider id ('google', 'github' — anything the game server has
 /// configured in its GoTrue/Supabase dashboard) to the account controller's
-/// [AccountController.signInWithProvider]. Pass it straight in:
+/// [AccountController.signInWithProvider], and 'mediasart' to
+/// [AccountController.signInWithMediaSart] (the hub sign-in, shown as the
+/// prominent "Sign in with MediaSart" button). Pass it straight in:
 ///
 /// ```dart
 /// SettingsScreen(oauthProviders: oauthPopupHandlers())
@@ -30,11 +32,13 @@ typedef OAuthProviderHandler = Future<void> Function();
 /// callback page, a fully hand-rolled deep-link delivery) keep hand-rolling
 /// their handlers map instead.
 Map<String, OAuthProviderHandler> oauthPopupHandlers({
-  List<String> providers = const ['google', 'github'],
+  List<String> providers = const ['mediasart', 'google', 'github'],
 }) =>
     {
       for (final provider in providers)
-        provider: () => account.signInWithProvider(provider),
+        provider: provider == 'mediasart'
+            ? () => account.signInWithMediaSart()
+            : () => account.signInWithProvider(provider),
     };
 
 /// Lets a hosting app wire the "connect your server" affordance inside the
@@ -69,6 +73,8 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     this.gameId = 'app',
     this.extraSections = const <Widget>[],
+    this.leadingSections = const <Widget>[],
+    this.appearanceSection,
     this.oauthProviders = const <String, OAuthProviderHandler>{},
     this.serverSetup,
     this.showAccountCard = true,
@@ -82,6 +88,18 @@ class SettingsScreen extends StatefulWidget {
   /// Game-specific section cards, rendered below the shared ones (before
   /// the footer note).
   final List<Widget> extraSections;
+
+  /// Host cards rendered FIRST, above everything shared — for hosts that own
+  /// identity themselves ([showAccountCard] false) and want their account
+  /// card where the shared one would sit. When given, the player-name card
+  /// follows them directly (the name belongs with the account), ahead of the
+  /// theme, contrast and language cards.
+  final List<Widget> leadingSections;
+
+  /// Replaces the shared theme toggle and high-contrast card with one host
+  /// card, for hosts that pick more of the look (a colour theme, say) and
+  /// want it in a single place. The host then owns both controls.
+  final Widget? appearanceSection;
 
   /// Provider handlers keyed by provider id ('google', 'github', …). A
   /// provider without a handler renders its button disabled.
@@ -250,12 +268,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final strings = appLocale.strings;
+    // -- Player name ---------------------------------------------------------
+    // Built once, placed in one of two spots (see [leadingSections]).
+    final playerName = Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.badge_outlined),
+                const SizedBox(width: 8),
+                Text(strings.playerNameHeader,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2)),
+              ]),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey('player-name-field'),
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: strings.playerNameLabel,
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: _saveName,
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('save-name'),
+                onPressed: () => _saveName(_nameController.text),
+                icon: const Icon(Icons.check),
+                label: Text(strings.saveName),
+              ),
+            ]),
+      ),
+    );
     return Scaffold(
       appBar: AppBar(title: Text(strings.settingsTitle)),
       body: ListView(
           key: const ValueKey('settings-list'),
           padding: const EdgeInsets.all(16),
           children: [
+            // -- Host's leading cards (its own account), then the name ---------
+            if (widget.leadingSections.isNotEmpty) ...[
+              ...widget.leadingSections,
+              playerName,
+              const SizedBox(height: 8),
+            ],
             // -- Account (host may hide it and own identity elsewhere) ----------
             if (widget.showAccountCard) ...[
               ListenableBuilder(
@@ -461,6 +521,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               autofillHints: const [AutofillHints.password],
                             ),
                             const SizedBox(height: 8),
+                            if (_providerEnabled('mediasart')) ...[
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.tonalIcon(
+                                  key: const ValueKey('oauth-mediasart'),
+                                  onPressed: () => _runProvider('mediasart'),
+                                  icon:
+                                      const Icon(Icons.account_circle_outlined),
+                                  label: Text(strings.signInWithMediaSart),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
                             Row(children: [
                               if (widget.showEmailOnlySignIn) ...[
                                 FilledButton.icon(
@@ -734,66 +807,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ],
-            // -- Theme ----------------------------------------------------------
-            ThemeToggleButton(),
-            const SizedBox(height: 8),
+            if (widget.appearanceSection != null) ...[
+              widget.appearanceSection!,
+              const SizedBox(height: 8),
+            ] else ...[
+              // -- Theme ----------------------------------------------------------
+              ThemeToggleButton(),
+              const SizedBox(height: 8),
 
-            // -- Contrast -------------------------------------------------------
-            // A switch, not just the bar's icon button: settings is where a
-            // player looks for accessibility, and the subtitle says what the
-            // mode changes rather than leaving it to inference from the tint.
-            Card(
-              child: ListenableBuilder(
-                listenable: appContrast,
-                builder: (context, _) => SwitchListTile(
-                  key: const ValueKey('contrast-tile'),
-                  secondary: Icon(appContrast.enabled
-                      ? Icons.contrast
-                      : Icons.contrast_outlined),
-                  title: Text(strings.highContrastTooltip),
-                  subtitle: Text(strings.highContrastHint),
-                  value: appContrast.enabled,
-                  onChanged: (on) => appContrast.enabled = on,
+              // -- Contrast -------------------------------------------------------
+              // A switch, not just the bar's icon button: settings is where a
+              // player looks for accessibility, and the subtitle says what the
+              // mode changes rather than leaving it to inference from the tint.
+              Card(
+                child: ListenableBuilder(
+                  listenable: appContrast,
+                  builder: (context, _) => SwitchListTile(
+                    key: const ValueKey('contrast-tile'),
+                    secondary: Icon(appContrast.enabled
+                        ? Icons.contrast
+                        : Icons.contrast_outlined),
+                    title: Text(strings.highContrastTooltip),
+                    subtitle: Text(strings.highContrastHint),
+                    value: appContrast.enabled,
+                    onChanged: (on) => appContrast.enabled = on,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-
-            // -- Player name ---------------------------------------------------
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        const Icon(Icons.badge_outlined),
-                        const SizedBox(width: 8),
-                        Text(strings.playerNameHeader,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2)),
-                      ]),
-                      const SizedBox(height: 12),
-                      TextField(
-                        key: const ValueKey('player-name-field'),
-                        controller: _nameController,
-                        decoration: InputDecoration(
-                          labelText: strings.playerNameLabel,
-                          border: const OutlineInputBorder(),
-                        ),
-                        onSubmitted: _saveName,
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        key: const ValueKey('save-name'),
-                        onPressed: () => _saveName(_nameController.text),
-                        icon: const Icon(Icons.check),
-                        label: Text(strings.saveName),
-                      ),
-                    ]),
-              ),
-            ),
+              const SizedBox(height: 8),
+            ],
+            if (widget.leadingSections.isEmpty) playerName,
             // -- Language -------------------------------------------------------
             Card(
               key: const ValueKey('language-tile'),
