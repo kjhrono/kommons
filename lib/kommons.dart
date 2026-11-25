@@ -1,17 +1,24 @@
-/// The Kommons: everything a kjhrono game hosts before its own
-/// content starts — the top bar with the release version and theme toggle,
+/// The Kommons: everything a kjhrono app hosts before its own
+/// content starts — the shared top bar (account, plan, storage, theme),
 /// the account/auth flow (email sign-in plus provider seams), the settings
 /// screen those controls open, and the persisted day/night theme.
 ///
 /// Games consume this as a path (or later git) dependency and supply their
-/// identity through the seams each widget exposes: [AppTopBar.settingsBuilder]
+/// identity through the seams each widget exposes: [ShellTopBar.settingsBuilder]
 /// decides which settings screen opens, [SettingsScreen]'s `extraSections`
 /// append game-specific cards below the shared ones, and the OAuth provider
 /// map turns the Google/GitHub buttons into live flows per app.
 library;
 
 export 'src/app_settings.dart';
-export 'src/app_top_bar.dart';
+export 'src/shell_top_bar.dart';
+export 'src/shell_entitlements.dart';
+export 'src/premium_offline_card.dart';
+export 'src/shell_avatar.dart';
+export 'src/shell_accent.dart';
+export 'src/shell_backup.dart';
+export 'src/delete_account_tile.dart';
+export 'src/player_avatar_picker.dart';
 export 'src/high_contrast.dart';
 export 'src/high_contrast_toggle_button.dart';
 export 'src/shell_inks.dart';

@@ -59,7 +59,8 @@ the localized string catalog — themed, translated and ready.
 - **Shell** — `ShellApp` (the root: MaterialApp wired with the persisted
   theme + locale and the shell preloads), `AppSplash` (art + entrance
   cascade; `SplashActions.direct*` for apps that enter without a lobby),
-  `AppTopBar`, the shared `SettingsScreen` with email +
+  `ShellTopBar` (account, plan, storage, notifications, theme; see
+  `docs/SHELL_TOP_BAR.md`), `ShellEntitlements` (per-app premium), the shared `SettingsScreen` with email +
   reference OAuth sign-in (Google, GitHub — the game server's hosted
   authorize flow: popups on the web, deep links through the system browser
   on Android/iOS),  persisted day/night theme (`appTheme`),
@@ -79,7 +80,9 @@ the localized string catalog — themed, translated and ready.
 - **Tooling** — `tool/deploy.sh` (config-driven commit → push → sync →
   migrate → build → publish, per-user via a git-ignored `deploy.config`,
   template in `deploy.config.example`) and `tool/verify_consumers.sh`
-  (the one-command gate over package + probe, also the CI step).
+  (the one-command gate over package + probe, also the CI step), and
+  `tool/sync_mirror.sh` (the committed tree → `mediasart_u26:/srv/kommons`,
+  stamped in `.mirror_commit`; `--check` compares only).
 - **The central identity stack's allow list** —
   `tool/identity-redirect-allowlist.txt`
   is the declarative source of truth for the central identity stack's GoTrue

@@ -12,6 +12,7 @@
 //     "theme": "dark",
 //     "locale": "it",
 //     "playerName": "Marcuz",
+//     "avatar": "preset:fox",
 //     "updatedAt": { "theme": 1758500000, "locale": 1758500123 }
 // } }
 // ```
@@ -40,7 +41,14 @@ enum ShellPrefKey {
   locale('locale'),
 
   /// Player name, a plain trimmed string.
-  playerName('playerName');
+  playerName('playerName'),
+
+  /// Avatar choice, a [ShellAvatar] token: `initials`, `provider` (the
+  /// sign-in provider's photo, e.g. Google) or `preset:<id>`.
+  avatar('avatar'),
+
+  /// Colour theme: a [ShellAccent] id, or 'app' for the app's own colour.
+  accent('accent');
 
   const ShellPrefKey(this.key);
 
@@ -216,6 +224,8 @@ bool shellPrefShouldApply(
   required String? localTheme,
   required String? localLocale,
   required String? localPlayerName,
+  String? localAvatar,
+  String? localAccent,
   required Map<String, int> localStamps,
 }) {
   final cloudStamps = shellPreferenceTimestamps(cloudPreferences);
@@ -227,6 +237,8 @@ bool shellPrefShouldApply(
     ShellPrefKey.theme: localTheme,
     ShellPrefKey.locale: localLocale,
     ShellPrefKey.playerName: localPlayerName,
+    ShellPrefKey.avatar: localAvatar,
+    ShellPrefKey.accent: localAccent,
   };
 
   final pull = <ShellPrefKey, String>{};

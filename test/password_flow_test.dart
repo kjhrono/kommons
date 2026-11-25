@@ -296,12 +296,24 @@ void main() {
   group('Settings screen password forms', () {
     testWidgets('the email-only button shows by default and hides on opt-out',
         (tester) async {
+      // The settings list is taller than the default 800x600 surface.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
         theme: ThemeData.dark(),
         home: const SettingsScreen(),
       ));
       await tester.pump();
       expect(find.byKey(const ValueKey('email-signin')), findsOneWidget);
+
+      // The settings list is taller than the default 800x600 surface.
+
+      tester.view.physicalSize = const Size(800, 2400);
+
+      tester.view.devicePixelRatio = 1;
+
+      addTearDown(tester.view.reset);
 
       await tester.pumpWidget(MaterialApp(
         theme: ThemeData.dark(),
@@ -317,6 +329,10 @@ void main() {
     });
 
     Future<void> pumpSettings(WidgetTester tester) async {
+      // The settings list is taller than the default 800x600 surface.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
         theme: ThemeData.dark(),
         home: const SettingsScreen(),
@@ -522,6 +538,10 @@ void main() {
       );
       await account.restoreFromSessionFragment(
           '#access_token=a&refresh_token=r&provider_token=pt&provider=github');
+      // The settings list is taller than the default 800x600 surface.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
           MaterialApp(theme: ThemeData.dark(), home: const SettingsScreen()));
       await tester.pump();
@@ -825,6 +845,10 @@ void main() {
 
   group('settings provenance line', () {
     testWidgets('reflects origins live', (tester) async {
+      // The settings list is taller than the default 800x600 surface.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
         theme: ThemeData.dark(),
         home: const SettingsScreen(),

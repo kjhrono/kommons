@@ -53,6 +53,12 @@ supabase stop                         # when done
 
 Mailpit UI (every mail the suite sent): http://127.0.0.1:54324
 
+## license_e2e.ts — per-app premium
+
+Apply `supabase/migrations/20261125000000_email_auth_kit_licenses.sql`, start
+the `license` and `account-delete` functions locally, then run the suite. The exact commands are at
+the top of `license_e2e.ts`.
+
 ## verify_vm_project.sh — VM acceptance (Phase 1)
 
 The Phase 0 checks parameterized for the real VM

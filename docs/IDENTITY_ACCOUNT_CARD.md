@@ -56,6 +56,10 @@ it (`lib/features/shell/account_card.dart`).
    `notSignedInText` and `createAccountLabel` let the app adjust those two
    lines.
 
+4. Attach the host to the shell so theme, language, player name and avatar
+   sync with this account: `ShellApp(identityHost: MyIdentityHost(), ...)`,
+   or `account.attachIdentityHost(host)` at startup.
+
 The pieces work on their own too:
 
 - `signInOrLinkGoogle(host)` runs the Google step for an app's own button.

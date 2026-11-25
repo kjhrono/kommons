@@ -18,6 +18,10 @@ void main() {
 
   testWidgets('settings screen shows shared sections and app extras',
       (tester) async {
+    // The settings list is taller than the default 800x600 surface.
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
       home: SettingsScreen(
@@ -39,6 +43,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('player-name-field')), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey('contrast-tile')),
+      find.byKey(const ValueKey('settings-list')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('contrast-tile')), findsOneWidget);
     await tester.dragUntilVisible(
       find.byKey(const ValueKey('language-tile')),
@@ -60,6 +70,10 @@ void main() {
       'oauth buttons enable only for registered providers and run their handler',
       (tester) async {
     var googleRuns = 0;
+    // The settings list is taller than the default 800x600 surface.
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
       home:
@@ -83,6 +97,10 @@ void main() {
       'server onboarding appears while unconfigured and clears after the dialog',
       (tester) async {
     var configured = false;
+    // The settings list is taller than the default 800x600 surface.
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
       home: SettingsScreen(
@@ -107,11 +125,14 @@ void main() {
   testWidgets('top bar opens the host settings builder and toggles the theme',
       (tester) async {
     ThemeMode? openedWith;
+    // The settings list is taller than the default 800x600 surface.
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),
       home: Scaffold(
-        body: AppTopBar(
-          title: 'PROBE',
+        appBar: ShellTopBar(
           settingsBuilder: () => SettingsScreen(
             gameId: 'probe',
             extraSections: const [
@@ -122,9 +143,6 @@ void main() {
       ),
     ));
     await tester.pump();
-
-    // Version chip renders (package_info answers synchronously in tests).
-    expect(find.text('PROBE'), findsOneWidget);
 
     // The toggle cycles the shared notifier through all three modes
     // (light → dark → system → light), and its icon shows the NEXT step.
@@ -139,7 +157,7 @@ void main() {
     expect(appTheme.mode, ThemeMode.light);
 
     // The gear opens the host's settings screen.
-    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.tap(find.byKey(const ValueKey('settings-button')));
     await tester.pumpAndSettle();
     openedWith = appTheme.mode;
     expect(openedWith, ThemeMode.light);
@@ -153,7 +171,13 @@ void main() {
 
     // The settings screen carries the same toggle, and it followed along:
     // in light mode it offers the dark step. The top bar that opened this
-    // route is offstage now, so this is the settings instance.
+    // route is offstage now, so this is the settings instance. (The
+    // avatar picker made the list taller: scroll back up to the toggle.)
+    await tester.dragUntilVisible(
+      find.byIcon(Icons.dark_mode_outlined),
+      find.byKey(const ValueKey('settings-list')),
+      const Offset(0, 200),
+    );
     expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
 
     appTheme.mode = ThemeMode.dark; // don't leak into the next test

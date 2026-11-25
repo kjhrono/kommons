@@ -68,6 +68,31 @@ class IdentityAccountInfo {
   }
 }
 
+/// The claims of an identity session's access token (empty when absent or
+/// unreadable). Read only, never verified: the stack minted the token, and
+/// the app grants nothing on its own from these.
+Map<String, dynamic> identityClaims(kit.AuthSession? session) =>
+    session == null ? const {} : decodeJwtClaims(session.accessToken);
+
+/// The payload claims of any JWT, unverified (empty when unreadable).
+Map<String, dynamic> decodeJwtClaims(String token) {
+  try {
+    final part = token.split('.')[1];
+    final claims = jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(part))),
+    );
+    if (claims is Map) return claims.map((k, v) => MapEntry('$k', v));
+  } catch (_) {}
+  return const {};
+}
+
+/// The session's `user_metadata` claim: name, Google photo, the synced
+/// `kommons` preferences (as of when the token was issued).
+Map<String, dynamic> identityUserMetadata(kit.AuthSession? session) {
+  final meta = identityClaims(session)['user_metadata'];
+  return meta is Map ? meta.map((k, v) => MapEntry('$k', v)) : const {};
+}
+
 /// What the card needs from the app hosting it. The app owns where the
 /// session lives; the card owns the flows.
 abstract class IdentityAccountHost {
@@ -278,14 +303,27 @@ class IdentityAccountCard extends StatelessWidget {
             ),
             if (info.signedIn) ...[
               const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
-                  key: const ValueKey('account-sign-out'),
-                  icon: const Icon(Icons.logout, size: 18),
-                  label: Text(s.signOut),
-                  onPressed: host.signOut,
-                ),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  // Only accounts with a password have one to change.
+                  if (emailLinked)
+                    TextButton.icon(
+                      key: const ValueKey('account-change-password'),
+                      icon: const Icon(Icons.password, size: 18),
+                      label: Text(s.changePassword),
+                      onPressed: () =>
+                          showIdentityChangePasswordDialog(context, host),
+                    ),
+                  OutlinedButton.icon(
+                    key: const ValueKey('account-sign-out'),
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: Text(s.signOut),
+                    onPressed: host.signOut,
+                  ),
+                ],
               ),
             ],
           ],
@@ -461,6 +499,125 @@ class _SignInDialogState extends State<_SignInDialog> {
   }
 }
 
+/// The change-password dialog: new password twice, then the identity
+/// stack rotates the session (the host adopts the fresh tokens). Returns
+/// true when the password changed.
+Future<bool> showIdentityChangePasswordDialog(
+    BuildContext context, IdentityAccountHost host) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final changed = await showDialog<bool>(
+    context: context,
+    builder: (_) => _ChangePasswordDialog(host: host),
+  );
+  if (changed == true) {
+    messenger.showSnackBar(
+        SnackBar(content: Text(identityAccountStrings.passwordChanged)));
+  }
+  return changed == true;
+}
+
+class _ChangePasswordDialog extends StatefulWidget {
+  const _ChangePasswordDialog({required this.host});
+
+  final IdentityAccountHost host;
+
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final s = identityAccountStrings;
+    if (_password.text != _confirm.text) {
+      setState(() => _error = s.passwordsDontMatch);
+      return;
+    }
+    final session = widget.host.currentSession;
+    if (session == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      kit.AuthSession? fresh;
+      await widget.host.auth.changePassword(
+        session: session,
+        newPassword: _password.text,
+        onSessionUpdated: (updated) => fresh = updated,
+      );
+      if (fresh != null) await widget.host.adoptSession(fresh!);
+      if (mounted) Navigator.pop(context, true);
+    } on kit.AuthCodeException catch (e) {
+      setState(() {
+        _busy = false;
+        _error = e.reason == 'weak_password' ? s.weakPassword : s.changeFailed;
+      });
+    } catch (_) {
+      setState(() {
+        _busy = false;
+        _error = s.changeFailed;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = identityAccountStrings;
+    return AlertDialog(
+      title: Text(s.changePassword),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            key: const ValueKey('account-new-password'),
+            controller: _password,
+            obscureText: true,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: InputDecoration(labelText: s.newPassword),
+          ),
+          TextField(
+            key: const ValueKey('account-confirm-password'),
+            controller: _confirm,
+            obscureText: true,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: InputDecoration(labelText: s.confirmPassword),
+            onSubmitted: (_) => _busy ? null : _save(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!,
+                key: const ValueKey('account-change-password-error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: Text(s.cancel),
+        ),
+        FilledButton(
+          key: const ValueKey('account-change-password-save'),
+          onPressed: _busy ? null : _save,
+          child: Text(s.save),
+        ),
+      ],
+    );
+  }
+}
+
 /// The card's text, in the app's chosen language ([appLocale]).
 class IdentityAccountStrings {
   const IdentityAccountStrings.english()
@@ -483,7 +640,15 @@ class IdentityAccountStrings {
         signInFailed = 'Sign-in failed. Check email and password.',
         banned = 'This account is suspended.',
         cancel = 'Cancel',
-        googleFailedPrefix = 'Google sign-in failed';
+        googleFailedPrefix = 'Google sign-in failed',
+        changePassword = 'Change password',
+        newPassword = 'New password',
+        confirmPassword = 'Repeat the new password',
+        passwordsDontMatch = 'The two passwords differ.',
+        weakPassword = 'Too short or too simple. Try a longer password.',
+        changeFailed = 'Could not change the password. Try again.',
+        passwordChanged = 'Password changed',
+        save = 'Save';
 
   const IdentityAccountStrings.italian()
       : title = 'Account',
@@ -505,7 +670,15 @@ class IdentityAccountStrings {
         signInFailed = 'Accesso non riuscito. Controlla email e password.',
         banned = 'Questo account è sospeso.',
         cancel = 'Annulla',
-        googleFailedPrefix = 'Accesso con Google non riuscito';
+        googleFailedPrefix = 'Accesso con Google non riuscito',
+        changePassword = 'Cambia password',
+        newPassword = 'Nuova password',
+        confirmPassword = 'Ripeti la nuova password',
+        passwordsDontMatch = 'Le due password sono diverse.',
+        weakPassword = 'Troppo corta o semplice. Prova una password più lunga.',
+        changeFailed = 'Impossibile cambiare la password. Riprova.',
+        passwordChanged = 'Password cambiata',
+        save = 'Salva';
 
   final String title;
   final String notSignedIn;
@@ -527,6 +700,14 @@ class IdentityAccountStrings {
   final String banned;
   final String cancel;
   final String googleFailedPrefix;
+  final String changePassword;
+  final String newPassword;
+  final String confirmPassword;
+  final String passwordsDontMatch;
+  final String weakPassword;
+  final String changeFailed;
+  final String passwordChanged;
+  final String save;
 
   /// A failed Google step, with the kit's refusal code or the error.
   String googleFailed(String reason) => '$googleFailedPrefix ($reason)';

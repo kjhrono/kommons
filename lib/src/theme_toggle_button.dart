@@ -5,7 +5,7 @@ import 'app_settings.dart';
 /// A standalone theme mode toggle that cycles through
 /// [ThemeMode.light] → [ThemeMode.dark] → [ThemeMode.system] → [ThemeMode.light],
 /// so users can follow the OS theme. The same widget is used in both the
-/// top-bar header (`AppTopBar` / `AppTopBarActions`) and the settings screen
+/// top bar (`ShellTopBar`) and the settings screen
 /// (`SettingsScreen`), so a future redesign of the toggle only touches this file.
 class ThemeToggleButton extends StatelessWidget {
   const ThemeToggleButton({super.key, this.tooltip});

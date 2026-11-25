@@ -9,6 +9,8 @@ import 'app_settings.dart';
 import 'auth_service.dart' show AuthException;
 import 'confirmation_link.dart';
 import 'high_contrast.dart';
+import 'shell_accent.dart';
+import 'identity_account_card.dart' show IdentityAccountHost;
 import 'multiplayer/join_link.dart';
 import 'oauth_session_link.dart';
 import 'recovery_link.dart';
@@ -72,7 +74,21 @@ class ShellApp extends StatefulWidget {
     this.navigatorKey,
     this.showPreferencesSyncedNotice = true,
     this.restoreSessionsFromLinks = true,
+    this.identityHost,
+    this.allowAccent = true,
   });
+
+  /// Lets the player pick a colour theme in settings (presets, synced across
+  /// apps). The default theme seeds from the pick instead of [seedColor]; a
+  /// custom [themeBuilder] gets its colour scheme re-seeded from it. False
+  /// keeps the app's look fixed and hides the picker.
+  final bool allowAccent;
+
+  /// The app's MediaSart identity host, when it signs in through
+  /// [IdentityAccountCard]. The shell attaches it to [account] after the
+  /// startup preload, so the synced preferences (theme, language, player
+  /// name, avatar) are read from and written to that account.
+  final IdentityAccountHost? identityHost;
 
   /// The app's home — usually the game's [AppSplash].
   final Widget home;
@@ -154,6 +170,9 @@ class _ShellAppState extends State<ShellApp> {
   @override
   void initState() {
     super.initState();
+    appAccent
+      ..available = widget.allowAccent
+      ..appColor = widget.seedColor;
     // The startup preload the shell docs used to ask hosts to write — one
     // place, before the first frame can paint a stale welcome or theme.
     // The explicit rebuild afterwards covers restores that don't notify
@@ -170,9 +189,12 @@ class _ShellAppState extends State<ShellApp> {
     await Future.wait([
       appTheme.load(),
       appLocale.load(),
+      appAccent.load(),
       appContrast.load(),
       account.load(),
     ]);
+    final host = widget.identityHost;
+    if (host != null) account.attachIdentityHost(host);
     if (mounted) setState(() {});
   }
 
@@ -395,19 +417,28 @@ class _ShellAppState extends State<ShellApp> {
         // the splash welcome with the restored player name.
         // appContrast too: flipping the setup flow's contrast toggle repaints
         // the MaterialApp's themes without the host rebuilding anything.
-        animation:
-            Listenable.merge([appTheme, appLocale, account, appContrast]),
+        animation: Listenable.merge(
+            [appTheme, appLocale, account, appContrast, appAccent]),
         builder: (context, _) {
+          final accent = widget.allowAccent ? appAccent.value : null;
+          final seed = accent?.color ?? widget.seedColor;
           final themeBuilder = widget.themeBuilder ??
               (context, brightness) => ThemeData(
                     colorScheme: ColorScheme.fromSeed(
-                        seedColor: widget.seedColor, brightness: brightness),
+                        seedColor: seed, brightness: brightness),
                     useMaterial3: true,
                   );
           // Contrast is applied here, over whatever the host built, so a game
           // keeps its palette and every screen inherits the stronger edges.
           ThemeData themeFor(Brightness brightness) {
-            final base = themeBuilder(context, brightness);
+            var base = themeBuilder(context, brightness);
+            if (accent != null && widget.themeBuilder != null) {
+              // A custom theme keeps its shapes and type; only the colours
+              // follow the player's pick.
+              base = base.copyWith(
+                  colorScheme: ColorScheme.fromSeed(
+                      seedColor: accent.color, brightness: brightness));
+            }
             return appContrast.enabled ? highContrastTheme(base) : base;
           }
 

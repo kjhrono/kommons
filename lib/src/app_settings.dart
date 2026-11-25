@@ -2,15 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'auth_service.dart';
 import 'confirmation_link.dart';
+import 'identity_account_card.dart'
+    show IdentityAccountHost, identityUserMetadata;
 import 'oauth_popup_launcher.dart' as oauth_launcher;
 import 'oauth_revoke.dart';
 import 'recovery_link.dart';
+import 'shell_accent.dart';
+import 'shell_avatar.dart';
 import 'shell_preferences.dart';
 import 'shell_strings.dart'; // ---------------------------------------------------------------------------
 
@@ -367,6 +372,7 @@ class AccountController extends ValueNotifier<Account?> {
   AccountController() : super(null);
 
   static const _nameKey = 'prefs.account.playerName';
+  static const _avatarKey = 'prefs.account.avatar';
   static const _emailKey = 'prefs.account.email';
   static const _sessionKey = 'prefs.account.session';
   static const _pendingKey = 'prefs.account.pendingSignup';
@@ -464,9 +470,35 @@ class AccountController extends ValueNotifier<Account?> {
   /// signed-in players from their account.
   String playerName = 'Player';
 
+  /// The player's avatar choice, synced across projects like the name.
+  /// Unset (never chosen) shows the provider photo when there is one and
+  /// the initials otherwise — see [ShellAvatar.resolve].
+  ShellAvatar? avatar;
+
+  /// True when [playerName] is a real choice, not the shell's 'Player'
+  /// placeholder.
+  bool get hasChosenName => playerName != 'Player';
+
+  /// The sign-in provider's photo URL (Google's `avatar_url` / `picture`
+  /// in the user metadata), when the cloud session carries one.
+  String? get providerPhotoUrl =>
+      providerPhotoUrlFromMetadata(_accountMetadata);
+
+  /// The signed-in account's metadata (identity host first).
+  Map<String, dynamic> get _accountMetadata =>
+      _identityHost?.currentSession != null
+          ? _identityMetadata
+          : (_session?.userMetadata ?? const <String, dynamic>{});
+
+  /// The sign-in provider's full name (Google's `full_name` / `name`), to
+  /// propose as the player name.
+  String? get providerDisplayName =>
+      providerDisplayNameFromMetadata(_accountMetadata);
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     playerName = prefs.getString(_nameKey) ?? 'Player';
+    avatar = ShellAvatar.tryParse(prefs.getString(_avatarKey));
     final email = prefs.getString(_emailKey);
     if (email != null && email.isNotEmpty) {
       value = Account(displayName: playerName, email: email, provider: 'email');
@@ -654,6 +686,16 @@ class AccountController extends ValueNotifier<Account?> {
     unawaited(preferenceEdited(ShellPrefKey.playerName, playerName));
   }
 
+  /// Sets the player's avatar (settings → avatar picker). Persisted on
+  /// this device and pushed to the account like the name.
+  Future<void> setAvatar(ShellAvatar choice) async {
+    avatar = choice;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_avatarKey, choice.token);
+    unawaited(preferenceEdited(ShellPrefKey.avatar, choice.token));
+  }
+
   // -- Cross-project preference sync ----------------------------------------
 
   /// Runs the cross-project preference sync for a fresh session (call on
@@ -667,17 +709,14 @@ class AccountController extends ValueNotifier<Account?> {
   /// unconfigured servers fail quietly — the local experience is already
   /// correct and the next sign-in retries the merge.
   Future<void> syncPreferencesOnSignIn() async {
-    final session = _session;
-    if (session == null) return;
-    final service = await _ensureService();
-    if (service == null) return;
+    final channel = await _metadataChannel();
+    if (channel == null) return;
     final prefs = await SharedPreferences.getInstance();
 
     Map<String, dynamic> cloudPreferences;
     Map<String, dynamic> cloudMetadata;
     try {
-      final user = await service.fetchUser(session.accessToken);
-      cloudMetadata = user.metadata;
+      cloudMetadata = await channel.fetch();
       cloudPreferences = shellPreferencesFromMetadata(cloudMetadata);
     } catch (_) {
       // Unreachable server, revoked token, malformed answer: quiet no-op —
@@ -699,6 +738,8 @@ class AccountController extends ValueNotifier<Account?> {
           playerName == 'Player' && !localStamps.containsKey('playerName')
               ? null
               : playerName,
+      localAvatar: avatar?.token,
+      localAccent: await appAccent.storedToken(),
       localStamps: localStamps,
     );
 
@@ -765,7 +806,8 @@ class AccountController extends ValueNotifier<Account?> {
     // this device kept (its edit is fresher than the cloud's) keep their
     // local origin — the push does not change their story.
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    var pushMetadata = session.userMetadata;
+    final baseMetadata = channel.cached;
+    var pushMetadata = baseMetadata;
     if (reconcile.push.isNotEmpty) {
       await _markPreferenceOrigins(prefs,
           {for (final key in reconcile.push.keys) key: ShellPrefOrigin.local});
@@ -798,20 +840,162 @@ class AccountController extends ValueNotifier<Account?> {
           },
           now);
     }
-    if (!identical(pushMetadata, session.userMetadata)) {
+    if (!identical(pushMetadata, baseMetadata)) {
       try {
-        await service.updateUserMetadata(
-          accessToken: session.accessToken,
-          data: pushMetadata,
-        );
-        // Refresh the local session's metadata copy so a later push (e.g.
-        // a settings edit without a new fetch) sees the union.
-        _session = session.copyWith(userMetadata: pushMetadata);
-        await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+        // The channel also refreshes its metadata copy, so a later push
+        // (a settings edit without a new fetch) sees the union.
+        await channel.write(pushMetadata);
       } on AuthException {
         // The pull already applied; the push retries on the next sign-in.
       }
     }
+  }
+
+  // -- Where the synced metadata lives ---------------------------------------
+
+  /// The MediaSart identity host, when the app signs in through
+  /// [IdentityAccountCard] instead of this controller (see
+  /// [attachIdentityHost]).
+  IdentityAccountHost? _identityHost;
+  StreamSubscription<Object?>? _identitySub;
+  String? _identityUserId;
+
+  /// The identity account's metadata as last read or written (the JWT's
+  /// copy until the first fetch).
+  Map<String, dynamic> _identityMetadata = const {};
+
+  /// Test seam: the auth service the identity channel talks to. Null
+  /// builds one from the host's identity client.
+  @visibleForTesting
+  AuthService? identityAuthService;
+
+  /// Makes the identity host's account the place the synced preferences
+  /// (theme, language, player name, avatar, per-game maps) are read from
+  /// and written to, exactly as a cloud sign-in through this controller
+  /// does. Call once at startup (ShellApp does it for
+  /// [ShellApp.identityHost]). Each new identity sign-in runs the sync;
+  /// settings edits push to the identity account.
+  void attachIdentityHost(IdentityAccountHost host) {
+    if (identical(_identityHost, host)) return;
+    _identitySub?.cancel();
+    _identityHost = host;
+    _identitySub = host.sessionChanges.listen((_) => _onIdentitySession());
+    _onIdentitySession();
+  }
+
+  /// The attached identity host, if any.
+  IdentityAccountHost? get identityHost => _identityHost;
+
+  void _onIdentitySession() {
+    final session = _identityHost?.currentSession;
+    final userId = session?.userId;
+    if (session == null) {
+      _identityUserId = null;
+      _identityMetadata = const {};
+      notifyListeners();
+      return;
+    }
+    if (userId == _identityUserId) {
+      notifyListeners(); // a refresh: new token, maybe new claims
+      return;
+    }
+    _identityUserId = userId;
+    _identityMetadata = identityUserMetadata(session);
+    notifyListeners();
+    _signInSync = syncPreferencesOnSignIn();
+  }
+
+  /// True when an account (this controller's cloud session, or the
+  /// attached identity host's) receives the synced preferences.
+  bool get hasSyncedAccount =>
+      _identityHost?.currentSession != null || _session != null;
+
+  /// The signed-in account's id (identity host first), or null.
+  String? get currentUserId {
+    final identity = _identityHost?.currentSession;
+    if (identity != null) return identity.userId;
+    return _session?.userId;
+  }
+
+  /// The signed-in account's access token (identity host first), or null.
+  /// Its claims carry `app_metadata` (see [ShellEntitlements]).
+  String? get currentAccessToken =>
+      _identityHost?.currentSession?.accessToken ?? _session?.accessToken;
+
+  /// The auth server the signed-in account lives on (identity host
+  /// first): its base URL and API key, for calling its edge functions.
+  Future<({String url, String? apiKey})?> currentAuthServer() async {
+    final host = _identityHost;
+    if (host != null && host.currentSession != null) {
+      return (url: host.auth.supabaseUrl, apiKey: host.auth.anonKey);
+    }
+    if (_session == null) return null;
+    final connection = await serverConnection();
+    if (connection == null || connection.url.isEmpty) return null;
+    return (url: connection.url, apiKey: connection.apiKey);
+  }
+
+  /// Renews the session now (identity host first), so claims the server
+  /// changed since — a purchase in `app_metadata` — reach this device.
+  /// Returns false when signed out or the server is unreachable.
+  Future<bool> refreshSessionNow() async {
+    final host = _identityHost;
+    final identity = host?.currentSession;
+    try {
+      if (host != null && identity != null) {
+        await host
+            .adoptSession(await host.auth.refreshSession(session: identity));
+        return true;
+      }
+      final current = _session;
+      if (current == null) return false;
+      final service = await _ensureService();
+      if (service == null) return false;
+      _session = await service.refresh(current.refreshToken).then((s) =>
+          s.copyWith(
+              providerToken: current.providerToken,
+              providerName: current.providerName));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// The account metadata the sync reads and writes: the identity host's
+  /// when one is attached and signed in, else this controller's session.
+  Future<_MetadataChannel?> _metadataChannel() async {
+    final host = _identityHost;
+    final identity = host?.currentSession;
+    if (host != null && identity != null) {
+      final service = identityAuthService ??
+          AuthService(
+              serverUrl: host.auth.supabaseUrl, apiKey: host.auth.anonKey);
+      return _MetadataChannel(
+        service: service,
+        accessToken: identity.accessToken,
+        cached: _identityMetadata,
+        onFetched: (metadata) => _identityMetadata = metadata,
+        onWritten: (metadata) async => _identityMetadata = metadata,
+      );
+    }
+    final session = _session;
+    if (session == null) return null;
+    final service = await _ensureService();
+    if (service == null) return null;
+    return _MetadataChannel(
+      service: service,
+      accessToken: session.accessToken,
+      // The shell session keeps its own copy as the push base.
+      cached: session.userMetadata,
+      onWritten: (metadata) async {
+        _session = session.copyWith(userMetadata: metadata);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
+      },
+    );
   }
 
   /// Pulled-preference signal: fires with the number of values that
@@ -880,6 +1064,17 @@ class AccountController extends ValueNotifier<Account?> {
           return true;
         }
         return false;
+      case ShellPrefKey.accent:
+        if ((await appAccent.storedToken()) == value) return false;
+        await appAccent.applySynced(value);
+        return true;
+      case ShellPrefKey.avatar:
+        final parsed = ShellAvatar.tryParse(value);
+        if (parsed == null || parsed == avatar) return false;
+        avatar = parsed;
+        await prefs.setString(_avatarKey, parsed.token);
+        notifyListeners();
+        return true;
     }
   }
 
@@ -910,7 +1105,7 @@ class AccountController extends ValueNotifier<Account?> {
     // shows) and a stamp (so a cloud value cannot silently clobber an
     // offline choice at the next sign-in).
     await _markPreferenceOrigins(prefs, {key: ShellPrefOrigin.local});
-    if (_session == null) return;
+    if (!hasSyncedAccount) return;
     await _stampLocalEdits(prefs, {key: value});
     _pendingPushes[key] = value;
     _syncPushTimer?.cancel();
@@ -925,22 +1120,18 @@ class AccountController extends ValueNotifier<Account?> {
   Future<void>? _signInSync;
 
   Future<void> _flushPendingPushes() async {
-    final session = _session;
-    if (session == null ||
-        (_pendingPushes.isEmpty && _pendingGamePushes.isEmpty)) {
-      return;
-    }
-    final service = await _ensureService();
-    if (service == null) return;
+    if (_pendingPushes.isEmpty && _pendingGamePushes.isEmpty) return;
+    final channel = await _metadataChannel();
+    if (channel == null) return;
     final pending = Map<ShellPrefKey, String>.from(_pendingPushes);
     _pendingPushes.clear();
     final pendingGames =
         Map<String, Map<String, dynamic>>.from(_pendingGamePushes);
     _pendingGamePushes.clear();
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    var metadata = session.userMetadata;
+    var metadata = channel.cached;
     if (pending.isNotEmpty) {
-      final current = shellPreferencesFromMetadata(session.userMetadata);
+      final current = shellPreferencesFromMetadata(channel.cached);
       metadata = shellPreferencesToMetadata(
           metadata,
           shellPreferencePatch(
@@ -958,17 +1149,11 @@ class AccountController extends ValueNotifier<Account?> {
       metadata = shellGameSettingsToMetadata(metadata, pendingGames, now);
     }
     try {
-      await service.updateUserMetadata(
-        accessToken: session.accessToken,
-        data: metadata,
-      );
-      _session = session.copyWith(userMetadata: metadata);
+      await channel.write(metadata);
       if (pendingGames.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
         await writeLocalGameStamps(prefs, _gameStamps!);
       }
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_sessionKey, jsonEncode(_session!.toJson()));
     } on AuthException {
       // Offline or token trouble: re-queue so a later edit's flush (or the
       // next sign-in's reconcile) carries these edits up. The local stamps
@@ -1757,6 +1942,93 @@ class AccountController extends ValueNotifier<Account?> {
     notifyListeners();
   }
 
+  /// Removes the signed-in account from ONE app ([appId]): the kit's
+  /// purchases, offline licenses and reports for that app (the
+  /// `account-delete` function, scope "app"), this device's license files
+  /// for it, then signs out here. The MediaSart account, mediasart.com and
+  /// the other apps are untouched. The app deletes its own data first
+  /// (SettingsScreen.onRemoveAppData), while the token still opens it.
+  Future<ShellDeleteResult> leaveApp(String appId) async {
+    final userId = currentUserId;
+    final result = await _accountDeleteCall(
+        {'scope': 'app', 'app_id': appId, 'confirm': true});
+    if (result != ShellDeleteResult.deleted) return result;
+    final prefs = await SharedPreferences.getInstance();
+    if (userId != null) {
+      final prefix = 'prefs.license.$appId.$userId';
+      for (final key in prefs.getKeys().toList()) {
+        if (key == prefix || key.startsWith('$prefix.')) {
+          await prefs.remove(key);
+        }
+      }
+    }
+    await _signOutEverywhereHere();
+    return ShellDeleteResult.deleted;
+  }
+
+  /// Deletes the whole MediaSart account, in every app and on
+  /// mediasart.com (scope "account"). Apps send players to the account
+  /// page instead ([accountPageUrl]); this is for hosts that must offer it
+  /// in place.
+  Future<ShellDeleteResult> deleteAccount() async {
+    final result =
+        await _accountDeleteCall({'scope': 'account', 'confirm': true});
+    if (result == ShellDeleteResult.deleted) await _signOutEverywhereHere();
+    return result;
+  }
+
+  /// The mediasart.com page where the player manages (and deletes) the
+  /// whole MediaSart account, in [languageCode] ('en', 'it').
+  Uri accountPageUrl(String languageCode) =>
+      mediasartHub.replace(path: '/$languageCode/account');
+
+  /// Test seam: the HTTP client the account-delete calls use.
+  @visibleForTesting
+  http.Client? deleteAccountClient;
+
+  Future<ShellDeleteResult> _accountDeleteCall(
+      Map<String, dynamic> body) async {
+    final server = await currentAuthServer();
+    final token = currentAccessToken;
+    if (server == null || token == null) return ShellDeleteResult.notSignedIn;
+    final base = server.url.endsWith('/')
+        ? server.url.substring(0, server.url.length - 1)
+        : server.url;
+    final client = deleteAccountClient ?? http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse('$base/functions/v1/account-delete'),
+        headers: {
+          'content-type': 'application/json',
+          'authorization': 'Bearer $token',
+          if (server.apiKey != null) 'apikey': server.apiKey!,
+        },
+        body: jsonEncode(body),
+      );
+      return response.statusCode == 200
+          ? ShellDeleteResult.deleted
+          : ShellDeleteResult.failed;
+    } catch (_) {
+      return ShellDeleteResult.offline;
+    } finally {
+      if (deleteAccountClient == null) client.close();
+    }
+  }
+
+  /// Signs out of the identity host and this controller.
+  Future<void> _signOutEverywhereHere() async {
+    final host = _identityHost;
+    if (host != null && host.currentSession != null) await host.signOut();
+    if (_session != null || value != null) {
+      try {
+        await signOut();
+      } catch (_) {
+        _session = null;
+        value = null;
+      }
+    }
+  }
+
   /// Signs out, keeping the local player name. A cloud session is also
   /// revoked server-side (best effort — it expires on its own anyway).
   Future<void> signOut() async {
@@ -1819,6 +2091,14 @@ class AccountController extends ValueNotifier<Account?> {
     _bannedUntil = '';
     _loaded = false;
     playerName = 'Player';
+    avatar = null;
+    _identitySub?.cancel();
+    _identitySub = null;
+    _identityHost = null;
+    _identityUserId = null;
+    _identityMetadata = const {};
+    identityAuthService = null;
+    deleteAccountClient = null;
     authService = null; // tests inject their own per case
     collectOAuthFragment = null;
     _oauthFlowInFlight = false;
@@ -1840,3 +2120,40 @@ class AccountController extends ValueNotifier<Account?> {
 
 /// The app-wide account controller.
 final account = AccountController();
+
+/// What [AccountController.deleteAccount] achieved.
+enum ShellDeleteResult { deleted, notSignedIn, offline, failed }
+
+/// One account's metadata, as the preference sync reads and writes it.
+class _MetadataChannel {
+  _MetadataChannel({
+    required this.service,
+    required this.accessToken,
+    required this.cached,
+    required this.onWritten,
+    this.onFetched,
+  });
+
+  final AuthService service;
+  final String accessToken;
+
+  /// The base the next push builds on.
+  Map<String, dynamic> cached;
+  final void Function(Map<String, dynamic> metadata)? onFetched;
+  final Future<void> Function(Map<String, dynamic> metadata) onWritten;
+
+  Future<Map<String, dynamic>> fetch() async {
+    final user = await service.fetchUser(accessToken);
+    if (onFetched != null) {
+      cached = user.metadata;
+      onFetched!(user.metadata);
+    }
+    return user.metadata;
+  }
+
+  Future<void> write(Map<String, dynamic> metadata) async {
+    await service.updateUserMetadata(accessToken: accessToken, data: metadata);
+    cached = metadata;
+    await onWritten(metadata);
+  }
+}

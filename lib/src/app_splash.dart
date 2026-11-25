@@ -5,7 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'app_settings.dart';
-import 'app_top_bar.dart';
+import 'shell_top_bar.dart';
 import 'multiplayer/join_scan.dart' as join_scan;
 
 /// What the splash offers below the flavor text.
@@ -72,7 +72,7 @@ const List<SplashScene> kDefaultSplashScenes = [
 ///  * [background] / [scenes] — art + flavor deck (defaults to the shell's)
 ///  * [onNewGame] / [onContinue] / [continueEnabled] — the buttons; pass
 ///    onContinue only when the app has something to load
-///  * [settingsBuilder] — forwarded to [AppTopBar], so the gear opens the
+///  * [settingsBuilder] — forwarded to [ShellTopBar], so the gear opens the
 ///    host's flavored settings screen
 class AppSplash extends StatefulWidget {
   const AppSplash({
@@ -394,7 +394,7 @@ class _AppSplashState extends State<AppSplash>
             ),
           SafeArea(
             child: Column(children: [
-              AppTopBar(settingsBuilder: widget.settingsBuilder),
+              ShellTopBar(settingsBuilder: widget.settingsBuilder),
               Expanded(
                 child: Center(
                   child: ConstrainedBox(

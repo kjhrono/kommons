@@ -156,6 +156,50 @@ void main() {
       expect(find.text('Accedi'), findsOneWidget);
     });
   });
+  group('change password', () {
+    Future<_Host> open(WidgetTester tester, List<String> providers) async {
+      final host =
+          _Host(current: _session('u1', 'a@b.it', providers: providers));
+      await tester.pumpWidget(
+          MaterialApp(home: Scaffold(body: IdentityAccountCard(host: host))));
+      return host;
+    }
+
+    testWidgets('only accounts with a password get the button', (tester) async {
+      await open(tester, ['google']);
+      expect(
+          find.byKey(const ValueKey('account-change-password')), findsNothing);
+      await open(tester, ['email', 'google']);
+      expect(find.byKey(const ValueKey('account-change-password')),
+          findsOneWidget);
+    });
+
+    testWidgets('checks the repeat, refuses weak, adopts the rotated session',
+        (tester) async {
+      final host = await open(tester, ['email']);
+      await tester.tap(find.byKey(const ValueKey('account-change-password')));
+      await tester.pumpAndSettle();
+
+      Future<void> submit(String a, String b) async {
+        await tester.enterText(
+            find.byKey(const ValueKey('account-new-password')), a);
+        await tester.enterText(
+            find.byKey(const ValueKey('account-confirm-password')), b);
+        await tester
+            .tap(find.byKey(const ValueKey('account-change-password-save')));
+        await tester.pumpAndSettle();
+      }
+
+      await submit('longer-pass', 'different');
+      expect(find.text('The two passwords differ.'), findsOneWidget);
+      await submit('abc', 'abc');
+      expect(find.textContaining('Too short'), findsOneWidget);
+      await submit('longer-pass', 'longer-pass');
+      expect(host.auth.passwords, ['longer-pass']);
+      expect(host.adopted.single.refreshToken, 'rotated');
+      expect(find.text('Password changed'), findsOneWidget);
+    });
+  });
 }
 
 /// A session whose JWT carries [providers] in `app_metadata`.
@@ -237,6 +281,26 @@ class _Host extends IdentityAccountHost {
 
 class _FakeAuth implements kit.MediasartAuth {
   final links = <String>[];
+  final passwords = <String>[];
+
+  @override
+  Future<void> changePassword({
+    required kit.AuthSession session,
+    required String newPassword,
+    void Function(kit.AuthSession newSession)? onSessionUpdated,
+  }) async {
+    if (newPassword.length < 6) {
+      throw const kit.AuthCodeException('weak_password');
+    }
+    passwords.add(newPassword);
+    onSessionUpdated?.call(kit.AuthSession(
+      userId: session.userId,
+      email: session.email,
+      accessToken: session.accessToken,
+      refreshToken: 'rotated',
+    ));
+  }
+
   final redirects = <String?>[];
   String verifierSeen = '';
 

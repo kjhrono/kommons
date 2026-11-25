@@ -208,6 +208,14 @@ void main() {
         return null; // the popup would be cancelled right away
       };
 
+      // The settings list is taller than the default 800x600 surface.
+
+      tester.view.physicalSize = const Size(800, 2400);
+
+      tester.view.devicePixelRatio = 1;
+
+      addTearDown(tester.view.reset);
+
       await tester.pumpWidget(MaterialApp(
         theme: ThemeData.dark(),
         home: SettingsScreen(

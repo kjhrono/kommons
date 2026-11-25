@@ -5,7 +5,92 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/) and the
 versioning intent is [semver](https://semver.org/) — while the package is
 pre-1.0, minor versions carry the features.
 
-## Unreleased
+## 0.11.0 — 2026-11-25
+
+### Added: `tool/sync_mirror.sh`
+
+Mirrors the committed tree to `mediasart_u26:/srv/kommons` (git archive +
+rsync, the commit stamped in `.mirror_commit`), the same recipe as
+kognitio's. `--check` only compares.
+
+### Added: shared settings sections, colours, backup, delete account
+
+`SettingsScreen` now shows fixed sections in the same order in every app
+(Profile, Account, Appearance, Language, Data, Premium, About, then the app's
+own cards), each hideable through `hiddenSections`. The account card's own
+"ACCOUNT" title gave way to the section header. New:
+
+- **Change password** on `IdentityAccountCard`, for accounts with a password.
+- **Colour themes:** `AccentPicker` with the app colour plus 8 presets.
+  `ShellApp` seeds the theme from the pick, which syncs across apps
+  (`kommons.accent`). `ShellApp(allowAccent: false)` opts out.
+- **Backup:** `ShellBackupSource` (the app's data) and `ShellBackupCard`
+  (export/import). The file carries the app id, version, date and a
+  checksum, with an optional password (PBKDF2 + AES-256-GCM). Import refuses
+  another app's, newer or damaged files and confirms before replacing. Adds
+  `file_picker` ^11.0.3, the version katalogus and kalcio already use. Stay
+  on Android Gradle Plugin 8 for now. On AGP 9, `file_picker` 11 compiles no
+  Kotlin while `android.builtInKotlin=false`, and turning it on breaks the
+  plugins that still apply the Kotlin plugin (app_links, package_info_plus,
+  share_plus, device_key). The probe example moved to AGP 8.11.1 / Gradle
+  8.14, like the apps.
+- **Delete account:** `ShellDeleteAccountTile` asks what to delete.
+  - *This app only:* type DELETE, the app's `onRemoveAppData` wipes its
+    own data, then `account.leaveApp(appId)` removes the app's purchases,
+    licenses and reports on the server (strikes stay) and signs out here.
+  - *The whole MediaSart account:* opens the mediasart.com account page
+    (`account.accountPageUrl`), still to be written.
+
+  The kit's new `account-delete` function serves both scopes (`app`, and
+  `account` for the website).
+See `docs/SETTINGS.md`.
+
+### Breaking: `AppTopBar` and `AppTopBarActions` removed
+
+Use `ShellTopBar` (below). `AppSplash` now shows it. See "Migrating" in
+`docs/SHELL_TOP_BAR.md`.
+
+### Added: per-app premium with signed offline licenses
+
+`ShellEntitlements(appId, licensePublicKey: …)`. Online, the token's
+`kit_entitlements` / `kit_app_bans` claims decide, on any device. Offline, only
+the one device holding a server-signed (Ed25519) license works. The license
+is tied to the phone's hardware key (new `device_key` plugin: Android
+Keystore/StrongBox, iOS Secure Enclave). Leases last 14 days and renew online,
+moves are limited to 3 per 30 days, a rolled-back clock blocks offline use,
+and offline use is reported back online (warn, then suspend that app's
+premium). A stored license that is useless is dropped and reported at the
+next connection: only an edited one (signature fails) is a strike; one from
+another phone or account, a rolled-back clock or a corrupt file is logged.
+`previousLicenseKeys` keeps a signing-key rotation from looking like
+tampering. `PremiumOfflineCard` for settings. Server: `email_auth_kit`
+migration `20261125000000_email_auth_kit_licenses.sql` and the `license`
+function. See `docs/PREMIUM_LICENSES.md`.
+
+### Added: preference sync for identity-card apps
+
+`account.attachIdentityHost(host)` (or `ShellApp(identityHost: host)`) makes
+the attached `IdentityAccountHost`'s account the one the synced preferences
+(theme, language, name, avatar, per-game maps) are read from and written to.
+Also new on `account`: `currentUserId`, `currentAccessToken`,
+`refreshSessionNow()`, `hasSyncedAccount`. New helpers
+`identityUserMetadata`, `identityClaims`, `decodeJwtClaims`.
+
+### Added: shared top bar, synced avatar
+
+`ShellTopBar`, the account-and-status bar for every app (fits
+`Scaffold.appBar`; the app's own screen bar goes below it). Row 1: avatar,
+name or email, sign-in method icons, FREE/PREMIUM badge, About (ⓘ, with the
+version). Row 2: local/cloud storage status with "Sync now", notifications,
+day/night toggle, settings. Wide windows use one row. Apps plug in
+`ShellIdentity` (adapters for the shell `account` and for
+`IdentityAccountHost`), `ShellPlan`, a `ShellSyncController` and a
+notifications count.
+
+Settings → Player name gains an avatar picker (initials, Google photo, 12
+presets) and a "use the Google name" chip. The avatar syncs across projects
+as `kommons.avatar` in the account metadata, like the name. See
+`docs/SHELL_TOP_BAR.md`.
 
 ### Added: shared identity account card
 
