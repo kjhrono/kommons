@@ -19,6 +19,7 @@ export 'src/reveal_highlight.dart';
 export 'src/theme_toggle_button.dart';
 export 'src/auth_service.dart';
 export 'src/settings_screen.dart';
+export 'src/identity_account_card.dart';
 export 'src/shell_strings.dart';
 export 'src/shell_preferences.dart';
 export 'src/app_splash.dart';

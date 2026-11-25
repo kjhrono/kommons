@@ -7,6 +7,19 @@ pre-1.0, minor versions carry the features.
 
 ## Unreleased
 
+### Added: shared identity account card
+
+`IdentityAccountCard`, the settings card for apps on the shared identity
+stack: who is signed in and how (email, Google), email sign-in and
+registration, Sign in with Google, **Add Google** to an email account
+(linked onto the same account, then the session is refreshed), and sign
+out. The app implements a small `IdentityAccountHost` (identity client,
+redirect, where its session lives, optional `prepare` / `afterSignIn`
+hooks). Also exported: `signInOrLinkGoogle`, `collectGoogleSession`,
+`IdentityAccountInfo`, `IdentitySignInKind`, `identitySignInKindIcon`,
+`IdentityAccountStrings` (EN/IT). Moved out of Katalogus. See
+`docs/IDENTITY_ACCOUNT_CARD.md`.
+
 ### Added: "Sign in with MediaSart"
 
 One account already worked in every project; now one sign-in does too, with
